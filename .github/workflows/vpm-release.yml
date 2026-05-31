@@ -1,0 +1,131 @@
+name: VPM Release (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      package_name:
+        description: 'Package folder name (e.g., com.kibalab.mypackage)'
+        required: true
+        type: string
+      vpm_backend_url:
+        description: 'VPM Backend URL'
+        required: false
+        type: string
+        default: 'https://vpm.kiba.red'
+    secrets:
+      VPM_API_KEY:
+        description: 'VPM Backend API Key'
+        required: true
+
+jobs:
+  config:
+    runs-on: ubuntu-latest
+    outputs:
+      config_package: ${{ steps.config_package.outputs.configPackage }}
+    steps:
+      - name: Validate Package Config
+        id: config_package
+        run: |
+          if [ "${{ inputs.package_name }}" != "" ]; then
+            echo "configPackage=true" >> $GITHUB_OUTPUT
+          else
+            echo "configPackage=false" >> $GITHUB_OUTPUT
+          fi
+
+  build:
+    needs: config
+    runs-on: ubuntu-latest
+    env:
+      packagePath: Packages/${{ inputs.package_name }}
+    if: needs.config.outputs.config_package == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get Version
+        id: version
+        uses: zoexx/github-action-json-file-properties@b9f36ce6ee6fe2680cd3c32b2c62e22eade7e590
+        with:
+          file_path: "${{ env.packagePath }}/package.json"
+          prop_path: "version"
+
+      - name: Get Package Id
+        id: pkgid
+        uses: zoexx/github-action-json-file-properties@b9f36ce6ee6fe2680cd3c32b2c62e22eade7e590
+        with:
+          file_path: "${{ env.packagePath }}/package.json"
+          prop_path: "name"
+
+      - name: Validate Tag
+        run: |
+          tag="${{ github.ref_name }}"
+          ver="${{ steps.version.outputs.value }}"
+          if [ "$tag" != "$ver" ] && [ "$tag" != "v$ver" ]; then
+            echo "Tag '$tag' does not match version '$ver'"
+            exit 1
+          fi
+
+      - name: Set Environment Variables
+        run: |
+          echo "zipFile=${{ inputs.package_name }}-${{ steps.version.outputs.value }}.zip" >> $GITHUB_ENV
+          echo "unityPackage=${{ inputs.package_name }}-${{ steps.version.outputs.value }}.unitypackage" >> $GITHUB_ENV
+          echo "version=${{ steps.version.outputs.value }}" >> $GITHUB_ENV
+          echo "package_id=${{ steps.pkgid.outputs.value }}" >> $GITHUB_ENV
+
+      - name: Create Package Zip
+        working-directory: "${{ env.packagePath }}"
+        run: zip -r "${{ github.workspace }}/${{ env.zipFile }}" .
+
+      - name: Track Package Meta Files
+        run: find "${{ env.packagePath }}/" -name \*.meta >> metaList
+
+      - name: Create UnityPackage
+        uses: pCYSl5EDgo/create-unitypackage@v1.2.3
+        with:
+          package-path: ${{ env.unityPackage }}
+          include-files: metaList
+
+      - name: Read package.json
+        id: package_json
+        run: |
+          PACKAGE_JSON=$(cat "${{ env.packagePath }}/package.json" | jq -c .)
+          echo "content=$PACKAGE_JSON" >> $GITHUB_OUTPUT
+
+      - name: Make Release
+        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844
+        with:
+          files: |
+            ${{ env.zipFile }}
+            ${{ env.unityPackage }}
+            ${{ env.packagePath }}/package.json
+          tag_name: ${{ github.ref_name }}
+
+      - name: Get Download URL
+        id: download_url
+        run: |
+          echo "url=https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ env.zipFile }}" >> $GITHUB_OUTPUT
+
+      - name: Check for thumbnail
+        id: thumbnail
+        run: |
+          if [ -f ".github/vpm-thumbnail.png" ]; then
+            echo "url=https://raw.githubusercontent.com/${{ github.repository }}/main/.github/vpm-thumbnail.png" >> $GITHUB_OUTPUT
+          elif [ -f "${{ env.packagePath }}/package-media/thumbnail.png" ]; then
+            echo "url=https://raw.githubusercontent.com/${{ github.repository }}/main/${{ env.packagePath }}/package-media/thumbnail.png" >> $GITHUB_OUTPUT
+          else
+            echo "url=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Notify VPM Backend
+        run: |
+          curl -X POST "${{ inputs.vpm_backend_url }}/api/webhook/release" \
+            -H "Content-Type: application/json" \
+            -H "X-Api-Key: ${{ secrets.VPM_API_KEY }}" \
+            -d '{
+              "repo": "${{ github.repository }}",
+              "version": "${{ env.version }}",
+              "package_id": "${{ env.package_id }}",
+              "download_url": "${{ steps.download_url.outputs.url }}",
+              "thumbnail_url": "${{ steps.thumbnail.outputs.url }}",
+              "package_json": ${{ steps.package_json.outputs.content }}
+            }'
