@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="TSMP documentation">
+  <rect width="1200" height="630" fill="#0f1720"/>
+  <rect x="80" y="84" width="1040" height="462" rx="32" fill="#146d70"/>
+  <text x="140" y="270" fill="#ffffff" font-family="Arial, sans-serif" font-size="108" font-weight="700">TSMP</text>
+  <text x="140" y="360" fill="#d6fbfc" font-family="Arial, sans-serif" font-size="42">Texture Stream Messaging Protocol</text>
+  <text x="140" y="430" fill="#d6fbfc" font-family="Arial, sans-serif" font-size="34">Documentation for VRChat worlds</text>
+</svg>

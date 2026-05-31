@@ -13,7 +13,7 @@ jobs:
   release:
     uses: kibalab/vpm-package-template/.github/workflows/vpm-release.yml@main
     with:
-      package_name: ${{ vars.PACKAGE_NAME }}
+      package_name: com.kibalab.tsmp.core
       vpm_backend_url: ${{ vars.VPM_BACKEND_URL || 'https://vpm.kiba.red' }}
     secrets:
       VPM_API_KEY: ${{ secrets.VPM_API_KEY }}

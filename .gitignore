@@ -62,3 +62,26 @@ crashlytics-build.properties
 Assets/PackageMakerWindowData.asset*
 .idea
 .vscode
+
+/dist/
+/dist.meta
+/UserSettings/
+/Assets/SerializedUdonPrograms/
+/Assets/SerializedUdonPrograms.meta
+/Assets/UdonSharp/
+/Assets/UdonSharp.meta
+/Assets/XR/
+/Assets/XR.meta
+/Packages/com.vrchat.core.vpm-resolver/
+/Packages/com.kibalab.tsmp.core/Samples/TSMPExample/Temp/
+
+# Docusaurus
+/Website~/node_modules/
+/Website~/build/
+/Website~/.docusaurus/
+/Website~/.cache-loader/
+/Website~/docusaurus-dev*.log
+
+# Local environment
+.env
+.env.*

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Redirecting...</title>
+    <script>
+      (function () {
+        var path = window.location.pathname;
+        var target = '/tsmp/';
+
+        if (path.indexOf('/tsmp/ko/') === 0) {
+          target = '/tsmp/ko/';
+        } else if (path.indexOf('/tsmp/ja/') === 0) {
+          target = '/tsmp/ja/';
+        }
+
+        window.location.replace(target);
+      })();
+    </script>
+  </head>
+  <body>
+    <a href="/tsmp/">Redirecting...</a>
+  </body>
+</html>

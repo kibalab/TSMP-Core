@@ -1,0 +1,27 @@
+{
+  "name": "K13A.TSMP.Core.Editor",
+  "rootNamespace": "K13A.TSMP.Editor",
+  "references": [
+    "K13A.TSMP.Core",
+    "UdonSharp.Runtime",
+    "UdonSharp.Editor",
+    "VRC.SDKBase",
+    "VRC.SDK3",
+    "VRC.Udon",
+    "VRC.SDKBase.Editor",
+    "VRC.SDK3.Editor",
+    "VRC.Udon.Editor",
+    "VRC.Udon.Serialization.OdinSerializer"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

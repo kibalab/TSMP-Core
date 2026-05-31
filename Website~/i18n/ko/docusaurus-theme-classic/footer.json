@@ -1,0 +1,42 @@
+{
+  "link.title.Packages": {
+    "message": "패키지",
+    "description": "The title of the footer links column with title=Packages in the footer"
+  },
+  "link.title.Guides": {
+    "message": "가이드",
+    "description": "The title of the footer links column with title=Guides in the footer"
+  },
+  "link.title.Project": {
+    "message": "프로젝트",
+    "description": "The title of the footer links column with title=Project in the footer"
+  },
+  "link.item.label.Core": {
+    "message": "Core",
+    "description": "The label of footer link with label=Core linking to /docs/getting-started/package-layout"
+  },
+  "link.item.label.Codecs": {
+    "message": "코덱",
+    "description": "The label of footer link with label=Codecs linking to /docs/codecs/overview"
+  },
+  "link.item.label.Quickstart": {
+    "message": "퀵스타트",
+    "description": "The label of footer link with label=Quickstart linking to /docs/getting-started/quickstart"
+  },
+  "link.item.label.Performance": {
+    "message": "성능",
+    "description": "The label of footer link with label=Performance linking to /docs/guides/performance-tuning"
+  },
+  "link.item.label.Troubleshooting": {
+    "message": "문제 해결",
+    "description": "The label of footer link with label=Troubleshooting linking to /docs/troubleshooting"
+  },
+  "link.item.label.GitHub": {
+    "message": "GitHub",
+    "description": "The label of footer link with label=GitHub linking to https://github.com/KIBA-Labs/TSMP"
+  },
+  "copyright": {
+    "message": "Copyright © 2026 KIBA_Labs.",
+    "description": "The footer copyright"
+  }
+}

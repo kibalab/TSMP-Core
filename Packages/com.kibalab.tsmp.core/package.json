@@ -1,0 +1,17 @@
+{
+  "name": "com.kibalab.tsmp.core",
+  "displayName": "TSMP Core",
+  "version": "1.0.0",
+  "unity": "2022.3",
+  "description": "Core TSMP runtime, encoder, decoder, setup tooling, shared Udon behaviours, codec base types, and streaming utilities.",
+  "author": {
+    "name": "KIBA_Labs"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "com.vrchat.worlds": "3.9.0"
+  },
+  "vpmDependencies": {
+    "com.vrchat.worlds": ">=3.9.0"
+  }
+}

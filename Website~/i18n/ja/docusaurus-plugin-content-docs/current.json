@@ -1,0 +1,58 @@
+{
+  "version.label": {
+    "message": "現在",
+    "description": "The label for version current"
+  },
+  "sidebar.docs.category.Getting Started": {
+    "message": "はじめに",
+    "description": "The label for category 'Getting Started' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Concepts": {
+    "message": "概念",
+    "description": "The label for category 'Concepts' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Components": {
+    "message": "コンポーネント",
+    "description": "The label for category 'Components' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Codecs": {
+    "message": "コーデック",
+    "description": "The label for category 'Codecs' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Guides": {
+    "message": "ガイド",
+    "description": "The label for category 'Guides' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Developer": {
+    "message": "開発者向け",
+    "description": "The label for category 'Developer' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Custom Network Behaviour": {
+    "message": "カスタム Network Behaviour",
+    "description": "The label for category 'Custom Network Behaviour' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Custom Codec": {
+    "message": "カスタムコーデック",
+    "description": "The label for category 'Custom Codec' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Scripting API": {
+    "message": "スクリプティング API",
+    "description": "The label for category 'Scripting API' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Core Components": {
+    "message": "Core コンポーネント",
+    "description": "The label for category 'Core Components' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Network API": {
+    "message": "Network API",
+    "description": "The label for category 'Network API' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Codec API": {
+    "message": "Codec API",
+    "description": "The label for category 'Codec API' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Protocol API": {
+    "message": "Protocol API",
+    "description": "The label for category 'Protocol API' in sidebar 'docs'"
+  }
+}
