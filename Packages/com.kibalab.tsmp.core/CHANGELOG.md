@@ -1,5 +1,6 @@
 # Changelog
 
-## 1.0.0
+## 0.0.3-beta.1
 
-- Initial package split with encoder and decoder runtime included in core.
+- Beta release metadata for VPM distribution.
+- Includes core runtime, encoder, decoder, setup tooling, shared network behaviours, and codec authoring APIs.

@@ -20,17 +20,17 @@ com.kibalab.tsmp.codec.yourcodec
 {
   "name": "com.kibalab.tsmp.codec.yourcodec",
   "displayName": "TSMP Codec YourCodec",
-  "version": "1.0.0",
+  "version": "0.0.3-beta.1",
   "author": {
     "name": "KIBA_Labs"
   },
   "description": "A TSMP codec package.",
   "unity": "2022.3",
   "vpmDependencies": {
-    "com.kibalab.tsmp.core": "1.x"
+    "com.kibalab.tsmp.core": ">=0.0.1"
   },
   "dependencies": {
-    "com.kibalab.tsmp.core": "1.0.0"
+    "com.kibalab.tsmp.core": "0.0.3-beta.1"
   }
 }
 ```

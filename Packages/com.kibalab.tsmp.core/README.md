@@ -1,12 +1,19 @@
 # TSMP Core
 
-Core runtime, encoder, decoder, setup tooling, shared Udon behaviours, codec base types, and streaming utilities for TSMP.
+Core runtime package for TSMP, the Texture Stream Message Protocol.
+
+Install this package with a codec package such as `TSMP Codec Luma4`, add `Samples/TSMPController.prefab` to the scene, then use `TSMPSetup` to refresh codecs and apply the setup.
 
 ## Requirements
 
 - Unity 2022.3
-- VRChat Worlds SDK 3.9.0 or newer
-- UdonSharp from the VRChat Worlds package
-- `com.kibalab.tsmp.codec.luma4` 1.0.0
+- VRChat Worlds SDK 3.9.0 or newer when used in VRChat worlds
+- UdonSharp from the VRChat Worlds package when compiling Udon behaviours
 
-This package is VRChat-focused and references VRChat/Udon assemblies directly.
+## Documentation
+
+https://kibalab.github.io/TSMP-Core/
+
+## Release Status
+
+This package is currently beta and uses `v0.0.x-beta.x` tags.

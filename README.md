@@ -1,203 +1,49 @@
 **한국어** | [English](README.en.md) | [日本語](README.ja.md)
 
----
+# TSMP Core
 
-# VRChat VPM Package Template for KIBALAB
+TSMP(Texture Stream Message Protocol)는 VRChat 월드에서 텍스처 스트림을 통해 네트워크 상태, RPC, 아바타 포즈, Animator, Timeline 같은 런타임 데이터를 전달하기 위한 오픈소스 패키지입니다.
 
-VRChat Creator Companion(VCC) / VRChat Package Manager(VPM) 패키지 배포를 위한 템플릿입니다.
+Core 패키지는 TSMP를 씬에 배치하고 설정하는 기본 런타임입니다. 실제 픽셀 인코딩 방식은 코덱 패키지가 담당하며, 기본 사용에는 Luma4 코덱을 함께 설치하는 것을 권장합니다.
 
-**태그(릴리스)를 푸시하면** GitHub Actions가 자동으로:
-1. Release 생성 (zip + unitypackage + package.json)
-2. VPM 백엔드에 패키지 정보 등록
-3. 즉시 [vpm.kiba.red](https://vpm.kiba.red)에 반영
+## 설치
 
----
+VRChat Creator Companion에서 VPM 저장소를 추가합니다.
 
-## 요구 사항
-
-### 1) 패키지 구조 (UPM/VPM 표준)
-
-```
-Packages/<PACKAGE_ID>/
-├── package.json
-├── Runtime/
-├── Editor/
-└── package-media/        # (선택) 썸네일 이미지
-    └── thumbnail.png
+```text
+https://vpm.kiba.red/
 ```
 
-예시:
-```
-Packages/com.kibalab.mypackage/package.json
-```
+그 다음 `TSMP Core`와 `TSMP Codec Luma4`를 설치합니다.
 
-### 2) package.json 필수 필드
+## 빠른 시작
 
-```json
-{
-  "name": "com.kibalab.mypackage",
-  "displayName": "My Package",
-  "version": "1.0.0",
-  "description": "패키지 설명",
-  "author": {
-    "name": "Your Name",
-    "email": "your@email.com",
-    "url": "https://your-site.com"
-  },
-  "vpmDependencies": {
-    "com.vrchat.worlds": "3.x.x"
-  }
-}
-```
+1. `Packages/com.kibalab.tsmp.core/Samples/TSMPController.prefab`을 씬에 배치합니다.
+2. 전송할 오브젝트에 필요한 `TSMPNetwork*` 컴포넌트를 추가합니다.
+3. `TSMPSetup`에서 `Refresh Codecs`를 누르고 사용할 코덱을 선택합니다.
+4. `Apply Setup`을 실행해 Encoder, Decoder, codec handler, binding table을 갱신합니다.
+5. Encoder의 출력 RenderTexture를 송출하고, Decoder의 입력 RenderTexture에 같은 TSMP 화면을 넣습니다.
 
----
+## 포함 기능
 
-## 설정 방법
+- TSMP Encoder / Decoder
+- TSMPSetup 자동 구성 도구
+- `[TransSync]` 필드 기반 상태 동기화
+- `SendTransRPC(methodName, target)` 기반 TSMP RPC
+- Transform, Rigidbody, Humanoid Pose, VRChat Avatar Pose, Animator, Timeline, BlendShape 동기화 컴포넌트
+- 코덱 패키지 자동 검색 및 선택 UI
+- 코덱 제작을 위한 공통 런타임, 셰이더 include, catalog asset 형식
 
-### 1) Repository Variables
+## 문서
 
-GitHub 저장소 → **Settings** → **Secrets and variables** → **Actions** → **Variables**
+사용자 가이드와 개발자 문서는 아래에서 확인할 수 있습니다.
 
-| Variable | 설명 | 예시 |
-|----------|------|------|
-| `PACKAGE_NAME` | 패키지 폴더 이름 | `com.kibalab.mypackage` |
-| `VPM_BACKEND_URL` | VPM 백엔드 URL | `https://vpm.kiba.red` |
+https://kibalab.github.io/TSMP-Core/
 
-### 2) Repository Secrets
+## 배포 상태
 
-GitHub 저장소 → **Settings** → **Secrets and variables** → **Actions** → **Secrets**
+현재 TSMP는 beta 단계입니다. 패키지 버전과 Git 태그는 `v0.0.x-beta.x` 형식을 사용합니다.
 
-| Secret | 설명 |
-|--------|------|
-| `VPM_API_KEY` | VPM 백엔드 API 키 (관리자에게 문의) |
+## 라이선스
 
----
-
-## 사용 방법
-
-### 새 패키지 생성
-
-1. **Use this template**로 새 저장소 생성
-2. `Packages/` 폴더 아래에 패키지 ID로 폴더 생성
-3. `package.json` 작성
-4. Repository Variables/Secrets 설정
-
-### 릴리스 배포
-
-1. `package.json`의 `version` 업데이트
-2. 커밋 & 푸시
-3. 같은 버전으로 태그 생성 & 푸시
-
-```bash
-# 버전 업데이트 후 커밋
-git add Packages/com.kibalab.mypackage/package.json
-git commit -m "Bump version to 1.0.1"
-git push
-
-# 태그 생성 및 푸시
-git tag 1.0.1
-git push origin 1.0.1
-```
-
-> 태그 버전과 package.json 버전이 일치해야 합니다. (`v1.0.1` 또는 `1.0.1` 형식 모두 지원)
-
----
-
-## 썸네일 이미지
-
-VPM 프론트엔드에 표시될 썸네일을 설정할 수 있습니다.
-
-### 방법 1: 패키지 내 썸네일 (권장)
-```
-Packages/<PACKAGE_ID>/package-media/thumbnail.png
-```
-
-### 방법 2: 저장소 루트 썸네일
-```
-.github/vpm-thumbnail.png
-```
-
-**권장 사양:**
-- 형식: PNG
-- 크기: 512x512 또는 16:9 비율
-- 용량: 500KB 이하
-
----
-
-## 워크플로우 구조
-
-### Reusable Workflow (중앙 관리)
-
-모든 패키지 레포가 `vpm-package-template`의 워크플로우를 참조합니다.
-중앙 워크플로우를 수정하면 **모든 패키지 레포에 자동 적용**됩니다.
-
-```
-vpm-package-template/.github/workflows/
-├── vpm-release.yml    # 재사용 가능한 워크플로우 (실제 로직)
-└── release.yml        # 호출 예시
-
-각 패키지 레포/.github/workflows/
-└── release.yml        # 중앙 워크플로우 호출 (16줄)
-```
-
-### 각 패키지 레포의 release.yml
-
-```yaml
-name: Build Release
-
-on:
-  workflow_dispatch:
-  push:
-    tags:
-      - '*'
-
-permissions:
-  contents: write
-
-jobs:
-  release:
-    uses: kibalab/vpm-package-template/.github/workflows/vpm-release.yml@main
-    with:
-      package_name: ${{ vars.PACKAGE_NAME }}
-      vpm_backend_url: ${{ vars.VPM_BACKEND_URL || 'https://vpm.kiba.red' }}
-    secrets:
-      VPM_API_KEY: ${{ secrets.VPM_API_KEY }}
-```
-
-### 워크플로우 동작
-
-1. **빌드**
-   - `Packages/<PACKAGE_NAME>` 폴더를 ZIP으로 압축
-   - `.unitypackage` 파일 생성
-
-2. **GitHub Release 생성**
-   - ZIP, unitypackage, package.json 첨부
-
-3. **VPM 백엔드 등록**
-   - 패키지 정보를 백엔드 API로 전송
-   - 썸네일 URL 자동 감지 및 등록
-
----
-
-## 문제 해결
-
-### 워크플로우 실패: "Tag does not match version"
-- `package.json`의 `version`과 Git 태그가 일치하는지 확인
-- 태그는 `1.0.0` 또는 `v1.0.0` 형식 모두 가능
-
-### 패키지가 목록에 표시되지 않음
-- GitHub Actions 로그에서 백엔드 응답 확인
-- `VPM_BACKEND_URL`과 `VPM_API_KEY` 설정 확인
-- 백엔드 관리자에게 API 키 유효성 문의
-
-### 썸네일이 표시되지 않음
-- 파일 경로가 정확한지 확인
-- 이미지가 `main` 브랜치에 푸시되어 있는지 확인
-- Raw URL 접근 가능 여부 확인
-
----
-
-## 관련 링크
-
-- [VPM 패키지 목록](https://vpm.kiba.red)
-- [VCC에 추가하기](https://vpm.kiba.red/vcc)
+MIT License. Copyright (c) 2026 KIBA_Labs.

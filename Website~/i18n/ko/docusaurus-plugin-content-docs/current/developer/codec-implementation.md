@@ -67,7 +67,7 @@ Package는 Core에 의존해야 합니다.
 
 ```json
 "dependencies": {
-  "com.kibalab.tsmp.core": "1.0.0"
+  "com.kibalab.tsmp.core": "0.0.3-beta.1"
 }
 ```
 
