@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.2
+
+- Fixed intermittent editor compile failures during UdonSharp define transitions.
+
 ## 0.0.1
 
 - Initial beta package release.

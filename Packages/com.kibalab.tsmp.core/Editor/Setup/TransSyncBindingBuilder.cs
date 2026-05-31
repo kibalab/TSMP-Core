@@ -544,7 +544,12 @@ namespace K13A.TSMP.Editor
             if (behaviour == null)
                 return null;
 
-            return UdonSharpEditorUtility.GetBackingUdonBehaviour(behaviour);
+            Component component = behaviour;
+            UdonSharpBehaviour proxy = component as UdonSharpBehaviour;
+            if (proxy == null)
+                return null;
+
+            return UdonSharpEditorUtility.GetBackingUdonBehaviour(proxy);
         }
 
         private static bool SameArray(System.Array current, List<Component> next)
