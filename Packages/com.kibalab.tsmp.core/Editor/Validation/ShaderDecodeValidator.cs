@@ -10,7 +10,7 @@ namespace K13A.TSMP.Editor
         private const string SamplePath = "Assets/TSMP/Generated/tsmp_sample_640x360.png";
         private const string ShaderName = "Hidden/TSMP/Decode Luma4 Bytes";
 
-        [MenuItem("Tools/TSMP/Validate Shader Byte Decode")]
+        [MenuItem("TSMP/Debug/Validate Shader Byte Decode")]
         public static void ValidateShaderByteDecode()
         {
             if (!File.Exists(SamplePath))

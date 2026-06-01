@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using K13A.TSMP;
+using K13A.TSMP.Udon;
 using UnityEditor;
 using UnityEngine;
 
@@ -52,6 +54,7 @@ namespace K13A.TSMP.Editor
 
         private int _selectedTab;
         private bool _refreshCodecsOnNextGui;
+        private Vector2 _networkIdScroll;
 
         private void OnEnable()
         {
@@ -251,6 +254,9 @@ namespace K13A.TSMP.Editor
                 DrawProperty(_layout);
 
             EditorGUILayout.Space(8f);
+            DrawNetworkIdList();
+
+            EditorGUILayout.Space(8f);
             using (new EditorGUI.DisabledScope(_encoder == null || _encoder.objectReferenceValue == null))
             {
                 if (GUILayout.Button("Encode Now", GUILayout.Height(24f)))
@@ -329,6 +335,173 @@ namespace K13A.TSMP.Editor
             DrawReadOnlyInt("Byte Texture Capacity", byteTexturePixels * 4);
         }
 
+        private void DrawNetworkIdList()
+        {
+            List<NetworkIdRow> rows = BuildNetworkIdRows();
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Network IDs", EditorStyles.boldLabel);
+            GUILayout.FlexibleSpace();
+            using (new EditorGUI.DisabledScope(Application.isPlaying))
+            {
+                if (GUILayout.Button("Resolve IDs", GUILayout.Width(92f), GUILayout.Height(20f)))
+                {
+                    serializedObject.ApplyModifiedProperties();
+                    TransSyncBindingBuilder.ResolveSceneNetworkIds(true);
+                    serializedObject.Update();
+                    rows = BuildNetworkIdRows();
+                }
+            }
+            EditorGUILayout.EndHorizontal();
+
+            using (new EditorGUI.DisabledScope(true))
+            {
+                EditorGUILayout.IntField("Matched Objects", CountNetworkObjects(rows));
+                EditorGUILayout.IntField("Network Behaviours", CountNetworkBehaviours(rows));
+            }
+
+            if (rows.Count == 0)
+            {
+                EditorGUILayout.LabelField("No TSMP network behaviours in the scene.", EditorStyles.miniLabel);
+                return;
+            }
+
+            DrawNetworkIdHeader();
+
+            float rowHeight = EditorGUIUtility.singleLineHeight + 2f;
+            float maxHeight = rowHeight * Mathf.Min(rows.Count, 10);
+            _networkIdScroll = EditorGUILayout.BeginScrollView(_networkIdScroll, GUILayout.MinHeight(rowHeight), GUILayout.MaxHeight(maxHeight + 4f));
+            for (int i = 0; i < rows.Count; i++)
+                DrawNetworkIdRow(rows[i]);
+            EditorGUILayout.EndScrollView();
+        }
+
+        private static void DrawNetworkIdHeader()
+        {
+            Rect rect = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight);
+            Rect idRect;
+            Rect objectRect;
+            SplitNetworkIdRowRect(rect, out idRect, out objectRect);
+
+            EditorGUI.LabelField(idRect, "ID", EditorStyles.miniBoldLabel);
+            EditorGUI.LabelField(objectRect, "Object", EditorStyles.miniBoldLabel);
+        }
+
+        private static void DrawNetworkIdRow(NetworkIdRow row)
+        {
+            Rect rect = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight + 2f);
+            rect.height = EditorGUIUtility.singleLineHeight;
+
+            Rect idRect;
+            Rect objectRect;
+            SplitNetworkIdRowRect(rect, out idRect, out objectRect);
+
+            string idText = row.NetworkId != 0 ? row.NetworkId.ToString() : "0";
+            EditorGUI.LabelField(idRect, idText);
+
+            using (new EditorGUI.DisabledScope(true))
+                EditorGUI.ObjectField(objectRect, GUIContent.none, row.GameObject, typeof(GameObject), true);
+        }
+
+        private static void SplitNetworkIdRowRect(Rect rect, out Rect idRect, out Rect objectRect)
+        {
+            const float IdWidth = 54f;
+            const float Gap = 4f;
+
+            idRect = new Rect(rect.x, rect.y, IdWidth, rect.height);
+            float objectWidth = Mathf.Max(40f, rect.xMax - idRect.xMax - Gap);
+            objectRect = new Rect(idRect.xMax + Gap, rect.y, objectWidth, rect.height);
+        }
+
+        private static List<NetworkIdRow> BuildNetworkIdRows()
+        {
+            TSMPNetworkBehaviour[] behaviours = Object.FindObjectsOfType<TSMPNetworkBehaviour>(true);
+            List<NetworkIdRow> rows = new List<NetworkIdRow>();
+
+            for (int i = 0; i < behaviours.Length; i++)
+            {
+                TSMPNetworkBehaviour behaviour = behaviours[i];
+                if (behaviour == null)
+                    continue;
+
+                GameObject gameObject = behaviour.gameObject;
+                ushort networkId = BindingTable.ResolveNetworkId(behaviour);
+                int rowIndex = FindNetworkIdRow(rows, networkId, gameObject);
+                if (rowIndex < 0)
+                {
+                    NetworkIdRow row = new NetworkIdRow();
+                    row.NetworkId = networkId;
+                    row.GameObject = gameObject;
+                    row.Path = GetHierarchyPath(behaviour.transform);
+                    row.ComponentCount = 1;
+                    rows.Add(row);
+                }
+                else
+                {
+                    NetworkIdRow row = rows[rowIndex];
+                    row.ComponentCount++;
+                    rows[rowIndex] = row;
+                }
+            }
+
+            rows.Sort(CompareNetworkIdRows);
+            return rows;
+        }
+
+        private static int FindNetworkIdRow(List<NetworkIdRow> rows, ushort networkId, GameObject gameObject)
+        {
+            for (int i = 0; i < rows.Count; i++)
+            {
+                NetworkIdRow row = rows[i];
+                if (row.NetworkId == networkId && row.GameObject == gameObject)
+                    return i;
+            }
+
+            return -1;
+        }
+
+        private static int CompareNetworkIdRows(NetworkIdRow left, NetworkIdRow right)
+        {
+            int idCompare = left.NetworkId.CompareTo(right.NetworkId);
+            if (idCompare != 0)
+                return idCompare;
+
+            return string.CompareOrdinal(left.Path, right.Path);
+        }
+
+        private static int CountNetworkObjects(List<NetworkIdRow> rows)
+        {
+            return rows != null ? rows.Count : 0;
+        }
+
+        private static int CountNetworkBehaviours(List<NetworkIdRow> rows)
+        {
+            if (rows == null)
+                return 0;
+
+            int count = 0;
+            for (int i = 0; i < rows.Count; i++)
+                count += rows[i].ComponentCount;
+
+            return count;
+        }
+
+        private static string GetHierarchyPath(Transform transform)
+        {
+            if (transform == null)
+                return string.Empty;
+
+            string path = transform.name;
+            Transform current = transform.parent;
+            while (current != null)
+            {
+                path = current.name + "/" + path;
+                current = current.parent;
+            }
+
+            return path;
+        }
+
         private void DrawReadOnlyText(string label, string value)
         {
             using (new EditorGUI.DisabledScope(true))
@@ -352,6 +525,7 @@ namespace K13A.TSMP.Editor
             serializedObject.ApplyModifiedProperties();
             TSMPSetup setup = (TSMPSetup)target;
             Undo.RecordObject(setup, "Apply TSMP setup");
+            TransSyncBindingBuilder.ResolveSceneNetworkIds(false);
             setup.ApplyNow();
             EditorUtility.SetDirty(setup);
             serializedObject.Update();
@@ -405,6 +579,14 @@ namespace K13A.TSMP.Editor
         private static int GetInt(SerializedProperty property)
         {
             return property != null ? Mathf.Max(0, property.intValue) : 0;
+        }
+
+        private struct NetworkIdRow
+        {
+            public ushort NetworkId;
+            public GameObject GameObject;
+            public string Path;
+            public int ComponentCount;
         }
     }
 }

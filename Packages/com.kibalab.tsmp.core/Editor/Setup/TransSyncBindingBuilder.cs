@@ -30,6 +30,8 @@ namespace K13A.TSMP.Editor
             UdonProxySyncBridge.ResolveProxyAction = ResolveUdonProxy;
             EditorApplication.hierarchyChanged -= QueueAutomaticRebuild;
             EditorApplication.hierarchyChanged += QueueAutomaticRebuild;
+            Undo.postprocessModifications -= OnPostprocessModifications;
+            Undo.postprocessModifications += OnPostprocessModifications;
         }
 
         private struct BindingKey
@@ -44,10 +46,22 @@ namespace K13A.TSMP.Editor
             }
         }
 
-        [MenuItem("Tools/TSMP/Rebuild TransSync Bindings In Scene")]
+        [MenuItem("TSMP/Debug/Rebuild TransSync Bindings In Scene")]
         public static void RebuildSceneBindings()
         {
             RebuildSceneBindings(true);
+        }
+
+        [MenuItem("TSMP/Debug/Resolve Network IDs In Scene")]
+        public static void ResolveSceneNetworkIds()
+        {
+            ResolveSceneNetworkIds(true);
+        }
+
+        [MenuItem("TSMP/Regenerate Network ID")]
+        public static void RegenerateNetworkId()
+        {
+            ResolveSceneNetworkIds(true);
         }
 
         [DidReloadScripts]
@@ -91,6 +105,19 @@ namespace K13A.TSMP.Editor
                 Debug.Log("[TSMP] scene network rebuilt. encoders=" + assignedEncoders + " encoderBindings=" + totalEncoderBindings + " decoders=" + decoders.Length + " bindings=" + totalBindings + " assignedNetworkIds=" + assignedNetworkIds + " assignedTransRpcEncoders=" + assignedTransRpcEncoders);
         }
 
+        public static int ResolveSceneNetworkIds(bool logResult)
+        {
+            TSMPNetworkBehaviour[] behaviours = UnityEngine.Object.FindObjectsOfType<TSMPNetworkBehaviour>(true);
+            SortBehaviours(behaviours);
+            int assignedNetworkIds = AssignNetworkIds(behaviours);
+            SyncBackingUdon(behaviours);
+
+            if (logResult)
+                Debug.Log("[TSMP] scene Network IDs resolved. assignedNetworkIds=" + assignedNetworkIds);
+
+            return assignedNetworkIds;
+        }
+
         private static void QueueAutomaticRebuild()
         {
             if (_rebuildQueued || EditorApplication.isPlayingOrWillChangePlaymode)
@@ -107,6 +134,38 @@ namespace K13A.TSMP.Editor
                 return;
 
             RebuildSceneBindings(false);
+        }
+
+        private static UndoPropertyModification[] OnPostprocessModifications(UndoPropertyModification[] modifications)
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+                return modifications;
+
+            if (ContainsNetworkIdChange(modifications))
+                QueueAutomaticRebuild();
+
+            return modifications;
+        }
+
+        private static bool ContainsNetworkIdChange(UndoPropertyModification[] modifications)
+        {
+            if (modifications == null)
+                return false;
+
+            for (int i = 0; i < modifications.Length; i++)
+            {
+                PropertyModification modification = modifications[i].currentValue;
+                if (modification == null)
+                    continue;
+
+                if (modification.propertyPath != "networkId")
+                    continue;
+
+                if (modification.target is TSMPNetworkBehaviour || modification.target is TSMPNetworkIdentity)
+                    return true;
+            }
+
+            return false;
         }
 
         private static void SortBehaviours(TSMPNetworkBehaviour[] behaviours)
@@ -127,7 +186,19 @@ namespace K13A.TSMP.Editor
             if (pathCompare != 0)
                 return pathCompare;
 
+            int transformCompare = GetTransformInstanceId(left).CompareTo(GetTransformInstanceId(right));
+            if (transformCompare != 0)
+                return transformCompare;
+
             return left.GetInstanceID().CompareTo(right.GetInstanceID());
+        }
+
+        private static int GetTransformInstanceId(TSMPNetworkBehaviour behaviour)
+        {
+            if (behaviour == null || behaviour.transform == null)
+                return 0;
+
+            return behaviour.transform.GetInstanceID();
         }
 
         private static string GetHierarchyPath(Transform transform)
@@ -149,60 +220,112 @@ namespace K13A.TSMP.Editor
         private static int AssignNetworkIds(TSMPNetworkBehaviour[] behaviours)
         {
             var usedIds = new HashSet<ushort>();
-            var explicitIdOwners = new Dictionary<ushort, string>();
-            string lastObjectPath = null;
-            ushort currentObjectId = 0;
+            var idOwners = new Dictionary<ushort, string>();
             int assignedCount = 0;
+            int index = 0;
 
-            for (int i = 0; i < behaviours.Length; i++)
+            while (index < behaviours.Length)
             {
-                TSMPNetworkBehaviour behaviour = behaviours[i];
+                TSMPNetworkBehaviour behaviour = behaviours[index];
                 if (behaviour == null)
+                {
+                    index++;
                     continue;
-
-                string objectPath = GetHierarchyPath(behaviour.transform);
-                if (objectPath != lastObjectPath)
-                {
-                    currentObjectId = ResolveRequestedNetworkId(behaviour);
-                    if (currentObjectId != 0)
-                    {
-                        if (explicitIdOwners.TryGetValue(currentObjectId, out string ownerPath))
-                        {
-                            Debug.LogError("[TSMP] explicit NetworkId collision. id=" + currentObjectId + " first='" + ownerPath + "' duplicate='" + objectPath + "'. Keeping the explicit id; fix one of the components to avoid ambiguous bindings.", behaviour);
-                        }
-                        else
-                        {
-                            explicitIdOwners.Add(currentObjectId, objectPath);
-                            usedIds.Add(currentObjectId);
-                        }
-                    }
-                    else
-                    {
-                        currentObjectId = AllocateNetworkId(usedIds);
-                        usedIds.Add(currentObjectId);
-                    }
-                    lastObjectPath = objectPath;
                 }
 
-                if (behaviour.networkId != currentObjectId)
+                Transform objectTransform = behaviour.transform;
+                string objectPath = GetHierarchyPath(objectTransform);
+                int nextIndex = FindNextObjectGroupIndex(behaviours, index, objectTransform);
+                ushort requestedId = ResolveRequestedNetworkId(behaviours, index, nextIndex);
+                ushort objectId = ResolveUniqueNetworkId(requestedId, usedIds, idOwners, objectPath, behaviour);
+                if (objectId != 0)
                 {
-                    Undo.RecordObject(behaviour, "Assign TSMP network id");
-                    behaviour.networkId = currentObjectId;
-                    EditorUtility.SetDirty(behaviour);
-                    assignedCount++;
+                    usedIds.Add(objectId);
+                    if (!idOwners.ContainsKey(objectId))
+                        idOwners.Add(objectId, objectPath);
                 }
+
+                assignedCount += AssignObjectGroupNetworkId(behaviours, index, nextIndex, objectId);
+                index = nextIndex;
             }
 
             return assignedCount;
         }
 
-        private static ushort ResolveRequestedNetworkId(TSMPNetworkBehaviour behaviour)
+        private static int FindNextObjectGroupIndex(TSMPNetworkBehaviour[] behaviours, int startIndex, Transform objectTransform)
         {
-            if (behaviour.networkId != 0)
-                return behaviour.networkId;
+            int index = startIndex + 1;
+            while (index < behaviours.Length)
+            {
+                TSMPNetworkBehaviour behaviour = behaviours[index];
+                if (behaviour == null)
+                {
+                    index++;
+                    continue;
+                }
 
-            TSMPNetworkIdentity identity = behaviour.GetComponent<TSMPNetworkIdentity>();
+                if (behaviour.transform != objectTransform)
+                    break;
+
+                index++;
+            }
+
+            return index;
+        }
+
+        private static ushort ResolveRequestedNetworkId(TSMPNetworkBehaviour[] behaviours, int startIndex, int endIndex)
+        {
+            for (int i = startIndex; i < endIndex; i++)
+            {
+                TSMPNetworkBehaviour behaviour = behaviours[i];
+                if (behaviour != null && behaviour.networkId != 0)
+                    return behaviour.networkId;
+            }
+
+            TSMPNetworkIdentity identity = behaviours[startIndex] != null ? behaviours[startIndex].GetComponent<TSMPNetworkIdentity>() : null;
             return identity != null ? identity.networkId : (ushort)0;
+        }
+
+        private static ushort ResolveUniqueNetworkId(
+            ushort requestedId,
+            HashSet<ushort> usedIds,
+            Dictionary<ushort, string> idOwners,
+            string objectPath,
+            TSMPNetworkBehaviour context)
+        {
+            if (requestedId == 0)
+                return AllocateNetworkId(usedIds);
+
+            if (!usedIds.Contains(requestedId))
+                return requestedId;
+
+            string ownerPath;
+            if (!idOwners.TryGetValue(requestedId, out ownerPath))
+                ownerPath = "<unknown>";
+
+            ushort resolvedId = AllocateNetworkId(usedIds);
+            if (resolvedId != 0)
+                Debug.LogWarning("[TSMP] Network ID collision resolved. id=" + requestedId + " first='" + ownerPath + "' duplicate='" + objectPath + "' reassigned=" + resolvedId + ".", context);
+
+            return resolvedId;
+        }
+
+        private static int AssignObjectGroupNetworkId(TSMPNetworkBehaviour[] behaviours, int startIndex, int endIndex, ushort networkId)
+        {
+            int assignedCount = 0;
+            for (int i = startIndex; i < endIndex; i++)
+            {
+                TSMPNetworkBehaviour behaviour = behaviours[i];
+                if (behaviour == null || behaviour.networkId == networkId)
+                    continue;
+
+                Undo.RecordObject(behaviour, "Assign TSMP network id");
+                behaviour.networkId = networkId;
+                EditorUtility.SetDirty(behaviour);
+                assignedCount++;
+            }
+
+            return assignedCount;
         }
 
         private static ushort AllocateNetworkId(HashSet<ushort> usedIds)
