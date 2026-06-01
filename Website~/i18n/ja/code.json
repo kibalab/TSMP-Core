@@ -1,0 +1,41 @@
+{
+  "homepage.meta.title": {
+    "message": "Texture Stream Message Protocol"
+  },
+  "homepage.meta.description": {
+    "message": "VRChat ワールドと Unity パッケージ向けの TSMP ドキュメントです。"
+  },
+  "homepage.eyebrow": {
+    "message": "KIBA_Labs TSMP"
+  },
+  "homepage.title": {
+    "message": "Texture Stream Message Protocol"
+  },
+  "homepage.subtitle": {
+    "message": "VRChat ワールド内で、表示されるテクスチャ フレームを通して構造化されたランタイム データを送信します。"
+  },
+  "homepage.action.docs": {
+    "message": "ドキュメントを読む"
+  },
+  "homepage.action.start": {
+    "message": "セットアップを始める"
+  },
+  "homepage.link.quickstart.title": {
+    "message": "クイック スタート"
+  },
+  "homepage.link.quickstart.text": {
+    "message": "controller prefab を配置し、Luma4 を選択して最初の TSMP frame を送信します。"
+  },
+  "homepage.link.setup.title": {
+    "message": "セットアップ"
+  },
+  "homepage.link.setup.text": {
+    "message": "codec を更新し、binding を適用して Encoder と Decoder の構成を保ちます。"
+  },
+  "homepage.link.developer.title": {
+    "message": "開発者向けドキュメント"
+  },
+  "homepage.link.developer.text": {
+    "message": "カスタム network behaviour、codec、shader decode path を実装します。"
+  }
+}

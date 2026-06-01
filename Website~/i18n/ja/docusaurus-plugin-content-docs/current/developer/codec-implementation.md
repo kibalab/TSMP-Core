@@ -67,7 +67,7 @@ com.example.tsmp.codec.mycodec/
 
 ```json
 "dependencies": {
-  "com.kibalab.tsmp.core": "1.0.0"
+  "com.kibalab.tsmp.core": "0.0.3-beta.2"
 }
 ```
 

@@ -67,7 +67,7 @@ The package should depend on Core:
 
 ```json
 "dependencies": {
-  "com.kibalab.tsmp.core": "1.0.0"
+  "com.kibalab.tsmp.core": "0.0.3-beta.2"
 }
 ```
 

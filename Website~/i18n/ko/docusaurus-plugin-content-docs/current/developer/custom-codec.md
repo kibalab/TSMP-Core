@@ -45,7 +45,7 @@ com.example.tsmp.codec.mycodec/
 Package는 Core에 의존해야 합니다.
 
 ```json
-"com.kibalab.tsmp.core": "1.0.0"
+"com.kibalab.tsmp.core": "0.0.3-beta.2"
 ```
 
 VRChat 사용자용 package라면 VPM dependency metadata도 함께 넣으세요.

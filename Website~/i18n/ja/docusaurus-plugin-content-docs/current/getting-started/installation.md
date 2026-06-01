@@ -42,14 +42,14 @@ TSMP
 Unity Package Manager を通じてインストールする場合は、同じパッケージ ID を使用します。
 
 ```json
-"com.kibalab.tsmp": "1.0.0"
+"com.kibalab.tsmp": "0.0.3-beta.2"
 ```
 
 デフォルトのパッケージは以下に依存します。
 
 ```json
-"com.kibalab.tsmp.core": "1.0.0",
-"com.kibalab.tsmp.codec.luma4": "1.0.0"
+"com.kibalab.tsmp.core": "0.0.3-beta.2",
+"com.kibalab.tsmp.codec.luma4": "0.0.3-beta.2"
 ```
 
 UPM を直接使用する特定のパッケージ管理理由がない限り、VRChat プロジェクトには VPM を使用します。
