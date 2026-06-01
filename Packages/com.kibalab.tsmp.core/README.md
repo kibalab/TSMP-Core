@@ -1,6 +1,6 @@
 # TSMP Core
 
-Core runtime package for TSMP, the Texture Stream Message Protocol.
+Core runtime package for TSMP, the Trans Sync Media Protocol.
 
 Install this package with a codec package such as `TSMP Codec Luma4`, add `Samples/TSMPController.prefab` to the scene, then use `TSMPSetup` to refresh codecs and apply the setup.
 

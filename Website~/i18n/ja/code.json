@@ -1,6 +1,6 @@
 {
   "homepage.meta.title": {
-    "message": "Texture Stream Message Protocol"
+    "message": "Trans Sync Media Protocol"
   },
   "homepage.meta.description": {
     "message": "VRChat ワールドと Unity パッケージ向けの TSMP ドキュメントです。"
@@ -9,7 +9,7 @@
     "message": "KIBA_Labs TSMP"
   },
   "homepage.title": {
-    "message": "Texture Stream Message Protocol"
+    "message": "Trans Sync Media Protocol"
   },
   "homepage.subtitle": {
     "message": "VRChat ワールド内で、表示されるテクスチャ フレームを通して構造化されたランタイム データを送信します。"

@@ -2,7 +2,7 @@
 
 # TSMP Core
 
-TSMP(Texture Stream Message Protocol) は、VRChat ワールド内でネットワーク状態、RPC、アバターのポーズ、Animator、Timeline などのランタイム データをテクスチャ ストリームで送るためのオープンソース パッケージです。
+TSMP(Trans Sync Media Protocol) は、VRChat ワールド内でネットワーク状態、RPC、アバターのポーズ、Animator、Timeline などのランタイム データをテクスチャ ストリームで送るためのオープンソース パッケージです。
 
 Core パッケージには、シーンに配置する基本ランタイムとセットアップ機能が含まれます。実際のピクセル エンコード方式は codec パッケージが担当します。標準構成では Luma4 codec を一緒にインストールしてください。
 

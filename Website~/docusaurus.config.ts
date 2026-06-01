@@ -8,7 +8,7 @@ const repositoryUrl = process.env.DOCUSAURUS_REPOSITORY_URL ?? 'https://github.c
 
 const config: Config = {
   title: 'TSMP',
-  tagline: 'Texture Stream Messaging Protocol for VRChat worlds',
+  tagline: 'Trans Sync Media Protocol for VRChat worlds',
   favicon: 'img/tsmp-logo.svg',
 
   url: siteUrl,

@@ -5,7 +5,7 @@ title: 소개
 
 # TSMP
 
-TSMP, Texture Stream Messaging Protocol은 런타임 데이터를 텍스처 프레임으로 보내는 프로토콜입니다.
+TSMP, Trans Sync Media Protocol은 런타임 데이터를 텍스처 프레임으로 보내는 프로토콜입니다.
 
 VRChat 월드에서는 송신자가 씬 상태를 보이는 텍스처로 인코딩하고, 캡처나 스트리밍 경로가 그 텍스처를 전달하며, 수신자가 다시 오브젝트 움직임, 아바타 포즈, 블렌드셰이프, Animator 상태, Timeline 상태, TSMP RPC 이벤트로 디코딩할 수 있습니다.
 
