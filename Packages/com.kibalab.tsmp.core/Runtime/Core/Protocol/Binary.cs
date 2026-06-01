@@ -362,9 +362,13 @@ namespace K13A.TSMP
                     int lo = value[i + 1];
                     next = lo >= 0xDC00 && lo <= 0xDFFF ? 4 : NetworkFrameProtocol.Utf8ReplacementBytes;
                 }
-                else
+                else if (code >= 0xDC00 && code <= 0xDFFF)
                 {
                     next = NetworkFrameProtocol.Utf8ReplacementBytes;
+                }
+                else
+                {
+                    next = NetworkFrameProtocol.Utf8ThreeByteSequenceBytes;
                 }
 
                 if (bytes + next > maxBytes)
@@ -420,9 +424,18 @@ namespace K13A.TSMP
                         cursor = WriteReplacement(buffer, cursor, end);
                     }
                 }
-                else
+                else if (code >= 0xDC00 && code <= 0xDFFF)
                 {
                     cursor = WriteReplacement(buffer, cursor, end);
+                }
+                else
+                {
+                    if (cursor + 2 >= end)
+                        break;
+
+                    buffer[cursor++] = (byte)(0xE0 | (code >> 12));
+                    buffer[cursor++] = (byte)(0x80 | ((code >> 6) & 0x3F));
+                    buffer[cursor++] = (byte)(0x80 | (code & 0x3F));
                 }
             }
 

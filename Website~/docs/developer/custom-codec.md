@@ -45,7 +45,7 @@ com.example.tsmp.codec.mycodec/
 The package should depend on:
 
 ```json
-"com.kibalab.tsmp.core": "0.0.3-beta.2"
+"com.kibalab.tsmp.core": "0.0.3-beta.3"
 ```
 
 Use VPM dependency metadata too if the package is intended for VRChat users.

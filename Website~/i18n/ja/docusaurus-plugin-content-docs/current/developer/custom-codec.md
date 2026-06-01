@@ -45,7 +45,7 @@ com.example.tsmp.codec.mycodec/
 パッケージは以下に依存する必要があります。
 
 ```json
-"com.kibalab.tsmp.core": "0.0.3-beta.2"
+"com.kibalab.tsmp.core": "0.0.3-beta.3"
 ```
 
 パッケージが VRChat ユーザーを対象としている場合は、VPM 依存関係メタデータも使用します。

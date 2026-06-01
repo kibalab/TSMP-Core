@@ -20,7 +20,7 @@ Package metadata는 사용자에게 보이는 정보입니다.
 {
   "name": "com.kibalab.tsmp.codec.yourcodec",
   "displayName": "TSMP Codec YourCodec",
-  "version": "0.0.3-beta.2",
+  "version": "0.0.3-beta.3",
   "author": {
     "name": "KIBA_Labs"
   },
@@ -30,7 +30,7 @@ Package metadata는 사용자에게 보이는 정보입니다.
     "com.kibalab.tsmp.core": ">=0.0.1"
   },
   "dependencies": {
-    "com.kibalab.tsmp.core": "0.0.3-beta.2"
+    "com.kibalab.tsmp.core": "0.0.3-beta.3"
   }
 }
 ```

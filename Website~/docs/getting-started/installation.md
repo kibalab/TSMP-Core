@@ -42,14 +42,14 @@ The default package installs Core and the Luma4 codec. Luma4 is the recommended 
 If you install through Unity Package Manager, use the same package IDs:
 
 ```json
-"com.kibalab.tsmp": "0.0.3-beta.2"
+"com.kibalab.tsmp": "0.0.3-beta.3"
 ```
 
 The default package depends on:
 
 ```json
-"com.kibalab.tsmp.core": "0.0.3-beta.2",
-"com.kibalab.tsmp.codec.luma4": "0.0.3-beta.2"
+"com.kibalab.tsmp.core": "0.0.3-beta.3",
+"com.kibalab.tsmp.codec.luma4": "0.0.3-beta.3"
 ```
 
 Use VPM for VRChat projects unless you have a specific package-management reason to use UPM directly.

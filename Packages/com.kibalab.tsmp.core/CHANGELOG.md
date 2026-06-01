@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.3-beta.3
+
+- Fixed UTF-8 string encoding for three-byte BMP characters, including variation selectors used by emoji sequences.
+
 ## 0.0.3-beta.2
 
 - Merged the latest main branch updates into the release branch.

@@ -42,14 +42,14 @@ TSMP
 Unity Package Manager로 설치하는 경우 같은 패키지 ID를 사용합니다.
 
 ```json
-"com.kibalab.tsmp": "0.0.3-beta.2"
+"com.kibalab.tsmp": "0.0.3-beta.3"
 ```
 
 기본 패키지는 다음 패키지에 의존합니다.
 
 ```json
-"com.kibalab.tsmp.core": "0.0.3-beta.2",
-"com.kibalab.tsmp.codec.luma4": "0.0.3-beta.2"
+"com.kibalab.tsmp.core": "0.0.3-beta.3",
+"com.kibalab.tsmp.codec.luma4": "0.0.3-beta.3"
 ```
 
 특별한 패키지 관리 이유가 없다면 VRChat 프로젝트에서는 VPM을 사용하세요.
