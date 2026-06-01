@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.3-beta.4
+
+- Added inspector error boxes for TransSync variable ID collisions.
+- Kept detailed TransSync collision logs in the Unity console.
+- Fixed UTF-8 encoding for non-ASCII BMP characters in synced strings.
+
 ## 0.0.3-beta.3
 
 - Fixed UTF-8 string encoding for three-byte BMP characters, including variation selectors used by emoji sequences.

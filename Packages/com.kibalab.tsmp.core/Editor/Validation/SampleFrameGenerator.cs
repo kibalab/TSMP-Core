@@ -9,13 +9,13 @@ namespace K13A.TSMP.Editor
     {
         private const string OutputPath = "Assets/TSMP/Generated/tsmp_sample_640x360.png";
 
-        [MenuItem("Tools/TSMP/Generate Sample 640x360 Frame")]
+        [MenuItem("TSMP/Debug/Generate Sample 640x360 Frame")]
         public static void GenerateSampleFrame()
         {
             GenerateSampleFrameInternal(false);
         }
 
-        [MenuItem("Tools/TSMP/Generate And Validate Sample 640x360 Frame")]
+        [MenuItem("TSMP/Debug/Generate And Validate Sample 640x360 Frame")]
         public static void GenerateAndValidateSampleFrame()
         {
             GenerateSampleFrameInternal(true);

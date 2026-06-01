@@ -53,6 +53,7 @@ namespace K13A.TSMP.Editor
             EditorGUILayout.Space(2f);
             DrawNetworkIdProperty();
             NetworkEditorUtil.DrawReceiveProperties(serializedObject, supportsContinuous);
+            DrawTransSyncCollisionWarnings();
             UdonSharpGUI.DrawUILine();
         }
 
@@ -96,6 +97,19 @@ namespace K13A.TSMP.Editor
 
             content.tooltip = _networkIdUnlocked ? "Lock Network ID" : "Unlock Network ID";
             return content;
+        }
+
+        private void DrawTransSyncCollisionWarnings()
+        {
+            for (int i = 0; i < targets.Length; i++)
+            {
+                TSMPNetworkBehaviour behaviour = targets[i] as TSMPNetworkBehaviour;
+                if (behaviour == null)
+                    continue;
+
+                if (TransSyncBindingBuilder.TryGetTransSyncCollisionWarning(behaviour, out string warning))
+                    EditorGUILayout.HelpBox(warning, MessageType.Error);
+            }
         }
 
         protected void DrawRemainingProperties(string[] excludedProperties)

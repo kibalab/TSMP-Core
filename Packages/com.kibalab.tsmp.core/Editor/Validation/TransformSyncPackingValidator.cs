@@ -14,7 +14,7 @@ namespace K13A.TSMP.Editor
         private const int PackedVector3ByteSize = 5;
         private const int PackedQuaternionByteSize = 5;
 
-        [MenuItem("Tools/TSMP/Validate TransformSync Packing")]
+        [MenuItem("TSMP/Debug/Validate TransformSync Packing")]
         public static void Validate()
         {
             var go = new GameObject("TSMP_TransformSync_Validator");
