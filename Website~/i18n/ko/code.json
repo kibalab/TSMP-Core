@@ -325,5 +325,44 @@
   "theme.tags.tagsPageTitle": {
     "message": "태그",
     "description": "The title of the tag list page"
+  },
+  "homepage.meta.title": {
+    "message": "Texture Stream Message Protocol"
+  },
+  "homepage.meta.description": {
+    "message": "VRChat 월드와 Unity 패키지를 위한 TSMP 문서입니다."
+  },
+  "homepage.eyebrow": {
+    "message": "KIBA_Labs TSMP"
+  },
+  "homepage.title": {
+    "message": "Texture Stream Message Protocol"
+  },
+  "homepage.subtitle": {
+    "message": "VRChat 월드에서 보이는 텍스처 프레임을 통해 구조화된 런타임 데이터를 전송합니다."
+  },
+  "homepage.action.docs": {
+    "message": "문서 보기"
+  },
+  "homepage.action.start": {
+    "message": "설정 시작"
+  },
+  "homepage.link.quickstart.title": {
+    "message": "빠른 시작"
+  },
+  "homepage.link.quickstart.text": {
+    "message": "컨트롤러 프리팹을 배치하고 Luma4를 선택한 뒤 첫 TSMP 프레임을 전송합니다."
+  },
+  "homepage.link.setup.title": {
+    "message": "설정"
+  },
+  "homepage.link.setup.text": {
+    "message": "코덱을 갱신하고 바인딩을 적용해 Encoder와 Decoder 구성을 유지합니다."
+  },
+  "homepage.link.developer.title": {
+    "message": "개발자 문서"
+  },
+  "homepage.link.developer.text": {
+    "message": "사용자 정의 네트워크 동작, 코덱, 셰이더 디코드 경로를 구현합니다."
   }
 }

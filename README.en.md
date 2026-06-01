@@ -1,4 +1,4 @@
-[한국어](README.md) | **English** | [日本語](README.ja.md)
+[한국어](README.ko.md) | **English** | [日本語](README.md)
 
 # TSMP Core
 

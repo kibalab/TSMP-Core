@@ -1,49 +1,49 @@
-**한국어** | [English](README.en.md) | [日本語](README.ja.md)
+[한국어](README.ko.md) | [English](README.en.md) | **日本語**
 
 # TSMP Core
 
-TSMP(Texture Stream Message Protocol)는 VRChat 월드에서 텍스처 스트림을 통해 네트워크 상태, RPC, 아바타 포즈, Animator, Timeline 같은 런타임 데이터를 전달하기 위한 오픈소스 패키지입니다.
+TSMP(Texture Stream Message Protocol) は、VRChat ワールド内でネットワーク状態、RPC、アバターのポーズ、Animator、Timeline などのランタイム データをテクスチャ ストリームで送るためのオープンソース パッケージです。
 
-Core 패키지는 TSMP를 씬에 배치하고 설정하는 기본 런타임입니다. 실제 픽셀 인코딩 방식은 코덱 패키지가 담당하며, 기본 사용에는 Luma4 코덱을 함께 설치하는 것을 권장합니다.
+Core パッケージには、シーンに配置する基本ランタイムとセットアップ機能が含まれます。実際のピクセル エンコード方式は codec パッケージが担当します。標準構成では Luma4 codec を一緒にインストールしてください。
 
-## 설치
+## インストール
 
-VRChat Creator Companion에서 VPM 저장소를 추가합니다.
+VRChat Creator Companion で VPM リポジトリを追加します。
 
 ```text
 https://vpm.kiba.red/
 ```
 
-그 다음 `TSMP Core`와 `TSMP Codec Luma4`를 설치합니다.
+その後、`TSMP Core` と `TSMP Codec Luma4` をインストールします。
 
-## 빠른 시작
+## クイック スタート
 
-1. `Packages/com.kibalab.tsmp.core/Samples/TSMPController.prefab`을 씬에 배치합니다.
-2. 전송할 오브젝트에 필요한 `TSMPNetwork*` 컴포넌트를 추가합니다.
-3. `TSMPSetup`에서 `Refresh Codecs`를 누르고 사용할 코덱을 선택합니다.
-4. `Apply Setup`을 실행해 Encoder, Decoder, codec handler, binding table을 갱신합니다.
-5. Encoder의 출력 RenderTexture를 송출하고, Decoder의 입력 RenderTexture에 같은 TSMP 화면을 넣습니다.
+1. `Packages/com.kibalab.tsmp.core/Samples/TSMPController.prefab` をシーンに配置します。
+2. 同期したいオブジェクトに必要な `TSMPNetwork*` コンポーネントを追加します。
+3. `TSMPSetup` で `Refresh Codecs` を押し、使用する codec を選択します。
+4. `Apply Setup` を実行し、Encoder、Decoder、codec handler、binding table を更新します。
+5. Encoder の出力 RenderTexture を配信し、同じ TSMP 映像を Decoder の入力 RenderTexture に入れます。
 
-## 포함 기능
+## 主な機能
 
 - TSMP Encoder / Decoder
-- TSMPSetup 자동 구성 도구
-- `[TransSync]` 필드 기반 상태 동기화
-- `SendTransRPC(methodName, target)` 기반 TSMP RPC
-- Transform, Rigidbody, Humanoid Pose, VRChat Avatar Pose, Animator, Timeline, BlendShape 동기화 컴포넌트
-- 코덱 패키지 자동 검색 및 선택 UI
-- 코덱 제작을 위한 공통 런타임, 셰이더 include, catalog asset 형식
+- TSMPSetup シーン設定ツール
+- `[TransSync]` によるフィールド同期
+- `SendTransRPC(methodName, target)` による TSMP RPC
+- Transform、Rigidbody、Humanoid Pose、VRChat Avatar Pose、Animator、Timeline、BlendShape 同期コンポーネント
+- codec パッケージの自動検出と選択 UI
+- カスタム codec パッケージ用の共通ランタイム、shader include、catalog asset
 
-## 문서
+## ドキュメント
 
-사용자 가이드와 개발자 문서는 아래에서 확인할 수 있습니다.
+ユーザー ガイドと開発者向けドキュメントはこちらです。
 
 https://kibalab.github.io/TSMP-Core/
 
-## 배포 상태
+## リリース状態
 
-현재 TSMP는 beta 단계입니다. 패키지 버전과 Git 태그는 `v0.0.x-beta.x` 형식을 사용합니다.
+TSMP は現在 beta 段階です。パッケージ バージョンと Git タグは `v0.0.x-beta.x` 形式を使用します。
 
-## 라이선스
+## ライセンス
 
 MIT License. Copyright (c) 2026 KIBA_Labs.
