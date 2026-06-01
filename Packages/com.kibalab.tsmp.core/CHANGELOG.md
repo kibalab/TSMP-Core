@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.0
+
+- Promoted the package version out of beta.
+- Added the complete TSMP sample assets under `Samples`.
+
 ## 0.0.3-beta.4
 
 - Added inspector error boxes for TransSync variable ID collisions.
