@@ -678,7 +678,13 @@ namespace K13A.TSMP.Udon
             {
                 Transform ancestor = _boneTargetsById[ancestorBoneId];
                 if (ancestor != null)
-                    return _receivedBoneWorldRotations[ancestorBoneId] * Quaternion.Inverse(ancestor.rotation) * parent.rotation;
+                {
+                    Quaternion ancestorWorldRotation = _receivedBoneWorldRotations[ancestorBoneId];
+                    if (ancestor == parent)
+                        return ancestorWorldRotation;
+
+                    return ancestorWorldRotation * Quaternion.Inverse(ancestor.rotation) * parent.rotation;
+                }
             }
 
             return parent.rotation;
