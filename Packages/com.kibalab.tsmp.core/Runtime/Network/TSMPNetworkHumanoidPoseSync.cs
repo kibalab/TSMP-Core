@@ -126,6 +126,9 @@ namespace K13A.TSMP.Udon
         private Quaternion[] _receivedBoneWorldRotations;
         private bool[] _hasReceivedBoneWorldRotation;
         private int[] _boneParentIdsById;
+        private int[] _receivedAncestorBoneIdsById;
+        private bool _receivedAncestorBoneIdsValid;
+        private int _receivedAncestorBoneIdsHash;
         private bool _hasContinuousBoneTargets;
         private bool _hasContinuousRootTarget;
         private bool _continuousRootIsLocal;
@@ -630,6 +633,7 @@ namespace K13A.TSMP.Udon
 
             int hips = (int)HumanBodyBones.Hips;
             int count = _hasReceivedBoneWorldRotation.Length;
+            EnsureReceivedAncestorBoneIdsCache();
             for (int i = 0; i < count; i++)
             {
                 if (!_hasReceivedBoneWorldRotation[i])
@@ -658,8 +662,19 @@ namespace K13A.TSMP.Udon
 
         private Quaternion GetContinuousParentWorldRotation(int boneId, Transform parent)
         {
-            int ancestorBoneId = FindReceivedAncestorBoneId(boneId);
-            if (ancestorBoneId >= 0 && _boneTargetsById != null && ancestorBoneId < _boneTargetsById.Length && _receivedBoneWorldRotations != null)
+            int ancestorBoneId = -1;
+            if (_receivedAncestorBoneIdsById != null && boneId >= 0 && boneId < _receivedAncestorBoneIdsById.Length)
+                ancestorBoneId = _receivedAncestorBoneIdsById[boneId];
+
+            bool ancestorAvailable = ancestorBoneId >= 0
+                                     && _boneTargetsById != null
+                                     && _receivedBoneWorldRotations != null
+                                     && _hasReceivedBoneWorldRotation != null
+                                     && ancestorBoneId < _boneTargetsById.Length
+                                     && ancestorBoneId < _receivedBoneWorldRotations.Length
+                                     && ancestorBoneId < _hasReceivedBoneWorldRotation.Length
+                                     && _hasReceivedBoneWorldRotation[ancestorBoneId];
+            if (ancestorAvailable)
             {
                 Transform ancestor = _boneTargetsById[ancestorBoneId];
                 if (ancestor != null)
@@ -667,6 +682,40 @@ namespace K13A.TSMP.Udon
             }
 
             return parent.rotation;
+        }
+
+        private void EnsureReceivedAncestorBoneIdsCache()
+        {
+            if (_receivedAncestorBoneIdsById == null || _hasReceivedBoneWorldRotation == null)
+                return;
+
+            int hash = ComputeReceivedBoneWorldRotationHash();
+            if (_receivedAncestorBoneIdsValid && _receivedAncestorBoneIdsHash == hash)
+                return;
+
+            _receivedAncestorBoneIdsHash = hash;
+            _receivedAncestorBoneIdsValid = true;
+
+            int count = _receivedAncestorBoneIdsById.Length;
+            for (int i = 0; i < count; i++)
+                _receivedAncestorBoneIdsById[i] = FindReceivedAncestorBoneId(i);
+        }
+
+        private int ComputeReceivedBoneWorldRotationHash()
+        {
+            if (_hasReceivedBoneWorldRotation == null)
+                return 0;
+
+            int hash = 17;
+            int count = _hasReceivedBoneWorldRotation.Length;
+            hash = hash * 31 + count;
+            for (int i = 0; i < count; i++)
+            {
+                if (_hasReceivedBoneWorldRotation[i])
+                    hash = hash * 31 + i;
+            }
+
+            return hash;
         }
 
         private int FindReceivedAncestorBoneId(int boneId)
@@ -769,6 +818,13 @@ namespace K13A.TSMP.Udon
                 for (int i = 0; i < lastBone; i++)
                     _boneParentIdsById[i] = -1;
             }
+            if (_receivedAncestorBoneIdsById == null || _receivedAncestorBoneIdsById.Length != lastBone)
+            {
+                _receivedAncestorBoneIdsById = new int[lastBone];
+                for (int i = 0; i < lastBone; i++)
+                    _receivedAncestorBoneIdsById[i] = -1;
+                _receivedAncestorBoneIdsValid = false;
+            }
             if (boneIds != null && (_activeBoneIndices == null || _activeBoneIndices.Length != boneIds.Length))
                 _activeBoneIndices = new int[boneIds.Length];
             if (boneIds != null && (_activeBoneIds == null || _activeBoneIds.Length != boneIds.Length))
@@ -849,6 +905,8 @@ namespace K13A.TSMP.Udon
                     parent = parent.parent;
                 }
             }
+
+            _receivedAncestorBoneIdsValid = false;
         }
 
         private int FindBoneIdByTransform(Transform target)
