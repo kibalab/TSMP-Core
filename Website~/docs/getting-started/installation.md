@@ -4,62 +4,73 @@ title: Installation
 
 # Installation
 
-Install TSMP through VRChat Creator Companion or another VPM-compatible package manager.
-
-For normal VRChat world projects, use VPM. It installs TSMP with the package metadata that VRChat tooling expects.
+Choose the installation method for the application you are building. TSMP uses the same component sources in ordinary Unity and VRChat; you do not need a separate standalone branch.
 
 ## Requirements
 
-Required:
+- Unity 2022.3 LTS. The standalone validation uses Unity 2022.3.22f1 on Windows.
+- Core and an actual codec package. Start with Luma4.
+- A graphics device supporting the codec shaders and asynchronous GPU readback.
+- VRChat Worlds SDK 3.9.0 or newer, including UdonSharp, **only for VRChat worlds**.
 
-- Unity 2022.3 LTS.
+Without the SDK, the components run as MonoBehaviours. Animator-based humanoid capture, Transform synchronization, TransSync fields and RPC can run in Unity Editor and a Windows Player. Capturing VRChat players requires the SDK; receiving their pose packets and playing them on configured avatar rigs does not require player APIs.
 
-Optional, depending on how you use TSMP:
+## VRChat: VPM
 
-- VRChat Worlds SDK 3.9.0 or newer when building a VRChat world.
-- UdonSharp when running TSMP inside VRChat.
-
-The VRChat SDK is optional because TSMP package assets can be opened outside a VRChat world project. It becomes required when you want to compile UdonSharp behaviours or upload a VRChat world.
-
-## VPM repository
-
-Add this VPM repository:
+Add the following repository to VRChat Creator Companion or another VPM-compatible manager:
 
 ```text
 https://vpm.kiba.red/
 ```
 
-Then install:
+Install **TSMP Core** and **TSMP Codec Luma4**, or the TSMP bundle containing both. VPM metadata retains the Worlds SDK dependency for this installation route.
 
-```text
-TSMP
-```
+Wait for package import and the SDK's script compilation to finish, then use the shared controller below. TSMP prepares its Udon components and bindings automatically.
 
-The default package installs Core and the Luma4 codec. Luma4 is the recommended first codec and is used by the sample controller prefab.
+## Ordinary Unity: UPM
 
-## UPM package IDs
+Use Core and Luma4 revisions containing standalone Unity support. Older packages may still declare a Worlds SDK dependency in their UPM metadata; merely deleting SDK scripting symbols will not fix those versions.
 
-If you install through Unity Package Manager, use the same package IDs:
+The validated installation method is **Add package from disk** in Unity Package Manager:
+
+1. Obtain Core and Luma4 package sources.
+2. Select Core's `Packages/com.kibalab.tsmp.core/package.json`.
+3. Select Luma4's `Packages/com.kibalab.tsmp.codec.luma4/package.json`.
+4. Wait for package resolution and script compilation.
+
+Alternatively, point your project's `Packages/manifest.json` dependencies to those local package folders. Adjust the paths to your machine:
 
 ```json
-"com.kibalab.tsmp": "0.0.3-beta.1"
+{
+  "dependencies": {
+    "com.kibalab.tsmp.core": "file:../../TSMP-Core/Packages/com.kibalab.tsmp.core",
+    "com.kibalab.tsmp.codec.luma4": "file:../../TSMPCodec-Luma4/Packages/com.kibalab.tsmp.codec.luma4"
+  }
+}
 ```
 
-The default package depends on:
+Merge these entries into your existing dependencies; do not replace the whole manifest. UPM installs Unity module dependencies without installing VRCSDK. The VPM SDK requirements are separate from UPM dependencies.
 
-```json
-"com.kibalab.tsmp.core": "0.0.3-beta.1",
-"com.kibalab.tsmp.codec.luma4": "0.0.3-beta.1"
-```
+Do not define `UDONSHARP` or `COMPILER_UDONSHARP` manually in a project without the SDK. If removing an SDK from an existing project, also remove its stale custom scripting symbols.
 
-Use VPM for VRChat projects unless you have a specific package-management reason to use UPM directly.
+## Add the controller
 
-## After installation
+In both ordinary Unity and VRChat, drag `Packages/com.kibalab.tsmp.core/Samples/TSMPController.prefab` into your scene. No conversion command or manual Apply Setup step is needed. Setup creates the required components and discovers installed codecs automatically.
 
-Confirm these assets are available:
+The shared sample initially connects Encoder output directly to Decoder input for a local loopback. Assign Decoder Source Texture when you are ready to receive an external stream. SDK presence never changes your chosen input or codec.
 
-- `Packages/com.kibalab.tsmp.core/Samples/TSMPController.prefab`
-- The Luma4 codec package.
-- `TSMPSetup`, `TSMPEncoder`, and `TSMPDecoder` components in Add Component.
+Working textures and materials are prepared automatically under `Assets/TSMPGenerated`. Keep these assets with your scene in version control. They keep controllers independent without modifying installed package resources.
 
-If any of these are missing, refresh the VCC package list and confirm the TSMP repository was added correctly.
+The package's Udon program assets are used only with the SDK. The shared Controller is SDK-neutral; other demonstration scenes may still use optional avatars, streaming plugins, or VRChat components and require those dependencies.
+
+## Existing scenes
+
+Existing Controller instances keep their original prefab references and overrides: the previous prefab is retained at `Samples/Legacy/TSMPControllerLegacy.prefab` with its original GUID. New instances use the shared `Samples/TSMPController.prefab`. Existing SDK scenes do not need a conversion command. When moving a legacy scene into an SDK-free project, use the shared Controller and review the scene's other optional dependencies; the legacy prefab is not a universal SDK-free sample.
+
+## Player settings
+
+Windows x64 with the Mono backend and managed stripping disabled is the validated standalone configuration. Keep **Run In Background** enabled when the sender or receiver must keep updating while another application has focus.
+
+IL2CPP and managed stripping need separate validation for your application: reflection is used to discover TransSync fields and invoke RPC methods. Preserve fields and methods used only through reflection when enabling stripping; a successful Mono build does not prove an IL2CPP build works.
+
+Continue with [Quickstart](quickstart.md).

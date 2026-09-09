@@ -10,13 +10,13 @@ The goal is not to tune performance yet. The first goal is to prove that a TSMP 
 
 ## 1. Add the controller prefab
 
-Drag this prefab into the scene:
+In both ordinary Unity and VRChat, drag this prefab into the scene:
 
 ```text
 Packages/com.kibalab.tsmp.core/Samples/TSMPController.prefab
 ```
 
-The prefab is the recommended starting point. It contains the normal controller objects, codec references, encoder, decoder, and setup entry point.
+Setup automatically prepares the encoder, decoder, and installed codecs. No conversion menu or backend selection is required. See [Installation](installation.md) for package requirements and Player settings.
 
 Keep the prefab together while learning TSMP. Splitting sender and receiver objects is easier after a loopback test works.
 
@@ -50,19 +50,9 @@ Add TSMP network components to the objects you want to send:
 
 Only enabled components on active GameObjects participate. Disable a component or GameObject to stop it from sending and applying TSMP data.
 
-## 4. Apply setup
+## 4. Check the setup
 
-Select the object with `TSMPSetup` and click `Apply Setup`.
-
-Run this again after you:
-
-- Add or remove TSMP network components.
-- Move synchronized objects between prefabs or scene objects.
-- Change Luma4 or texture references.
-- Change manual network IDs.
-- Replace encoder, decoder, or codec objects.
-
-`Apply Setup` is important because it rebuilds the binding table used by both encoder and decoder.
+Select `TSMPSetup` and confirm the selected codec and input/output references. Component, codec, and binding changes are prepared automatically, including before Play Mode and builds. The existing `Apply Setup` button is an optional manual refresh, not a required setup step.
 
 ## 5. Test the stream
 
@@ -82,6 +72,8 @@ For a capture loopback, see [OBS and Spout loopback](../guides/obs-spout-loopbac
 ## Recommended first test
 
 Use `TSMPNetworkGameObjectToggle` first.
+
+This Interact test is for VRChat. In ordinary Unity, start with `TSMPNetworkTransformSync` and drive its target from an animation or script. A UI button or script can call `SendTransRPC` for the RPC test; Unity does not generate VRChat Interact events.
 
 With `RPCTarget.All`, Interact should toggle the object immediately on the sender. After the stream delay, the decoded RPC should toggle it again. This proves that short event messages survive the path.
 

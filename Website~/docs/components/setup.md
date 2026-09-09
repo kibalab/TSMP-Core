@@ -6,13 +6,13 @@ title: TSMPSetup
 
 Use `TSMPSetup` to prepare a scene for TSMP.
 
-This is the component you should visit whenever something about the TSMP scene changes. It connects the encoder, decoder, codec, render textures, network IDs, and generated binding data.
+It connects the encoder, decoder, codec, render textures, network IDs, and generated binding data. The same controller prefab and inspector work with or without the VRChat SDK.
 
 ## When you need it
 
-Run setup whenever the scene structure changes. This keeps encoder, decoder, Luma4 references, network IDs, and binding tables aligned.
+Scene instances prepare themselves automatically after import and when the hierarchy or setup settings change. Preparation also runs before saving the scene, entering Play mode, and building. You do not need a conversion menu or a separate SDK-free setup step.
 
-Click `Apply Setup` after:
+Automatic preparation handles changes such as:
 
 - Adding or removing a `TSMPNetwork*` component.
 - Changing which object should be encoded or decoded.
@@ -22,7 +22,7 @@ Click `Apply Setup` after:
 - Changing manual network IDs.
 - Moving TSMP components into or out of prefabs.
 
-If the encoded texture changes but receiver objects do not move, run `Apply Setup` before debugging anything else.
+If the encoded texture changes but receiver objects do not move, check the Bindings tab and the decoder source. `Apply Setup` is available as an optional manual refresh, not a required step after every edit.
 
 ## Common workflow
 
@@ -30,7 +30,7 @@ If the encoded texture changes but receiver objects do not move, run `Apply Setu
 2. Assign texture and scene references in the Reference tab.
 3. Confirm Luma4 is selected in the Codec tab.
 4. Add TSMP sync components to objects.
-5. Click `Apply Setup`.
+5. Check that the expected objects appear in the Bindings tab.
 6. Enter Play mode or test in VRChat.
 7. Watch `TSMPDebugCanvas` while moving or interacting with synced objects.
 
@@ -45,7 +45,7 @@ If the encoded texture changes but receiver objects do not move, run `Apply Setu
 
 ## What to assign first
 
-For a normal prefab setup, check these fields before pressing `Apply Setup`:
+The prefab supplies encoder, decoder, codec, and work-texture references automatically. Check or replace these fields for your scene:
 
 | Field group | What to assign |
 | --- | --- |
@@ -58,9 +58,13 @@ For a normal prefab setup, check these fields before pressing `Apply Setup`:
 
 If the decoder is receiving from OBS or another capture path, `Decoder source` should be that captured texture, not the raw encoder output texture.
 
+The default controller uses its encoder output as the decoder source for a local test. Installing the VRChat SDK does not change this setting. Assign the received image explicitly when setting up an external stream.
+
+Package render textures and materials are templates. Each controller gets editable copies in `Assets/TSMPGenerated`; keep these generated assets with the scene in version control. Duplicating a controller gives it separate work textures. User-assigned textures outside the package are retained.
+
 ## Apply Setup
 
-`Apply Setup` does more than save settings. It updates runtime data used by the encoder and decoder:
+Automatic preparation and the optional `Apply Setup` button update the same runtime data:
 
 - Assigns selected codec references.
 - Calculates frame layout and payload capacity.
@@ -78,7 +82,7 @@ Start with:
 
 - Automatic codec discovery enabled.
 - Luma4 selected.
-- Automatic setup enabled.
+- Keep the controller in the scene so its setup references can be prepared.
 - Generated network IDs.
 - Default block size and sample size.
 - `TSMPDebugCanvas` visible during tests.
@@ -89,8 +93,8 @@ Lock down manual IDs and custom references only after the basic stream works.
 
 | Symptom | Likely setup issue |
 | --- | --- |
-| Encoder runs but `payload=0` | No enabled TSMP network component was found, or setup was not reapplied. |
+| Encoder runs but `payload=0` | No enabled TSMP network component was found within the configured binding scope. |
 | Decoder sees frames but applies nothing | Bindings do not match receiver components or receive interpolation is `None`. |
 | Luma4 is missing | Codec package or catalog was not imported/discovered. |
 | Data disappears after adding players | Payload capacity is too small for the new data set. |
-| Editor output uses old codec | Codec selection changed but setup/materials were not reapplied. |
+| Editor output uses old codec | Check the selected codec, the encoder reference, and whether you are viewing this controller's output texture. |
