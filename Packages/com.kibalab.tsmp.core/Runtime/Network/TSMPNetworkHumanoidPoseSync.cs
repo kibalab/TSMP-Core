@@ -123,7 +123,12 @@ namespace K13A.TSMP.Udon
         private bool _fingerBoneIdsPreparedInclude;
         private Quaternion[] _targetBoneRotations;
         private bool[] _hasTargetBoneRotation;
-        private bool[] _targetBoneRotationIsLocal;
+        private Quaternion[] _receivedBoneWorldRotations;
+        private bool[] _hasReceivedBoneWorldRotation;
+        private int[] _boneParentIdsById;
+        private int[] _receivedAncestorBoneIdsById;
+        private bool _receivedAncestorBoneIdsValid;
+        private int _receivedAncestorBoneIdsHash;
         private bool _hasContinuousBoneTargets;
         private bool _hasContinuousRootTarget;
         private bool _continuousRootIsLocal;
@@ -287,6 +292,12 @@ namespace K13A.TSMP.Udon
 
             Transform[] targetsById = _boneTargetsById;
             bool continuous = receiveInterpolation == ReceiveInterpolationMode.Continuous;
+            if (continuous)
+            {
+                EnsureLookupArrays();
+                targetsById = _boneTargetsById;
+                ClearReceivedBoneWorldRotations();
+            }
 
             for (int i = 0; i < count; i++)
             {
@@ -311,26 +322,23 @@ namespace K13A.TSMP.Udon
 
                 if (continuous)
                 {
-                    if (_targetBoneRotations != null && _hasTargetBoneRotation != null && _targetBoneRotationIsLocal != null && rawBoneId < _targetBoneRotations.Length)
+                    if (_targetBoneRotations != null && _hasTargetBoneRotation != null && rawBoneId < _targetBoneRotations.Length)
                     {
-                        if (animatorRootSpaceRotations && animatorRoot != null)
-                        {
-                            _targetBoneRotations[rawBoneId] = animatorRootRotation * rotation;
-                            _targetBoneRotationIsLocal[rawBoneId] = false;
-                        }
-                        else if (localRotations)
+                        if (localRotations)
                         {
                             _targetBoneRotations[rawBoneId] = rotation;
-                            _targetBoneRotationIsLocal[rawBoneId] = true;
+                            _hasTargetBoneRotation[rawBoneId] = true;
+                            _hasContinuousBoneTargets = true;
                         }
-                        else
+                        else if (_receivedBoneWorldRotations != null && _hasReceivedBoneWorldRotation != null && rawBoneId < _receivedBoneWorldRotations.Length)
                         {
-                            _targetBoneRotations[rawBoneId] = rotation;
-                            _targetBoneRotationIsLocal[rawBoneId] = false;
-                        }
+                            if (animatorRootSpaceRotations && animatorRoot != null)
+                                _receivedBoneWorldRotations[rawBoneId] = animatorRootRotation * rotation;
+                            else
+                                _receivedBoneWorldRotations[rawBoneId] = rotation;
 
-                        _hasTargetBoneRotation[rawBoneId] = true;
-                        _hasContinuousBoneTargets = true;
+                            _hasReceivedBoneWorldRotation[rawBoneId] = true;
+                        }
                     }
                 }
                 else if (animatorRootSpaceRotations && animatorRoot != null)
@@ -347,6 +355,7 @@ namespace K13A.TSMP.Udon
                 }
             }
 
+            bool skipContinuousRootBoneRotation = false;
             if (version >= 2 && (flags & PoseFlagHasRootMotionPosition) != 0 && cursor + PoseRootMotionPositionBytes <= poseBytes.Length)
             {
                 Vector3 rootPosition = Binary.ReadVector3Float32LE(poseBytes, cursor);
@@ -370,6 +379,11 @@ namespace K13A.TSMP.Udon
                         _continuousRootIsLocal = false;
                         _continuousRootHasRotation = hasRootRotation;
                         _hasContinuousRootTarget = true;
+                        if (hasRootRotation)
+                        {
+                            SetReceivedRootWorldRotation(target, rootRotation, false);
+                            skipContinuousRootBoneRotation = true;
+                        }
                     }
                     else
                     {
@@ -388,6 +402,11 @@ namespace K13A.TSMP.Udon
                         _continuousRootIsLocal = false;
                         _continuousRootHasRotation = hasRootRotation;
                         _hasContinuousRootTarget = true;
+                        if (hasRootRotation)
+                        {
+                            SetReceivedRootWorldRotation(target, _continuousRootRotation, false);
+                            skipContinuousRootBoneRotation = true;
+                        }
                     }
                     else
                     {
@@ -405,6 +424,11 @@ namespace K13A.TSMP.Udon
                         _continuousRootIsLocal = true;
                         _continuousRootHasRotation = hasRootRotation;
                         _hasContinuousRootTarget = true;
+                        if (hasRootRotation)
+                        {
+                            SetReceivedRootWorldRotation(target, rootRotation, true);
+                            skipContinuousRootBoneRotation = true;
+                        }
                     }
                     else
                     {
@@ -414,6 +438,9 @@ namespace K13A.TSMP.Udon
                     }
                 }
             }
+
+            if (continuous)
+                ConvertReceivedWorldRotationsToLocalTargets(skipContinuousRootBoneRotation);
         }
 
         public override void OnTSMPVariableReceived()
@@ -479,6 +506,7 @@ namespace K13A.TSMP.Udon
             }
 
             _rootMotionTarget = _boneTargetsById[(int)HumanBodyBones.Hips];
+            RebuildBoneParentLookup();
             RebuildActiveBoneIndices();
             _resolvedAnimator = animator;
             _resolvedBones = true;
@@ -570,6 +598,155 @@ namespace K13A.TSMP.Udon
             return HumanoidBoneUtil.HasBoneId(_hasBoneId, boneId);
         }
 
+        private void ClearReceivedBoneWorldRotations()
+        {
+            if (_hasReceivedBoneWorldRotation == null)
+                return;
+
+            int count = _hasReceivedBoneWorldRotation.Length;
+            for (int i = 0; i < count; i++)
+                _hasReceivedBoneWorldRotation[i] = false;
+        }
+
+        private void SetReceivedRootWorldRotation(Transform root, Quaternion rootRotation, bool rootRotationIsLocal)
+        {
+            int hips = (int)HumanBodyBones.Hips;
+            if (root == null || _receivedBoneWorldRotations == null || _hasReceivedBoneWorldRotation == null || hips >= _receivedBoneWorldRotations.Length)
+                return;
+
+            Quaternion worldRotation = rootRotation;
+            if (rootRotationIsLocal)
+            {
+                Transform parent = root.parent;
+                if (parent != null)
+                    worldRotation = parent.rotation * rootRotation;
+            }
+
+            _receivedBoneWorldRotations[hips] = worldRotation;
+            _hasReceivedBoneWorldRotation[hips] = true;
+        }
+
+        private void ConvertReceivedWorldRotationsToLocalTargets(bool skipRootBoneRotation)
+        {
+            if (_receivedBoneWorldRotations == null || _hasReceivedBoneWorldRotation == null || _targetBoneRotations == null || _hasTargetBoneRotation == null || _boneTargetsById == null)
+                return;
+
+            int hips = (int)HumanBodyBones.Hips;
+            int count = _hasReceivedBoneWorldRotation.Length;
+            EnsureReceivedAncestorBoneIdsCache();
+            for (int i = 0; i < count; i++)
+            {
+                if (!_hasReceivedBoneWorldRotation[i])
+                    continue;
+
+                if (skipRootBoneRotation && i == hips)
+                {
+                    _hasTargetBoneRotation[i] = false;
+                    continue;
+                }
+
+                Transform target = i < _boneTargetsById.Length ? _boneTargetsById[i] : null;
+                if (target == null)
+                    continue;
+
+                Transform parent = target.parent;
+                Quaternion parentWorldRotation = Quaternion.identity;
+                if (parent != null)
+                    parentWorldRotation = GetContinuousParentWorldRotation(i, parent);
+
+                _targetBoneRotations[i] = Quaternion.Inverse(parentWorldRotation) * _receivedBoneWorldRotations[i];
+                _hasTargetBoneRotation[i] = true;
+                _hasContinuousBoneTargets = true;
+            }
+        }
+
+        private Quaternion GetContinuousParentWorldRotation(int boneId, Transform parent)
+        {
+            int ancestorBoneId = -1;
+            if (_receivedAncestorBoneIdsById != null && boneId >= 0 && boneId < _receivedAncestorBoneIdsById.Length)
+                ancestorBoneId = _receivedAncestorBoneIdsById[boneId];
+
+            bool ancestorAvailable = ancestorBoneId >= 0
+                                     && _boneTargetsById != null
+                                     && _receivedBoneWorldRotations != null
+                                     && _hasReceivedBoneWorldRotation != null
+                                     && ancestorBoneId < _boneTargetsById.Length
+                                     && ancestorBoneId < _receivedBoneWorldRotations.Length
+                                     && ancestorBoneId < _hasReceivedBoneWorldRotation.Length
+                                     && _hasReceivedBoneWorldRotation[ancestorBoneId];
+            if (ancestorAvailable)
+            {
+                Transform ancestor = _boneTargetsById[ancestorBoneId];
+                if (ancestor != null)
+                {
+                    Quaternion ancestorWorldRotation = _receivedBoneWorldRotations[ancestorBoneId];
+                    if (ancestor == parent)
+                        return ancestorWorldRotation;
+
+                    return ancestorWorldRotation * Quaternion.Inverse(ancestor.rotation) * parent.rotation;
+                }
+            }
+
+            return parent.rotation;
+        }
+
+        private void EnsureReceivedAncestorBoneIdsCache()
+        {
+            if (_receivedAncestorBoneIdsById == null || _hasReceivedBoneWorldRotation == null)
+                return;
+
+            int hash = ComputeReceivedBoneWorldRotationHash();
+            if (_receivedAncestorBoneIdsValid && _receivedAncestorBoneIdsHash == hash)
+                return;
+
+            _receivedAncestorBoneIdsHash = hash;
+            _receivedAncestorBoneIdsValid = true;
+
+            int count = _receivedAncestorBoneIdsById.Length;
+            for (int i = 0; i < count; i++)
+                _receivedAncestorBoneIdsById[i] = FindReceivedAncestorBoneId(i);
+        }
+
+        private int ComputeReceivedBoneWorldRotationHash()
+        {
+            if (_hasReceivedBoneWorldRotation == null)
+                return 0;
+
+            int hash = 17;
+            int count = _hasReceivedBoneWorldRotation.Length;
+            hash = hash * 31 + count;
+            for (int i = 0; i < count; i++)
+            {
+                if (_hasReceivedBoneWorldRotation[i])
+                    hash = hash * 31 + i;
+            }
+
+            return hash;
+        }
+
+        private int FindReceivedAncestorBoneId(int boneId)
+        {
+            if (_boneParentIdsById == null || _hasReceivedBoneWorldRotation == null)
+                return -1;
+
+            int lastBone = _boneParentIdsById.Length;
+            int parentBoneId = -1;
+            if (boneId >= 0 && boneId < lastBone)
+                parentBoneId = _boneParentIdsById[boneId];
+
+            int guard = 0;
+            while (parentBoneId >= 0 && parentBoneId < lastBone && guard < lastBone)
+            {
+                if (parentBoneId < _hasReceivedBoneWorldRotation.Length && _hasReceivedBoneWorldRotation[parentBoneId])
+                    return parentBoneId;
+
+                parentBoneId = _boneParentIdsById[parentBoneId];
+                guard++;
+            }
+
+            return -1;
+        }
+
         private void ApplyContinuousPose()
         {
             if (receiveInterpolation != ReceiveInterpolationMode.Continuous || !IsTSMPActive())
@@ -577,7 +754,7 @@ namespace K13A.TSMP.Udon
 
             float step = GetReceiveInterpolationStep();
             bool hasBoneTargets = false;
-            if (_hasContinuousBoneTargets && _hasTargetBoneRotation != null && _targetBoneRotations != null && _targetBoneRotationIsLocal != null && _boneTargetsById != null)
+            if (_hasContinuousBoneTargets && _hasTargetBoneRotation != null && _targetBoneRotations != null && _boneTargetsById != null)
             {
                 int count = _hasTargetBoneRotation.Length;
                 for (int i = 0; i < count; i++)
@@ -590,10 +767,7 @@ namespace K13A.TSMP.Udon
                         continue;
 
                     Quaternion targetRotation = _targetBoneRotations[i];
-                    if (_targetBoneRotationIsLocal[i])
-                        target.localRotation = Quaternion.Slerp(target.localRotation, targetRotation, step);
-                    else
-                        target.rotation = Quaternion.Slerp(target.rotation, targetRotation, step);
+                    target.localRotation = Quaternion.Slerp(target.localRotation, targetRotation, step);
 
                     hasBoneTargets = true;
                 }
@@ -640,8 +814,23 @@ namespace K13A.TSMP.Udon
                 _targetBoneRotations = new Quaternion[lastBone];
             if (_hasTargetBoneRotation == null || _hasTargetBoneRotation.Length != lastBone)
                 _hasTargetBoneRotation = new bool[lastBone];
-            if (_targetBoneRotationIsLocal == null || _targetBoneRotationIsLocal.Length != lastBone)
-                _targetBoneRotationIsLocal = new bool[lastBone];
+            if (_receivedBoneWorldRotations == null || _receivedBoneWorldRotations.Length != lastBone)
+                _receivedBoneWorldRotations = new Quaternion[lastBone];
+            if (_hasReceivedBoneWorldRotation == null || _hasReceivedBoneWorldRotation.Length != lastBone)
+                _hasReceivedBoneWorldRotation = new bool[lastBone];
+            if (_boneParentIdsById == null || _boneParentIdsById.Length != lastBone)
+            {
+                _boneParentIdsById = new int[lastBone];
+                for (int i = 0; i < lastBone; i++)
+                    _boneParentIdsById[i] = -1;
+            }
+            if (_receivedAncestorBoneIdsById == null || _receivedAncestorBoneIdsById.Length != lastBone)
+            {
+                _receivedAncestorBoneIdsById = new int[lastBone];
+                for (int i = 0; i < lastBone; i++)
+                    _receivedAncestorBoneIdsById[i] = -1;
+                _receivedAncestorBoneIdsValid = false;
+            }
             if (boneIds != null && (_activeBoneIndices == null || _activeBoneIndices.Length != boneIds.Length))
                 _activeBoneIndices = new int[boneIds.Length];
             if (boneIds != null && (_activeBoneIds == null || _activeBoneIds.Length != boneIds.Length))
@@ -692,6 +881,53 @@ namespace K13A.TSMP.Udon
             _cachedBoneIdHash = GetBoneIdHash();
             _cachedIncludeFingerBones = includeFingerBones;
             _boneCacheValid = true;
+        }
+
+        private void RebuildBoneParentLookup()
+        {
+            if (_boneParentIdsById == null || _boneTargetsById == null)
+                return;
+
+            int lastBone = _boneParentIdsById.Length;
+            for (int i = 0; i < lastBone; i++)
+                _boneParentIdsById[i] = -1;
+
+            for (int i = 0; i < lastBone; i++)
+            {
+                Transform target = i < _boneTargetsById.Length ? _boneTargetsById[i] : null;
+                if (target == null)
+                    continue;
+
+                Transform parent = target.parent;
+                while (parent != null)
+                {
+                    int parentBoneId = FindBoneIdByTransform(parent);
+                    if (parentBoneId >= 0)
+                    {
+                        _boneParentIdsById[i] = parentBoneId;
+                        break;
+                    }
+
+                    parent = parent.parent;
+                }
+            }
+
+            _receivedAncestorBoneIdsValid = false;
+        }
+
+        private int FindBoneIdByTransform(Transform target)
+        {
+            if (target == null || _boneTargetsById == null)
+                return -1;
+
+            int count = _boneTargetsById.Length;
+            for (int i = 0; i < count; i++)
+            {
+                if (_boneTargetsById[i] == target)
+                    return i;
+            }
+
+            return -1;
         }
 
         private int GetBoneIdHash()
