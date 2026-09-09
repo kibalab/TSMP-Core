@@ -55,7 +55,7 @@ namespace K13A.TSMP.Udon
             ResolveTargets();
         }
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
         public override void PostLateUpdate()
         {
             ApplyReceivedPoseState();

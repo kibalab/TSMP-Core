@@ -1,3 +1,4 @@
+#if UDONSHARP || COMPILER_UDONSHARP
 using UnityEngine;
 using VRC.Udon;
 using K13A.TSMP.Udon;
@@ -69,3 +70,4 @@ namespace K13A.TSMP
         }
     }
 }
+#endif

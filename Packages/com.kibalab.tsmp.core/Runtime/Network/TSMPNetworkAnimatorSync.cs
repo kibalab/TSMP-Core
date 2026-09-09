@@ -1,6 +1,6 @@
 using UnityEngine;
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
 using UdonSharp;
 #endif
 
@@ -27,7 +27,7 @@ namespace K13A.TSMP.Udon
 
         [HideInInspector]
         [TransSync("animator.packed")]
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
         [FieldChangeCallback(nameof(AnimatorBytes))]
 #endif
         public byte[] animatorBytes;

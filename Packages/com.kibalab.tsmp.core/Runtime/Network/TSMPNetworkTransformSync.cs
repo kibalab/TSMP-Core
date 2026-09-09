@@ -1,6 +1,6 @@
 using UnityEngine;
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
 using UdonSharp;
 #endif
 
@@ -28,7 +28,7 @@ namespace K13A.TSMP.Udon
 
         [HideInInspector]
         [TransSync("transform.packed")]
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
         [FieldChangeCallback(nameof(PackedBytes))]
 #endif
         public byte[] packedBytes;
@@ -75,7 +75,7 @@ namespace K13A.TSMP.Udon
             ResolveRigidbody();
         }
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
         public override void PostLateUpdate()
         {
             ApplyContinuousTarget();

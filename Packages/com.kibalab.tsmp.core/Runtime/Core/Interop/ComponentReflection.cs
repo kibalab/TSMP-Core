@@ -1,6 +1,8 @@
 using System.Reflection;
 using UnityEngine;
+#if UDONSHARP || COMPILER_UDONSHARP
 using VRC.Udon;
+#endif
 
 namespace K13A.TSMP
 {
@@ -116,6 +118,7 @@ namespace K13A.TSMP
                 method.Invoke(target, null);
         }
 
+#if UDONSHARP || COMPILER_UDONSHARP
         public static UdonBehaviour GetBackingUdonBehaviour(Component component)
         {
             if (component == null)
@@ -138,6 +141,8 @@ namespace K13A.TSMP
             return component as UdonBehaviour;
         }
 
+#endif
+
         private static string GetLogPrefix(string logPrefix)
         {
             if (string.IsNullOrEmpty(logPrefix))
@@ -157,14 +162,14 @@ namespace K13A.TSMP
 
     public static class UdonProxySyncBridge
     {
-#if UNITY_EDITOR && !COMPILER_UDONSHARP
+#if UNITY_EDITOR && UDONSHARP && !COMPILER_UDONSHARP
         public static System.Action<Component> SyncAction;
         public static System.Func<UdonBehaviour, Component> ResolveProxyAction;
 #endif
 
         public static void Sync(Component component)
         {
-#if UNITY_EDITOR && !COMPILER_UDONSHARP
+#if UNITY_EDITOR && UDONSHARP && !COMPILER_UDONSHARP
             if (component == null || SyncAction == null)
                 return;
 
@@ -172,9 +177,10 @@ namespace K13A.TSMP
 #endif
         }
 
+#if UDONSHARP || COMPILER_UDONSHARP
         public static Component ResolveProxy(UdonBehaviour behaviour)
         {
-#if UNITY_EDITOR && !COMPILER_UDONSHARP
+#if UNITY_EDITOR && UDONSHARP && !COMPILER_UDONSHARP
             if (behaviour == null || ResolveProxyAction == null)
                 return null;
 
@@ -183,5 +189,6 @@ namespace K13A.TSMP
             return null;
 #endif
         }
+#endif
     }
 }

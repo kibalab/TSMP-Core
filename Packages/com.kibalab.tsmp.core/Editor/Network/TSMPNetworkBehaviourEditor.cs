@@ -1,6 +1,8 @@
 using K13A.TSMP.Udon;
+#if UDONSHARP
 using UdonSharp;
 using UdonSharpEditor;
+#endif
 using UnityEditor;
 using UnityEngine;
 
@@ -42,10 +44,7 @@ namespace K13A.TSMP.Editor
 
         protected bool DrawUdonSharpHeader()
         {
-            if (!HasUdonSharpTargets())
-                return false;
-
-            return UdonSharpGUI.DrawDefaultUdonSharpBehaviourHeader(targets);
+            return InspectorUI.DrawUdonSharpHeader(targets);
         }
 
         protected void DrawTSMPNetworkSection(bool supportsContinuous)
@@ -54,7 +53,9 @@ namespace K13A.TSMP.Editor
             DrawNetworkIdProperty();
             NetworkEditorUtil.DrawReceiveProperties(serializedObject, supportsContinuous);
             DrawTransSyncCollisionWarnings();
+#if UDONSHARP
             UdonSharpGUI.DrawUILine();
+#endif
         }
 
         protected void DrawProperty(string propertyName)
@@ -124,17 +125,6 @@ namespace K13A.TSMP.Editor
 
                 EditorGUILayout.PropertyField(iterator, true);
             }
-        }
-
-        private bool HasUdonSharpTargets()
-        {
-            for (int i = 0; i < targets.Length; i++)
-            {
-                if (!(targets[i] is UdonSharpBehaviour))
-                    return false;
-            }
-
-            return targets.Length > 0;
         }
 
         private static bool IsExcluded(string propertyPath, string[] excludedProperties)

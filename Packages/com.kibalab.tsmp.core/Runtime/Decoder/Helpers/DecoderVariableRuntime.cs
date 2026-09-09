@@ -1,6 +1,6 @@
 using UnityEngine;
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
 using VRC.Udon;
 #endif
 
@@ -16,7 +16,7 @@ namespace K13A.TSMP
             int valueOffset,
             int valueLength,
             int bindingCount,
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
             UdonBehaviour[] targets,
 #else
             Component[] targets,

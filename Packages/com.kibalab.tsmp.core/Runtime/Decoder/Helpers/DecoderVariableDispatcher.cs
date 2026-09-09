@@ -1,7 +1,7 @@
 using UnityEngine;
 using K13A.TSMP.Udon;
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
 using VRC.Udon;
 #endif
 
@@ -9,7 +9,7 @@ namespace K13A.TSMP
 {
     public static class DecoderVariableDispatcher
     {
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
         public static bool IsTargetActive(UdonBehaviour[] targets, int index)
         {
             if (targets == null)

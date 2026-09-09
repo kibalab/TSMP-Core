@@ -1,7 +1,7 @@
 using UnityEngine;
 using K13A.TSMP.Udon;
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
 using VRC.Udon;
 #endif
 
@@ -9,7 +9,7 @@ namespace K13A.TSMP
 {
     public static class DecoderRpcDispatcher
     {
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
         public static void Dispatch(UdonBehaviour[] targets, int targetCount, ushort[] bindingNetworkIds, ushort networkId, uint rpcHash, int argumentCount, string methodName)
         {
             if (targets == null || targetCount <= 0)
@@ -77,7 +77,7 @@ namespace K13A.TSMP
             return bindingNetworkIds[index] == networkId;
         }
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
         private static bool WasUdonTargetDispatched(UdonBehaviour[] targets, ushort[] bindingNetworkIds, int currentIndex, UdonBehaviour target, ushort networkId)
         {
             if (targets == null || target == null)

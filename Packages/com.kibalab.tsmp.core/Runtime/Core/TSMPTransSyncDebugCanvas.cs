@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
 using VRC.Udon;
 #endif
 
@@ -198,7 +198,7 @@ namespace K13A.TSMP.Udon
             if (string.IsNullOrEmpty(fieldName))
                 return null;
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
             UdonBehaviour target = GetUdonTarget(index);
             return GetProgramVariable(target, fieldName);
 #else
@@ -207,7 +207,7 @@ namespace K13A.TSMP.Udon
 #endif
         }
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
         private UdonBehaviour GetUdonTarget(int index)
         {
             if (decoder.bindingUdonTargets == null)
@@ -238,7 +238,7 @@ namespace K13A.TSMP.Udon
             count = Min(count, GetArrayLength(decoder.bindingVariableHashes));
             count = Min(count, GetArrayLength(decoder.bindingValueTypes));
             count = Min(count, GetArrayLength(decoder.bindingFieldNames));
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
             count = Min(count, GetArrayLength(decoder.bindingUdonTargets));
 #else
             count = Min(count, GetArrayLength(decoder.bindingTargets));
@@ -591,7 +591,7 @@ namespace K13A.TSMP.Udon
             return value != null ? value.Length : 0;
         }
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
         private static int GetArrayLength(UdonBehaviour[] value)
         {
             return value != null ? value.Length : 0;

@@ -1,6 +1,6 @@
 using UnityEngine;
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
 using UdonSharp;
 #endif
 
@@ -16,7 +16,7 @@ namespace K13A.TSMP.Udon
 
         [HideInInspector]
         [TransSync("blendshapes.packed")]
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
         [FieldChangeCallback(nameof(BlendShapeBytes))]
 #endif
         public byte[] blendShapeBytes;
@@ -52,7 +52,7 @@ namespace K13A.TSMP.Udon
             RefreshBlendShapeCount();
         }
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
         public override void PostLateUpdate()
         {
             ApplyContinuousBlendShapes();

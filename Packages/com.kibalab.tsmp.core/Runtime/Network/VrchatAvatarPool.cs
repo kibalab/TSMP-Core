@@ -1,5 +1,7 @@
 using UnityEngine;
+#if UDONSHARP || COMPILER_UDONSHARP
 using VRC.SDKBase;
+#endif
 
 namespace K13A.TSMP.Udon
 {
@@ -110,6 +112,7 @@ namespace K13A.TSMP.Udon
         }
     }
 
+#if UDONSHARP || COMPILER_UDONSHARP
     public static class VrchatAvatarPlayerCache
     {
         public static int GetPlayerId(VRCPlayerApi player)
@@ -286,4 +289,5 @@ namespace K13A.TSMP.Udon
             return playerId >= 0 ? playerId : 2147483647;
         }
     }
+#endif
 }

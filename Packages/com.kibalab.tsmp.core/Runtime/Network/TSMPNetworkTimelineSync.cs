@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.Playables;
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
 using UdonSharp;
 #endif
 
@@ -15,7 +15,7 @@ namespace K13A.TSMP.Udon
 
         [HideInInspector]
         [TransSync("timeline.packed")]
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
         [FieldChangeCallback(nameof(TimelineBytes))]
 #endif
         public byte[] timelineBytes;

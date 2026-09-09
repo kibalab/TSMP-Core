@@ -81,7 +81,7 @@ namespace K13A.TSMP.Udon
 
         private void SendTransRPCLocal(string methodName)
         {
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
             SendCustomEvent(methodName);
 #else
             ComponentReflection.InvokeMethod(this, methodName, true);
