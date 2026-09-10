@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0-beta.1
+
+- Support installation, native component bindings, encoding, decoding, and Windows Mono Player builds without VRCSDK/UdonSharp.
+- Keep SDK-dependent player capture, proxy APIs, and editor tooling conditional while preserving the existing VRChat/UdonSharp paths.
+- Use one shared Controller prefab with automatic component, codec, binding, and per-controller resource preparation.
+- Preserve existing Controller references through the Legacy prefab with its original GUID.
+- Add repeatable native GPU loopback, Player, UdonSharp, SDK world build, and shared workflow validation.
+- Update English, Korean, and Japanese installation and setup documentation.
+- Use Luma4 0.0.3-beta.3 or newer for the shared SDK-neutral codec template.
+- IL2CPP, managed stripping, and an uploaded VRChat client session remain outside the verified configuration.
+
 ## 0.1.0
 
 - Promoted the package version out of beta.

@@ -1,7 +1,7 @@
 {
   "name": "com.kibalab.tsmp.core",
   "displayName": "TSMP Core",
-  "version": "0.1.0",
+  "version": "0.2.0-beta.1",
   "unity": "2022.3",
   "description": "Core TSMP runtime, encoder, decoder, setup tooling, shared Udon behaviours, codec base types, and streaming utilities.",
   "author": {
