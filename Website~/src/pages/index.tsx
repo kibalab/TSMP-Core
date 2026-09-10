@@ -53,7 +53,7 @@ export default function Home(): ReactNode {
     <Layout
       title={translate({
         id: 'homepage.meta.title',
-        message: 'Texture Stream Message Protocol',
+        message: 'Trans Sync Media Protocol',
         description: 'Homepage browser title',
       })}
       description={translate({
@@ -71,7 +71,7 @@ export default function Home(): ReactNode {
             </p>
             <Heading as="h1" className={styles.title}>
               <Translate id="homepage.title" description="Homepage main title">
-                Texture Stream Message Protocol
+                Trans Sync Media Protocol
               </Translate>
             </Heading>
             <p className={styles.subtitle}>

@@ -7,7 +7,7 @@ namespace K13A.TSMP.Udon
     {
         public GameObject targetObject;
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
         public override void Interact()
 #else
         public void Interact()

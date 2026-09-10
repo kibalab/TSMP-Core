@@ -13,7 +13,7 @@ namespace K13A.TSMP
 
             behaviours.Clear();
             CollectBindingTargets(behaviours, bindingTargets);
-#if !UDONSHARP
+#if !UDONSHARP && !COMPILER_UDONSHARP
             CollectExplicitBehaviours(behaviours, explicitBehaviours);
 #endif
         }
@@ -31,7 +31,7 @@ namespace K13A.TSMP
             }
         }
 
-#if !UDONSHARP
+#if !UDONSHARP && !COMPILER_UDONSHARP
         private static void CollectExplicitBehaviours(List<TSMPNetworkBehaviour> behaviours, TSMPNetworkBehaviour[] explicitBehaviours)
         {
             if (explicitBehaviours == null)

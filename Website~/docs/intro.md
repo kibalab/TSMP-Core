@@ -5,7 +5,7 @@ title: Introduction
 
 # TSMP
 
-TSMP, Texture Stream Messaging Protocol, sends structured runtime data through texture frames.
+TSMP, Trans Sync Media Protocol, sends structured runtime data through texture frames.
 
 In a VRChat world, that means a sender can encode scene state into a visible texture, a capture or streaming path can carry that texture, and a receiver can decode the texture back into object movement, avatar pose, blend shapes, animator state, timeline state, or TSMP RPC events.
 

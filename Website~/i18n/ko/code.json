@@ -327,7 +327,7 @@
     "description": "The title of the tag list page"
   },
   "homepage.meta.title": {
-    "message": "Texture Stream Message Protocol"
+    "message": "Trans Sync Media Protocol"
   },
   "homepage.meta.description": {
     "message": "VRChat 월드와 Unity 패키지를 위한 TSMP 문서입니다."
@@ -336,7 +336,7 @@
     "message": "KIBA_Labs TSMP"
   },
   "homepage.title": {
-    "message": "Texture Stream Message Protocol"
+    "message": "Trans Sync Media Protocol"
   },
   "homepage.subtitle": {
     "message": "VRChat 월드에서 보이는 텍스처 프레임을 통해 구조화된 런타임 데이터를 전송합니다."

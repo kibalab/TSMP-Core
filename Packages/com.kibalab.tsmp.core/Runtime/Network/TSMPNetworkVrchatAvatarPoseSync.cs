@@ -1,7 +1,6 @@
 using UnityEngine;
+#if UDONSHARP || COMPILER_UDONSHARP
 using VRC.SDKBase;
-
-#if UDONSHARP
 using UdonSharp;
 #endif
 
@@ -52,9 +51,11 @@ namespace K13A.TSMP.Udon
         [HideInInspector] public int poolSize;
 
         [HideInInspector]
+#if UDONSHARP || COMPILER_UDONSHARP
         [TransSync("vrchat.avatar_pose")]
-#if UDONSHARP
         [FieldChangeCallback(nameof(AvatarPoseBytes))]
+#else
+        [TransSync("vrchat.avatar_pose", Direction = NetworkSyncDirection.ReceiveOnly)]
 #endif
         public byte[] avatarPoseBytes;
 
@@ -159,7 +160,9 @@ namespace K13A.TSMP.Udon
             (int)HumanBodyBones.RightLittleDistal
         };
 
+#if UDONSHARP || COMPILER_UDONSHARP
         private VRCPlayerApi[] _players;
+#endif
         private int[] _slotPlayerIds;
         private float[] _slotLastSeen;
         private int[] _playerNameByteCounts;
@@ -204,10 +207,12 @@ namespace K13A.TSMP.Udon
         private void Start()
         {
             InitializeRuntimeArrays();
+#if UDONSHARP || COMPILER_UDONSHARP
             RefreshPlayerCache();
+#endif
         }
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
         public override void PostLateUpdate()
         {
             RetireStaleAvatars();
@@ -219,22 +224,15 @@ namespace K13A.TSMP.Udon
         }
 #endif
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
         public override void OnPlayerJoined(VRCPlayerApi player)
-#else
-        public void OnPlayerJoined(VRCPlayerApi player)
-#endif
         {
             InitializeRuntimeArrays();
             AddCachedPlayer(player);
             ExtendSlotRetireGrace();
         }
 
-#if UDONSHARP
         public override void OnPlayerLeft(VRCPlayerApi player)
-#else
-        public void OnPlayerLeft(VRCPlayerApi player)
-#endif
         {
             RemoveCachedPlayer(VrchatAvatarPlayerCache.GetPlayerId(player));
             ExtendSlotRetireGrace();
@@ -446,6 +444,8 @@ namespace K13A.TSMP.Udon
             keepAlivePlayerEntryCount = keepAliveEntries;
             encodedPoseBytes = cursor;
         }
+
+#endif
 
         private void ApplyAvatarPose()
         {
@@ -690,6 +690,7 @@ namespace K13A.TSMP.Udon
             ApplyLegacyPlayerRecords(rig, mode, recordCount, cursor, compactHumanoid);
         }
 
+#if UDONSHARP || COMPILER_UDONSHARP
         private int WriteTrackingPointRecords(VRCPlayerApi player, byte[] buffer, int cursor)
         {
             for (int i = 0; i < _trackingPointIds.Length; i++)
@@ -705,6 +706,8 @@ namespace K13A.TSMP.Udon
 
             return cursor;
         }
+
+#endif
 
         private void ConfigureRigReceiveMode(TSMPNetworkVrchatAvatarPoseRig rig)
         {
@@ -731,6 +734,7 @@ namespace K13A.TSMP.Udon
             }
         }
 
+#if UDONSHARP || COMPILER_UDONSHARP
         private int WriteHumanoidPoseRecords(VRCPlayerApi player, byte[] buffer, int cursor, Vector3 fallbackRoot, Quaternion fallbackRotation, int start, int count, int total)
         {
             for (int i = 0; i < count; i++)
@@ -790,6 +794,8 @@ namespace K13A.TSMP.Udon
             Binary.WritePackedQuaternion12LE(buffer, cursor, rotation);
             return cursor + 5;
         }
+
+#endif
 
         private void ApplyPlayerRecords(TSMPNetworkVrchatAvatarPoseRig rig, int mode, int recordCount, int cursor, bool compactHumanoid)
         {
@@ -854,6 +860,7 @@ namespace K13A.TSMP.Udon
             ApplyPlayerRecords(rig, mode, recordCount, cursor, false);
         }
 
+#if UDONSHARP || COMPILER_UDONSHARP
         private bool UseCompactHumanoidPose()
         {
             return compactHumanoidPose && poseMode == VrchatAvatarPoseMode.HumanoidBones;
@@ -1150,6 +1157,8 @@ namespace K13A.TSMP.Udon
             return 1.2f;
         }
 
+#endif
+
         private void InitializeRuntimeArrays()
         {
             compactHumanoidPose = true;
@@ -1190,12 +1199,14 @@ namespace K13A.TSMP.Udon
             if (playerKeepAliveInterval < 1)
                 playerKeepAliveInterval = 1;
 
+#if UDONSHARP || COMPILER_UDONSHARP
             if (_players == null || _players.Length != MaxPlayers)
             {
                 _players = new VRCPlayerApi[MaxPlayers];
                 _cachedPlayerCount = 0;
                 _playerCacheInitialized = false;
             }
+#endif
             if (_playerNameByteCounts == null || _playerNameByteCounts.Length != MaxPlayers)
                 _playerNameByteCounts = new int[MaxPlayers];
             if (_playerRecordCounts == null || _playerRecordCounts.Length != MaxPlayers)
@@ -1245,6 +1256,7 @@ namespace K13A.TSMP.Udon
             RecountPoolSize();
         }
 
+#if UDONSHARP || COMPILER_UDONSHARP
         private int CollectPlayers()
         {
             if (!_playerCacheInitialized)
@@ -1316,6 +1328,8 @@ namespace K13A.TSMP.Udon
             if (_cachedPlayerCount != previousCount)
                 InvalidatePlayerMembershipCaches();
         }
+
+#endif
 
         private int ClampPlayerCount(int playerCount)
         {

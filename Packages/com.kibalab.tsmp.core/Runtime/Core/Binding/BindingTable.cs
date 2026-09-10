@@ -1,10 +1,13 @@
 using UnityEngine;
+#if UDONSHARP || COMPILER_UDONSHARP
 using VRC.Udon;
+#endif
 
 namespace K13A.TSMP
 {
     public static class BindingTable
     {
+#if UDONSHARP || COMPILER_UDONSHARP
         public static int GetTargetCount(Component[] componentTargets, UdonBehaviour[] udonTargets, bool preferUdonTargets)
         {
             if (preferUdonTargets && udonTargets != null)
@@ -41,6 +44,21 @@ namespace K13A.TSMP
                 return 0;
 
             return ClampWritableCount(count, networkIds, variableHashes, valueTypes, fieldNames);
+        }
+
+#endif
+
+        public static int GetTargetCount(Component[] componentTargets)
+        {
+            return componentTargets != null ? componentTargets.Length : 0;
+        }
+
+        public static int GetWritableBindingCount(Component[] componentTargets, ushort[] networkIds, uint[] variableHashes, byte[] valueTypes, string[] fieldNames)
+        {
+            if (!HasWritableMetadata(networkIds, variableHashes, valueTypes, fieldNames))
+                return 0;
+
+            return ClampWritableCount(GetTargetCount(componentTargets), networkIds, variableHashes, valueTypes, fieldNames);
         }
 
         public static bool HasReadableMetadata(ushort[] networkIds, uint[] variableHashes, string[] fieldNames)
@@ -161,6 +179,7 @@ namespace K13A.TSMP
             return directions[index] == direction;
         }
 
+#if UDONSHARP || COMPILER_UDONSHARP
         public static bool CanWriteBindingEntry(int[] directions, string[] fieldNames, UdonBehaviour target, int index)
         {
             if (IsDirection(directions, index, (int)NetworkSyncDirection.ReceiveOnly))
@@ -266,6 +285,8 @@ namespace K13A.TSMP
             return targets.Length == count;
         }
 
+#endif
+
         public static bool IsComponentTargetCacheValid(Component[] targets, int count)
         {
             if (targets == null)
@@ -274,6 +295,7 @@ namespace K13A.TSMP
             return targets.Length == count;
         }
 
+#if UDONSHARP || COMPILER_UDONSHARP
         public static UdonBehaviour[] BuildUdonTargetCache(Component[] componentTargets, UdonBehaviour[] udonTargets, int count)
         {
             if (count < 0)
@@ -285,6 +307,8 @@ namespace K13A.TSMP
 
             return resolved;
         }
+
+#endif
 
         public static Component[] BuildComponentTargetCache(Component[] componentTargets, int count)
         {
@@ -304,6 +328,7 @@ namespace K13A.TSMP
             return resolved;
         }
 
+#if UDONSHARP || COMPILER_UDONSHARP
         public static bool IsUdonTargetActive(UdonBehaviour target)
         {
             if (target == null)
@@ -315,6 +340,8 @@ namespace K13A.TSMP
 
             return targetObject.activeInHierarchy;
         }
+
+#endif
 
         public static bool IsComponentTargetActive(Component target)
         {

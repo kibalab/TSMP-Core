@@ -1,5 +1,7 @@
 using UnityEngine;
+#if UDONSHARP || COMPILER_UDONSHARP
 using VRC.Udon;
+#endif
 
 #if UDONSHARP || COMPILER_UDONSHARP
 using VRC.SDKBase;
@@ -22,7 +24,7 @@ namespace K13A.TSMP.Udon
         public const string PayloadByteTextureFieldName = nameof(payloadByteTexture);
         public const string CodecHandlersFieldName = nameof(codecHandlers);
         public const string BindingTargetsFieldName = nameof(bindingTargets);
-        public const string BindingUdonTargetsFieldName = nameof(bindingUdonTargets);
+        public const string BindingUdonTargetsFieldName = "bindingUdonTargets";
         public const string BindingNetworkIdsFieldName = nameof(bindingNetworkIds);
         public const string BindingVariableHashesFieldName = nameof(bindingVariableHashes);
         public const string BindingValueTypesFieldName = nameof(bindingValueTypes);
@@ -42,7 +44,9 @@ namespace K13A.TSMP.Udon
 
         [HideInInspector] public Component[] bindingTargets;
 
+#if UDONSHARP || COMPILER_UDONSHARP
         [HideInInspector] public UdonBehaviour[] bindingUdonTargets;
+#endif
         [HideInInspector] public ushort[] bindingNetworkIds;
         [HideInInspector] public uint[] bindingVariableHashes;
         [HideInInspector] public byte[] bindingValueTypes;
@@ -133,7 +137,9 @@ namespace K13A.TSMP.Udon
         private bool _hasAppliedFrame;
         private uint _lastAppliedStreamId;
         private uint _lastAppliedFrameIndex;
+#if UDONSHARP || COMPILER_UDONSHARP
         private UdonBehaviour[] _cachedBindingUdonTargets;
+#endif
         private Component[] _cachedBindingComponentTargets;
         private ushort[] _bindingLookupNetworkIds;
         private uint[] _bindingLookupVariableHashes;
@@ -680,7 +686,7 @@ namespace K13A.TSMP.Udon
                 return;
 
             EnsureBindingTargetCache(targetCount);
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
             DecoderRpcDispatcher.Dispatch(_cachedBindingUdonTargets, targetCount, bindingNetworkIds, networkId, rpcHash, argumentCount, methodName);
 #else
             DecoderRpcDispatcher.Dispatch(_cachedBindingComponentTargets, targetCount, bindingNetworkIds, networkId, rpcHash, argumentCount, methodName);
@@ -723,7 +729,7 @@ namespace K13A.TSMP.Udon
 
             EnsureBindingTargetCache(bindingCount);
             int rejectedValueTypeCount;
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
             int appliedCount = DecoderVariableRuntime.ApplyVariableValue(
                 _payloadBytes,
                 networkId,
@@ -809,19 +815,19 @@ namespace K13A.TSMP.Udon
 
         private int GetReadableBindingCount()
         {
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
             return BindingTable.GetWritableBindingCount(bindingTargets, bindingUdonTargets, true, bindingNetworkIds, bindingVariableHashes, bindingValueTypes, bindingFieldNames);
 #else
-            return BindingTable.GetWritableBindingCount(bindingTargets, bindingUdonTargets, false, bindingNetworkIds, bindingVariableHashes, bindingValueTypes, bindingFieldNames);
+            return BindingTable.GetWritableBindingCount(bindingTargets, bindingNetworkIds, bindingVariableHashes, bindingValueTypes, bindingFieldNames);
 #endif
         }
 
         private int GetBindingTargetCount()
         {
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
             return BindingTable.GetTargetCount(bindingTargets, bindingUdonTargets, true);
 #else
-            return BindingTable.GetTargetCount(bindingTargets, bindingUdonTargets, false);
+            return BindingTable.GetTargetCount(bindingTargets);
 #endif
         }
 
@@ -834,7 +840,7 @@ namespace K13A.TSMP.Udon
             bool cacheValid = true;
             if (_cachedBindingTargetCount != targetCount)
                 cacheValid = false;
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
             if (!BindingTable.IsUdonTargetCacheValid(_cachedBindingUdonTargets, targetCount))
                 cacheValid = false;
 #else
@@ -854,7 +860,7 @@ namespace K13A.TSMP.Udon
 
             _cachedBindingTargetCount = targetCount;
             _rawByteValueArrays = DecoderBindingRuntime.EnsureRawByteValueCache(_rawByteValueArrays, targetCount);
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
             _cachedBindingUdonTargets = BindingTable.BuildUdonTargetCache(bindingTargets, bindingUdonTargets, targetCount);
 #else
             _cachedBindingComponentTargets = BindingTable.BuildComponentTargetCache(bindingTargets, targetCount);

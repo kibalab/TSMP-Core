@@ -1,6 +1,6 @@
 using UnityEngine;
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
 using UdonSharp;
 #endif
 
@@ -82,7 +82,7 @@ namespace K13A.TSMP.Udon
 
         [HideInInspector]
         [TransSync("humanoid.pose")]
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
         [FieldChangeCallback(nameof(PoseBytes))]
 #endif
         public byte[] poseBytes;
@@ -145,7 +145,7 @@ namespace K13A.TSMP.Udon
             ResolveBones();
         }
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
         public override void PostLateUpdate()
         {
             ApplyContinuousPose();

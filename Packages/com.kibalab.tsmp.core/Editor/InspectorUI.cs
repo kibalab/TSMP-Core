@@ -1,5 +1,7 @@
+#if UDONSHARP
 using UdonSharp;
 using UdonSharpEditor;
+#endif
 using UnityEditor;
 using UnityEngine;
 
@@ -9,6 +11,7 @@ namespace K13A.TSMP.Editor
     {
         public static bool DrawUdonSharpHeader(Object[] targets)
         {
+#if UDONSHARP
             for (int i = 0; i < targets.Length; i++)
             {
                 if (!(targets[i] is UdonSharpBehaviour))
@@ -16,6 +19,9 @@ namespace K13A.TSMP.Editor
             }
 
             return targets.Length > 0 && UdonSharpGUI.DrawDefaultUdonSharpBehaviourHeader(targets);
+#else
+            return false;
+#endif
         }
 
         public static void BeginSection(string title)

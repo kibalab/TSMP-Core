@@ -1,7 +1,9 @@
 using UnityEngine;
+#if UDONSHARP || COMPILER_UDONSHARP
 using VRC.Udon;
+#endif
 
-#if !UDONSHARP
+#if !UDONSHARP && !COMPILER_UDONSHARP
 using System.Collections.Generic;
 #endif
 
@@ -9,7 +11,7 @@ using K13A.TSMP.Udon;
 
 namespace K13A.TSMP
 {
-#if !UDONSHARP
+#if !UDONSHARP && !COMPILER_UDONSHARP
     [ExecuteAlways]
 #endif
     public sealed class TSMPEncoder : TSMPBehaviour
@@ -24,7 +26,7 @@ namespace K13A.TSMP
         public const string OutputFieldName = nameof(output);
         public const string BlockExpandMaterialFieldName = nameof(blockExpandMaterial);
         public const string SelectedCodecFieldName = nameof(selectedCodec);
-        public const string SelectedCodecUdonTargetFieldName = nameof(selectedCodecUdonTarget);
+        public const string SelectedCodecUdonTargetFieldName = "selectedCodecUdonTarget";
         public const string PayloadSymbolModeFieldName = nameof(payloadSymbolMode);
         public const string CodecIdFieldName = nameof(codecId);
         public const string PayloadBytesMemberName = "PayloadBytes";
@@ -32,7 +34,7 @@ namespace K13A.TSMP
         public const string MaxPayloadBytesFieldName = nameof(maxPayloadBytes);
         public const string EncodeNowMethodName = nameof(EncodeNow);
         public const string BindingTargetsFieldName = nameof(bindingTargets);
-        public const string BindingUdonTargetsFieldName = nameof(bindingUdonTargets);
+        public const string BindingUdonTargetsFieldName = "bindingUdonTargets";
         public const string BindingNetworkIdsFieldName = nameof(bindingNetworkIds);
         public const string BindingVariableHashesFieldName = nameof(bindingVariableHashes);
         public const string BindingValueTypesFieldName = nameof(bindingValueTypes);
@@ -54,7 +56,7 @@ namespace K13A.TSMP
         public int blockSize = 8;
         public int sampleSize;
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
         public bool autoEncode;
 #else
         public bool autoEncode = true;
@@ -63,7 +65,9 @@ namespace K13A.TSMP
         public bool useBlockSymbolTexture = true;
         public int transRpcRepeatFrames = 4;
         public TSMPCodec selectedCodec;
+#if UDONSHARP || COMPILER_UDONSHARP
         [HideInInspector] public UdonBehaviour selectedCodecUdonTarget;
+#endif
         [HideInInspector] public int payloadSymbolMode;
         public int codecId;
         public int maxPayloadBytes = 4096;
@@ -72,7 +76,9 @@ namespace K13A.TSMP
 
         public bool autoBuildVariablesFromBindings = true;
         [HideInInspector] public Component[] bindingTargets;
+#if UDONSHARP || COMPILER_UDONSHARP
         [HideInInspector] public UdonBehaviour[] bindingUdonTargets;
+#endif
         [HideInInspector] public ushort[] bindingNetworkIds;
         [HideInInspector] public uint[] bindingVariableHashes;
         [HideInInspector] public byte[] bindingValueTypes;
@@ -98,7 +104,7 @@ namespace K13A.TSMP
         private uint[] _crc32Table;
         private const string LogPrefix = "[TSMP Encoder] ";
 
-#if !UDONSHARP
+#if !UDONSHARP && !COMPILER_UDONSHARP
         public int EncodedObjectCount
         {
             get { return encodedObjectCount; }
@@ -338,7 +344,7 @@ namespace K13A.TSMP
 
         private void CollectNetworkBehaviours()
         {
-#if !UDONSHARP
+#if !UDONSHARP && !COMPILER_UDONSHARP
             EncoderSourceCollector.Collect(_networkBehaviours, bindingTargets, networkBehaviours);
 #else
             EncoderSourceCollector.Collect(_networkBehaviours, bindingTargets, null);
@@ -467,7 +473,7 @@ namespace K13A.TSMP
         }
 #endif
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
         private byte[] _headerBytes;
         private byte[] _payloadBytes;
         private Color32[] _pixels;
@@ -1328,7 +1334,7 @@ namespace K13A.TSMP
         public void ResetFrameIndex()
         {
             frameIndex = 0u;
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
             ClearFrame();
 #endif
         }

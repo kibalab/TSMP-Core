@@ -10,13 +10,13 @@ title: 퀵스타트
 
 ## 1. 컨트롤러 프리팹 추가
 
-다음 프리팹을 씬에 드래그하세요.
+일반 Unity와 VRChat 모두 다음 프리팹을 씬에 드래그하세요.
 
 ```text
 Packages/com.kibalab.tsmp.core/Samples/TSMPController.prefab
 ```
 
-이 프리팹은 권장 시작점입니다. 일반적으로 필요한 컨트롤러 오브젝트, 코덱 참조, 인코더, 디코더, 설정 컴포넌트를 포함합니다.
+Setup이 인코더, 디코더와 설치된 코덱을 자동으로 준비합니다. 변환 메뉴나 실행 환경 선택은 필요하지 않습니다. 패키지 요구사항과 Player 설정은 [설치](installation.md)를 참고하세요.
 
 처음에는 프리팹을 그대로 유지하세요. 송신자와 수신자 오브젝트를 분리하는 작업은 루프백 테스트가 동작한 뒤에 하는 것이 쉽습니다.
 
@@ -50,19 +50,9 @@ Packages/com.kibalab.tsmp.core/Samples/TSMPController.prefab
 
 활성 GameObject의 활성 컴포넌트만 참여합니다. 컴포넌트나 GameObject를 비활성화하면 TSMP 데이터 송수신이 중지됩니다.
 
-## 4. 설정 적용
+## 4. 설정 확인
 
-`TSMPSetup`이 붙은 오브젝트를 선택하고 `Apply Setup`을 클릭합니다.
-
-다음 작업 후에는 다시 실행하세요.
-
-- TSMP 네트워크 컴포넌트를 추가하거나 제거한 경우.
-- 동기화 오브젝트를 프리팹이나 씬 오브젝트 사이에서 옮긴 경우.
-- Luma4 또는 텍스처 참조를 바꾼 경우.
-- 수동 네트워크 ID를 바꾼 경우.
-- 인코더, 디코더, 코덱 오브젝트를 교체한 경우.
-
-`Apply Setup`은 인코더와 디코더가 사용하는 바인딩 테이블을 다시 만들기 때문에 중요합니다.
+`TSMPSetup`에서 선택한 코덱과 입출력 참조를 확인하세요. 컴포넌트, 코덱과 바인딩은 변경 시 자동으로 준비되며 Play 모드와 빌드 전에도 확인됩니다. 기존 `Apply Setup` 버튼은 선택적인 수동 새로고침 기능이며 필수 단계가 아닙니다.
 
 ## 5. 스트림 테스트
 
@@ -82,6 +72,8 @@ Play 모드나 VRChat에서 테스트합니다.
 ## 권장 첫 테스트
 
 처음에는 `TSMPNetworkGameObjectToggle`을 사용하세요.
+
+Interact 테스트는 VRChat용입니다. 일반 Unity에서는 `TSMPNetworkTransformSync`의 대상을 애니메이션이나 스크립트로 움직여 먼저 확인하세요. RPC는 UI 버튼이나 스크립트에서 `SendTransRPC`를 호출해 테스트할 수 있습니다. Unity 자체에서는 VRChat Interact 이벤트가 발생하지 않습니다.
 
 `RPCTarget.All`에서는 Interact 시 송신자에서 즉시 토글되고, 스트림 지연 뒤 디코딩된 RPC가 다시 토글됩니다. 이 테스트는 짧은 이벤트 메시지가 전송 경로를 통과하는지 확인해 줍니다.
 

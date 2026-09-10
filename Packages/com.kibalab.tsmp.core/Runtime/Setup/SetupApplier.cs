@@ -45,7 +45,9 @@ namespace K13A.TSMP
             if (selectedCodec != null)
             {
                 SetField(encoder, FieldSelectedCodec, selectedCodec);
+#if UDONSHARP || COMPILER_UDONSHARP
                 SetField(encoder, FieldSelectedCodecUdonTarget, GetBackingUdonBindingTarget(selectedCodec));
+#endif
                 SetField(encoder, FieldPayloadSymbolMode, (int)selectedCodec.SymbolMode);
                 SetField(encoder, FieldCodecId, selectedCodec.codecId);
             }
@@ -152,7 +154,9 @@ namespace K13A.TSMP
 #if UNITY_EDITOR
             TransSyncBindingSnapshot snapshot = TransSyncBindingSnapshotBuilder.Build(false);
             SetField(encoder, FieldBindingTargets, snapshot.Targets);
+#if UDONSHARP || COMPILER_UDONSHARP
             SetField(encoder, FieldBindingUdonTargets, snapshot.UdonTargets);
+#endif
             SetField(encoder, FieldBindingNetworkIds, snapshot.NetworkIds);
             SetField(encoder, FieldBindingVariableHashes, snapshot.VariableHashes);
             SetField(encoder, FieldBindingValueTypes, snapshot.ValueTypes);
@@ -166,7 +170,9 @@ namespace K13A.TSMP
 #if UNITY_EDITOR
             TransSyncBindingSnapshot snapshot = TransSyncBindingSnapshotBuilder.Build(true);
             SetField(decoder, FieldBindingTargets, snapshot.Targets);
+#if UDONSHARP || COMPILER_UDONSHARP
             SetField(decoder, FieldBindingUdonTargets, snapshot.UdonTargets);
+#endif
             SetField(decoder, FieldBindingNetworkIds, snapshot.NetworkIds);
             SetField(decoder, FieldBindingVariableHashes, snapshot.VariableHashes);
             SetField(decoder, FieldBindingValueTypes, snapshot.ValueTypes);
@@ -176,10 +182,13 @@ namespace K13A.TSMP
 #endif
         }
 
+#if UDONSHARP || COMPILER_UDONSHARP
         private static VRC.Udon.UdonBehaviour GetBackingUdonBindingTarget(Component component)
         {
             return ComponentReflection.GetBackingUdonBehaviour(component);
         }
+
+#endif
 
         private static void MarkCodecMaterialsDirty(TSMPCodec codec)
         {

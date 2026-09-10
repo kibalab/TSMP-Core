@@ -2,7 +2,7 @@
 
 # TSMP Core
 
-TSMP, the Texture Stream Message Protocol, is an open-source runtime for sending network state, RPC calls, avatar pose data, Animator state, Timeline state, and similar runtime data through texture streams in VRChat worlds.
+TSMP, the Trans Sync Media Protocol, is an open-source runtime for sending network state, RPC calls, avatar pose data, Animator state, Timeline state, and similar runtime data through texture streams in VRChat worlds.
 
 The Core package contains the scene runtime and setup workflow. Pixel encoding is provided by codec packages. For the default setup, install the Luma4 codec package together with Core.
 
@@ -18,10 +18,12 @@ Then install `TSMP Core` and `TSMP Codec Luma4`.
 
 ## Quick Start
 
+For ordinary Unity without VRCSDK, install Core and Luma4 revisions with standalone support via UPM's **Add package from disk**. Both environments use the same prefab below; components and bindings are prepared automatically. Keep `Assets/TSMPGenerated` resources with your scene. Windows x64 Mono is validated; see the installation guide for reflection/stripping limitations.
+
 1. Add `Packages/com.kibalab.tsmp.core/Samples/TSMPController.prefab` to your scene.
 2. Add the `TSMPNetwork*` components you need to the objects you want to synchronize.
 3. Open `TSMPSetup`, click `Refresh Codecs`, and select a codec.
-4. Click `Apply Setup` to refresh the Encoder, Decoder, codec handlers, and binding table.
+4. Confirm input/output and codec settings in Setup. Components and bindings update automatically.
 5. Broadcast the Encoder output RenderTexture and feed the same TSMP image into the Decoder input RenderTexture.
 
 ## Features

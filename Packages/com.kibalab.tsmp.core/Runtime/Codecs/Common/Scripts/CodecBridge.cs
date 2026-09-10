@@ -1,5 +1,7 @@
 using UnityEngine;
+#if UDONSHARP || COMPILER_UDONSHARP
 using VRC.Udon;
+#endif
 
 namespace K13A.TSMP
 {
@@ -46,6 +48,7 @@ namespace K13A.TSMP
             return handler;
         }
 
+#if UDONSHARP || COMPILER_UDONSHARP
         public static UdonBehaviour ResolveUdonTarget(TSMPCodec selectedCodec, UdonBehaviour selectedCodecUdonTarget)
         {
             if (selectedCodecUdonTarget != null)
@@ -200,5 +203,6 @@ namespace K13A.TSMP
             for (int i = 0; i < count; i++)
                 pixels[i] = returnedPixels[i];
         }
+#endif
     }
 }

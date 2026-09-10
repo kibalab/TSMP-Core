@@ -1,6 +1,6 @@
 using UnityEngine;
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
 using UdonSharp;
 using VRC.SDKBase;
 using VRC.Udon;
@@ -8,7 +8,7 @@ using VRC.Udon;
 
 namespace K13A.TSMP
 {
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public abstract class TSMPBehaviour : UdonSharpBehaviour
 #else
@@ -18,7 +18,7 @@ namespace K13A.TSMP
         private int _tsmpDebugLogRemaining;
         private float _tsmpLastWarningLogTime = -1000f;
 
-#if UDONSHARP
+#if UDONSHARP || COMPILER_UDONSHARP
         public static void SetProgramVariable(UdonBehaviour target, string fieldName, object value)
         {
             if (target == null)

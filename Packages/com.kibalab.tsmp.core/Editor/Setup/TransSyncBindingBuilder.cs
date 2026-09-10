@@ -4,9 +4,11 @@ using K13A.TSMP.Udon;
 using UnityEditor;
 using UnityEditor.Callbacks;
 using UnityEngine;
+#if UDONSHARP
 using UdonSharp;
 using UdonSharpEditor;
 using VRC.Udon;
+#endif
 
 namespace K13A.TSMP.Editor
 {
@@ -28,8 +30,10 @@ namespace K13A.TSMP.Editor
 
         static TransSyncBindingBuilder()
         {
+#if UDONSHARP
             UdonProxySyncBridge.SyncAction = SyncUdonProxy;
             UdonProxySyncBridge.ResolveProxyAction = ResolveUdonProxy;
+#endif
             EditorApplication.hierarchyChanged -= QueueAutomaticRebuild;
             EditorApplication.hierarchyChanged += QueueAutomaticRebuild;
             Undo.postprocessModifications -= OnPostprocessModifications;
@@ -499,7 +503,9 @@ namespace K13A.TSMP.Editor
                 return false;
 
             var targets = new List<Component>();
+#if UDONSHARP
             var udonTargets = new List<UdonBehaviour>();
+#endif
             var networkIds = new List<ushort>();
             var variableHashes = new List<uint>();
             var valueTypes = new List<byte>();
@@ -546,7 +552,9 @@ namespace K13A.TSMP.Editor
                     collisions.Add(key, current);
 
                     targets.Add(behaviour);
+#if UDONSHARP
                     udonTargets.Add(GetBackingUdonBindingTarget(behaviour));
+#endif
                     networkIds.Add(networkId);
                     variableHashes.Add(variableHash);
                     valueTypes.Add((byte)valueType);
@@ -557,7 +565,9 @@ namespace K13A.TSMP.Editor
 
             Undo.RecordObject(encoder, "Assign TSMP encoder bindings");
             SetComponentArrayFieldValue(encoder, FieldBindingTargets, targets);
+#if UDONSHARP
             SetFieldValue(encoder, FieldBindingUdonTargets, udonTargets.ToArray());
+#endif
             SetFieldValue(encoder, FieldBindingNetworkIds, networkIds.ToArray());
             SetFieldValue(encoder, FieldBindingVariableHashes, variableHashes.ToArray());
             SetFieldValue(encoder, FieldBindingValueTypes, valueTypes.ToArray());
@@ -574,7 +584,9 @@ namespace K13A.TSMP.Editor
                 return 0;
 
             var targets = new List<Component>();
+#if UDONSHARP
             var udonTargets = new List<UdonBehaviour>();
+#endif
             var networkIds = new List<ushort>();
             var variableHashes = new List<uint>();
             var valueTypes = new List<byte>();
@@ -623,7 +635,9 @@ namespace K13A.TSMP.Editor
                     collisions.Add(key, current);
 
                     targets.Add(behaviour);
+#if UDONSHARP
                     udonTargets.Add(GetBackingUdonBindingTarget(behaviour));
+#endif
                     networkIds.Add(networkId);
                     variableHashes.Add(variableHash);
                     valueTypes.Add((byte)valueType);
@@ -633,12 +647,18 @@ namespace K13A.TSMP.Editor
                 }
 
                 if (targets.Count == targetStartCount)
-                    AddRpcOnlyTarget(behaviour, networkId, targets, udonTargets, networkIds, variableHashes, valueTypes, fieldNames, directions, priorities);
+                    AddRpcOnlyTarget(behaviour, networkId, targets,
+#if UDONSHARP
+                        udonTargets,
+#endif
+                        networkIds, variableHashes, valueTypes, fieldNames, directions, priorities);
             }
 
             Undo.RecordObject(decoder, "Rebuild TSMP TransSync bindings");
             SetComponentArrayFieldValue(decoder, FieldBindingTargets, targets);
+#if UDONSHARP
             SetFieldValue(decoder, FieldBindingUdonTargets, udonTargets.ToArray());
+#endif
             SetFieldValue(decoder, FieldBindingNetworkIds, networkIds.ToArray());
             SetFieldValue(decoder, FieldBindingVariableHashes, variableHashes.ToArray());
             SetFieldValue(decoder, FieldBindingValueTypes, valueTypes.ToArray());
@@ -654,7 +674,9 @@ namespace K13A.TSMP.Editor
             TSMPNetworkBehaviour behaviour,
             ushort networkId,
             List<Component> targets,
+#if UDONSHARP
             List<UdonBehaviour> udonTargets,
+#endif
             List<ushort> networkIds,
             List<uint> variableHashes,
             List<byte> valueTypes,
@@ -663,7 +685,9 @@ namespace K13A.TSMP.Editor
             List<int> priorities)
         {
             targets.Add(behaviour);
+#if UDONSHARP
             udonTargets.Add(GetBackingUdonBindingTarget(behaviour));
+#endif
             networkIds.Add(networkId);
             variableHashes.Add(0u);
             valueTypes.Add((byte)NetworkFrameProtocol.ValueTypeUnsupported);
@@ -807,6 +831,7 @@ namespace K13A.TSMP.Editor
             return false;
         }
 
+#if UDONSHARP
         private static UdonBehaviour GetBackingUdonBindingTarget(TSMPNetworkBehaviour behaviour)
         {
             if (behaviour == null)
@@ -819,6 +844,8 @@ namespace K13A.TSMP.Editor
 
             return UdonSharpEditorUtility.GetBackingUdonBehaviour(proxy);
         }
+
+#endif
 
         private static bool SameArray(System.Array current, List<Component> next)
         {
@@ -869,6 +896,7 @@ namespace K13A.TSMP.Editor
             UdonProxySyncBridge.Sync(component);
         }
 
+#if UDONSHARP
         private static void SyncUdonProxy(Component component)
         {
             if (EditorApplication.isPlayingOrWillChangePlaymode)
@@ -895,6 +923,8 @@ namespace K13A.TSMP.Editor
 
             return UdonSharpEditorUtility.GetProxyBehaviour(behaviour);
         }
+
+#endif
 
         private static object GetFieldValue(Component target, string fieldName)
         {
