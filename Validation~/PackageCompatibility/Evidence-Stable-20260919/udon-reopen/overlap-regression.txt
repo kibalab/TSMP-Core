@@ -1,0 +1,4 @@
+PASS two simultaneous captures, third rejected at capacity, ordered application across codec/sample/length changes and source overwrite
+PASS controlled readiness reordering after real GPU completion; younger result held until head ready; discarded/failed head does not stall younger result
+PASS disable/re-enable cancels both pending slots and recovers
+PASS eight RPC events with overlapping repeated copies applied exactly once
