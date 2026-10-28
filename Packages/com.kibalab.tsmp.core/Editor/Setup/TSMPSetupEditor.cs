@@ -205,6 +205,7 @@ namespace K13A.TSMP.Editor
             DrawProperty(_blockSize);
             DrawProperty(_sampleSize);
             DrawProperty(_flipY);
+            EditorGUILayout.HelpBox("Setup configures the Encoder with these frame dimensions (default 1280 x 720). An Encoder added on its own starts at 640 x 360 until its output or Setup configures it.", MessageType.Info);
             EditorGUILayout.Space(6f);
             DrawFramePreview();
         }

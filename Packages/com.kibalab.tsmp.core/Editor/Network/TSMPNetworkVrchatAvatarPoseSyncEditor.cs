@@ -58,6 +58,50 @@ namespace K13A.TSMP.Editor
             if (_maxPlayers != null)
                 EditorGUILayout.IntSlider(_maxPlayers, 1, 80, new GUIContent("Max Players"));
             EditorGUI.indentLevel--;
+            DrawCapacityEstimate();
+        }
+
+        // Cold-start estimate for the current sender policy: compact humanoid,
+        // no names, and one complete root pose per player before caches are warm.
+        internal static int EstimateColdFrameBytes(VrchatAvatarPoseMode mode, bool fingers, int players)
+        {
+            int records = mode == VrchatAvatarPoseMode.HumanoidBones ? (fingers ? 52 : 22)
+                : mode == VrchatAvatarPoseMode.TrackingPoints ? 6 : 0;
+            int recordBytes = mode == VrchatAvatarPoseMode.HumanoidBones ? 6 : 18;
+            int framing = NetworkFrameProtocol.NetworkHeaderBytes + NetworkFrameProtocol.MessageHeaderBytes
+                + NetworkFrameProtocol.VariableStateBodyHeaderBytes + NetworkFrameProtocol.VariableValueHeaderBytes + 6;
+            return framing + Mathf.Clamp(players, 1, 80) * (5 + 17 + records * recordBytes);
+        }
+
+        private void DrawCapacityEstimate()
+        {
+            if (targets.Length != 1 || _maxPlayers == null || _poseMode == null)
+                return;
+
+            int required = EstimateColdFrameBytes(GetSelectedMode(), _includeFingerBones != null && _includeFingerBones.boolValue, _maxPlayers.intValue);
+            TSMPEncoder encoder = ((TSMPNetworkVrchatAvatarPoseSync)target).transRpcEncoder;
+            TSMPCodec codec = encoder != null ? encoder.selectedCodec : null;
+            int width = encoder != null && encoder.output != null ? encoder.output.width : encoder != null ? encoder.width : 0;
+            int height = encoder != null && encoder.output != null ? encoder.output.height : encoder != null ? encoder.height : 0;
+            int capacity = codec != null && width > 0 && height > 0 && encoder.blockSize > 0
+                ? Mathf.Min(NetworkFrameProtocol.MaximumPayloadBytes, codec.GetPayloadCapacityBytes(width, height, encoder.blockSize)) : 0;
+
+            EditorGUILayout.Space(2f);
+            EditorGUILayout.LabelField("Sender Capacity Estimate", EditorStyles.boldLabel);
+            using (new EditorGUI.DisabledScope(true))
+            {
+                EditorGUILayout.IntField(new GUIContent("Cold Frame Bytes", "One avatar pose field including NetworkFrame framing, with all configured players and their roots."), required);
+                if (capacity > 0)
+                {
+                    EditorGUILayout.IntField("Codec Capacity", capacity);
+                    EditorGUILayout.IntField(new GUIContent("Pose-only Headroom", "Other TransSync fields and RPCs consume additional bytes."), capacity - required);
+                }
+            }
+            EditorGUILayout.HelpBox("Initial pose estimate includes every player's root, with compact humanoid records and no display names. Other fields and RPCs need additional capacity. Byte fit does not certify real-time player support.", MessageType.Info);
+            if (encoder == null || codec == null)
+                EditorGUILayout.HelpBox("Allow TSMPSetup to prepare the sender and selected codec to compare this estimate with its capacity.", MessageType.Info);
+            else if (capacity <= 0 || required > capacity)
+                EditorGUILayout.HelpBox("The initial pose alone exceeds this encoder's payload capacity. Reduce player count or pose detail, or increase codec capacity before testing.", MessageType.Warning);
         }
 
         private void DrawAvatarPoolSection()
@@ -84,6 +128,8 @@ namespace K13A.TSMP.Editor
                 EditorGUILayout.IntField("Active Avatars", sync.activeAvatarCount);
                 EditorGUILayout.IntField("Encoded Players", sync.encodedPlayerCount);
                 EditorGUILayout.IntField("Encoded Bytes", sync.encodedPoseBytes);
+                EditorGUILayout.IntField("Skipped Player Entries", sync.skippedPlayerEntryCount);
+                EditorGUILayout.IntField("Deferred Root Samples", sync.deferredRootPoseSampleCount);
                 EditorGUILayout.IntField("Decoded Players", sync.decodedPlayerCount);
                 EditorGUILayout.IntField("Last Error", sync.lastAvatarPoseError);
             }
