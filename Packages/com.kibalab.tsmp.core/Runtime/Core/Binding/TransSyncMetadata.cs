@@ -153,6 +153,16 @@ namespace K13A.TSMP
 
     public sealed class TransSyncBindingSnapshot
     {
+        public sealed class Collision
+        {
+            public TSMPNetworkBehaviour FirstTarget;
+            public string FirstFieldName;
+            public TSMPNetworkBehaviour DuplicateTarget;
+            public string DuplicateFieldName;
+            public ushort NetworkId;
+            public uint VariableHash;
+        }
+
         public Component[] Targets;
 #if UDONSHARP || COMPILER_UDONSHARP
         public UdonBehaviour[] UdonTargets;
@@ -166,6 +176,7 @@ namespace K13A.TSMP
         public bool[] SendOnChange;
         public float[] MinSendIntervals;
         public string[] SentEvents;
+        public Collision[] Collisions;
     }
 
     public static class TransSyncBindingSnapshotBuilder
@@ -173,6 +184,23 @@ namespace K13A.TSMP
         public static TransSyncBindingSnapshot Build(bool receive)
         {
             TSMPNetworkBehaviour[] behaviours = UnityEngine.Object.FindObjectsOfType<TSMPNetworkBehaviour>(true);
+            TransSyncBindingSnapshot snapshot = Build(receive, behaviours);
+            for (int i = 0; i < snapshot.Collisions.Length; i++)
+            {
+                TransSyncBindingSnapshot.Collision collision = snapshot.Collisions[i];
+                string firstPath = GetHierarchyPath(collision.FirstTarget.transform) + "/" + collision.FirstTarget.GetType().Name + "." + collision.FirstFieldName;
+                Debug.LogError("[TSMP] TransSync collision: networkId=" + collision.NetworkId + " hash=" + collision.VariableHash + " field=" + collision.DuplicateFieldName + " table=" + (receive ? "receive" : "send") + " conflictsWith=" + firstPath, collision.DuplicateTarget);
+            }
+            return snapshot;
+        }
+
+        // Both setup and automatic editor rebuilds compile the same ordered table.
+        // This overload returns diagnostics without logging so the editor can deduplicate them.
+        public static TransSyncBindingSnapshot Build(bool receive, TSMPNetworkBehaviour[] sourceBehaviours)
+        {
+            TSMPNetworkBehaviour[] behaviours = sourceBehaviours != null
+                ? (TSMPNetworkBehaviour[])sourceBehaviours.Clone()
+                : new TSMPNetworkBehaviour[0];
             TSMPNetworkVrchatAvatarPoseSync[] avatarPoseSyncs = UnityEngine.Object.FindObjectsOfType<TSMPNetworkVrchatAvatarPoseSync>(true);
             System.Array.Sort(behaviours, CompareNetworkBehaviours);
 
@@ -189,13 +217,15 @@ namespace K13A.TSMP
             List<bool> sendOnChange = new List<bool>();
             List<float> minSendIntervals = new List<float>();
             List<string> sentEvents = new List<string>();
+            List<TransSyncBindingSnapshot.Collision> collisions = new List<TransSyncBindingSnapshot.Collision>();
+            Dictionary<ulong, int> owners = new Dictionary<ulong, int>();
 
             for (int i = 0; i < behaviours.Length; i++)
                 AddBehaviour(behaviours[i], avatarPoseSyncs, receive, targets,
 #if UDONSHARP || COMPILER_UDONSHARP
                     udonTargets,
 #endif
-                    networkIds, variableHashes, valueTypes, fieldNames, directions, priorities, sendOnChange, minSendIntervals, sentEvents);
+                    networkIds, variableHashes, valueTypes, fieldNames, directions, priorities, sendOnChange, minSendIntervals, sentEvents, owners, collisions);
 
             TransSyncBindingSnapshot snapshot = new TransSyncBindingSnapshot();
             snapshot.Targets = targets.ToArray();
@@ -211,6 +241,7 @@ namespace K13A.TSMP
             snapshot.SendOnChange = sendOnChange.ToArray();
             snapshot.MinSendIntervals = minSendIntervals.ToArray();
             snapshot.SentEvents = sentEvents.ToArray();
+            snapshot.Collisions = collisions.ToArray();
             return snapshot;
         }
 
@@ -230,7 +261,9 @@ namespace K13A.TSMP
             List<int> priorities,
             List<bool> sendOnChange,
             List<float> minSendIntervals,
-            List<string> sentEvents)
+            List<string> sentEvents,
+            Dictionary<ulong, int> owners,
+            List<TransSyncBindingSnapshot.Collision> collisions)
         {
             if (behaviour == null)
                 return;
@@ -255,6 +288,22 @@ namespace K13A.TSMP
 
                 if (!TransSyncMetadata.IsFieldEnabled(behaviour, field))
                     continue;
+
+                ulong key = ((ulong)networkId << 32) | field.VariableHash;
+                if (owners.TryGetValue(key, out int firstIndex))
+                {
+                    collisions.Add(new TransSyncBindingSnapshot.Collision
+                    {
+                        FirstTarget = (TSMPNetworkBehaviour)targets[firstIndex],
+                        FirstFieldName = fieldNames[firstIndex],
+                        DuplicateTarget = behaviour,
+                        DuplicateFieldName = field.FieldInfo.Name,
+                        NetworkId = networkId,
+                        VariableHash = field.VariableHash
+                    });
+                    continue;
+                }
+                owners.Add(key, targets.Count);
 
                 targets.Add(behaviour);
 #if UDONSHARP || COMPILER_UDONSHARP
@@ -323,6 +372,10 @@ namespace K13A.TSMP
             int pathCompare = string.CompareOrdinal(GetHierarchyPath(left.transform), GetHierarchyPath(right.transform));
             if (pathCompare != 0)
                 return pathCompare;
+
+            int transformCompare = left.transform.GetInstanceID().CompareTo(right.transform.GetInstanceID());
+            if (transformCompare != 0)
+                return transformCompare;
 
             return left.GetInstanceID().CompareTo(right.GetInstanceID());
         }

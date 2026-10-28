@@ -11,6 +11,8 @@ public sealed class TransSyncSchedulingProbe : TSMPNetworkBehaviour
     public bool pollEnabled;
     public bool bytesEnabled;
     public bool textEnabled;
+    public bool collisionEnabled;
+    public bool bindingDirectionsEnabled;
     public int captures;
 #if !UDONSHARP && !COMPILER_UDONSHARP
     public bool manualWrite;
@@ -33,6 +35,14 @@ public sealed class TransSyncSchedulingProbe : TSMPNetworkBehaviour
     public byte[] bytes = new byte[] { 1, 2, 3 };
     [TransSync("text", EnabledBy = nameof(textEnabled))]
     public string text = "hello";
+
+    [TransSync("high", Priority = -999, EnabledBy = nameof(collisionEnabled))]
+    public int duplicateHigh = 99;
+    [TransSync("binding.send", Direction = NetworkSyncDirection.SendOnly, Priority = 23, SendOnChange = false,
+        MinSendInterval = .5f, SentEvent = nameof(TSMPBeforeEncode), EnabledBy = nameof(bindingDirectionsEnabled))]
+    public int sendOnly = 70;
+    [TransSync("binding.receive", Direction = NetworkSyncDirection.ReceiveOnly, Priority = -23, EnabledBy = nameof(bindingDirectionsEnabled))]
+    public int receiveOnly = 80;
 
     public override void TSMPBeforeEncode()
     {
