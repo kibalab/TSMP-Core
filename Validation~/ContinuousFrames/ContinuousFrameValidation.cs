@@ -436,6 +436,15 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         if (loop.Busy) throw new InvalidOperationException("Regression readback timeout");
     }
 
+    static void CheckEncoderPayloadCrc(ILoopback loop)
+    {
+        byte[] header = (byte[])loop.ReadEncoder(UdonFactory == null ? "_header" : "_headerBytes");
+        byte[] payload = (byte[])loop.ReadEncoder(UdonFactory == null ? "_encodedPayload" : "_payloadBytes");
+        if (!FrameHeaderReader.TryValidatePayload(header, 0, payload, loop.PayloadBytes, true, null,
+            out bool present, out uint expected, out uint actual, out string error) || !present || expected != actual)
+            throw new InvalidOperationException("Production encoder did not emit a valid payload CRC: " + error);
+    }
+
     IEnumerator Regression(ILoopback loop)
     {
         var results = new List<string>();
@@ -454,6 +463,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
                 int count = loop.AppliedCount;
                 byte[] expected = packet(size);
                 loop.Publish(expected);
+                CheckEncoderPayloadCrc(loop);
                 loop.Decode();
                 loop.Publish(packet(size));
                 var wait = Drain(loop);
@@ -494,6 +504,53 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
                 throw new InvalidOperationException("CPU/GPU switch or encoder restart changed payload");
         }
         results.Add("PASS encoder CPU/GPU switch, disable releases GPU resources, re-enable recovers");
+
+        // Damage a state value beyond the probe's marker bytes; preserve its header
+        // and the following RPC. Nothing may apply before the whole payload CRC passes.
+        int beforePayloadCrc = loop.AppliedCount;
+        int beforePayloadRpc = loop.RpcCount;
+        loop.QueueRpc();
+        byte[] crcPacket = packet(32);
+        loop.Publish(crcPacket);
+        CheckEncoderPayloadCrc(loop);
+        RenderTexture crcPrevious = RenderTexture.active;
+        var crcImage = new Texture2D(loop.Output.width, loop.Output.height, TextureFormat.RGBA32, false, true);
+        RenderTexture.active = loop.Output;
+        crcImage.ReadPixels(new Rect(0, 0, crcImage.width, crcImage.height), 0, 0);
+        Color32[] intact = crcImage.GetPixels32();
+        int payloadValueByte = NetworkFrameProtocol.NetworkHeaderBytes + NetworkFrameProtocol.MessageHeaderBytes
+            + NetworkFrameProtocol.VariableStateBodyHeaderBytes + NetworkFrameProtocol.VariableValueHeaderBytes + 20;
+        int payloadBlock = Luma4Raster.PayloadStartRow * (crcImage.width / 8) + payloadValueByte * 2;
+        int crcX = payloadBlock % (crcImage.width / 8) * 8;
+        int crcY = payloadBlock / (crcImage.width / 8) * 8;
+        for (int y = crcY; y < crcY + 8; y++)
+        for (int x = crcX; x < crcX + 8; x++)
+        {
+            Color c = crcImage.GetPixel(x, crcImage.height - 1 - y);
+            crcImage.SetPixel(x, crcImage.height - 1 - y, c.r > .5f ? Color.black : Color.white);
+        }
+        crcImage.Apply(false, false);
+        Graphics.Blit(crcImage, loop.Output);
+        RenderTexture.active = crcPrevious;
+        bool crcDebug = (bool)loop.ReadDecoder("debugLog");
+        loop.WriteDecoder("debugLog", false);
+        loop.Decode();
+        var payloadWait = Drain(loop);
+        while (payloadWait.MoveNext()) yield return payloadWait.Current;
+        if (loop.AppliedCount != beforePayloadCrc || loop.RpcCount != beforePayloadRpc
+            || !(bool)loop.ReadDecoder("lastHeaderValid") || (bool)loop.ReadDecoder("lastFrameValid")
+            || !(bool)loop.ReadDecoder("lastPayloadCrcPresent") || (bool)loop.ReadDecoder("lastPayloadCrcVerified"))
+            throw new InvalidOperationException("Damaged production payload applied state/RPC or escaped CRC rejection: " + loop.Diagnostics);
+        crcImage.SetPixels32(intact); crcImage.Apply(false, false);
+        Graphics.Blit(crcImage, loop.Output); Destroy(crcImage);
+        loop.Decode();
+        payloadWait = Drain(loop);
+        while (payloadWait.MoveNext()) yield return payloadWait.Current;
+        loop.WriteDecoder("debugLog", crcDebug);
+        if (loop.AppliedCount != beforePayloadCrc + 1 || loop.RpcCount != beforePayloadRpc + 1
+            || !(bool)loop.ReadDecoder("lastPayloadCrcVerified") || !crcPacket.SequenceEqual(loop.ReceivedPacket))
+            throw new InvalidOperationException("CRC failure poisoned same-frame/event retry: " + loop.Diagnostics);
+        results.Add("PASS production header payload CRC, pixel-damaged state+RPC atomic rejection and intact same-frame/event retry");
 
         int beforeCrc = loop.AppliedCount;
         loop.Publish(packet(32));
