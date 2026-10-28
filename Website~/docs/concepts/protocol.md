@@ -40,6 +40,7 @@ Important header fields:
 | `4` | 2 | Protocol major/minor version. |
 | `7` | 1 | Symbol mode used by the codec. |
 | `8` | 2 | Header size. Current value is `56`. |
+| `10` | 2 | Frame flags; bit 0 (`FrameFlags.PayloadCrc32`) announces payload CRC32. |
 | `12` | 8 | Block and active layout information. |
 | `20` | 4 | Stream ID. |
 | `24` | 4 | Frame index. |
@@ -47,12 +48,21 @@ Important header fields:
 | `32` | 8 | Codec ID and codec options. |
 | `40` | 2 | Payload type. |
 | `42` | 2 | Payload size in bytes. |
-| `44` | 6 | Reserved payload bytes. |
+| `44` | 4 | Payload CRC32 in protected frames; zero in legacy headers. |
+| `48` | 2 | Reserved; written as zero. |
 | `50` | 1 | Decode sample size. |
 | `51` | 1 | Quantization mode. |
 | `52` | 4 | Header CRC32. |
 
 The CRC is calculated over bytes `0..51` while the CRC field is zero. If the receiver calculates a different CRC, it discards the frame and logs a warning.
+
+## Payload integrity {#payload-integrity}
+
+Production `TSMPEncoder` frames use protocol **0.2** and always set flag bit 0. Bytes `44..47` hold little-endian CRC32/IEEE of exactly the `PayloadSize` payload bytes. The existing header CRC also covers the flag and payload CRC field. The 56-byte header, payload capacity and NetworkFrame message layout are unchanged; no checksum bytes are appended to the body.
+
+When a frame proceeds to payload processing, the decoder checks an announced payload CRC after readback and before that frame refreshes prediction or applies variables/RPCs. A mismatch discards the frame before application. This applies to sequential, predicted, combined-output and two-slot paths, including payload-readback-only and parse-only modes. A protected frame's decoded length must match its header `PayloadSize`, including when manual layout is used.
+
+Legacy header APIs keep the **0.1** default with no payload CRC flag and zero bytes `44..49`. The decoder accepts these frames by default for compatibility. Enable `requirePayloadCrc32` to reject senders without a payload checksum. Header-only mode does not read or verify the body. Duplicate or older frames skipped before payload processing are not payload-verified either; the predicted path may refresh only header metadata from their CRC-valid header, without accepting or applying their body. `lastPayloadCrcPresent` reports the flag and `lastPayloadCrcVerified` reports a completed successful payload check.
 
 ## Frame body
 
@@ -128,6 +138,6 @@ RPC-only frames are valid. This allows a scene to send a short event even when n
 
 ## Compatibility notes
 
-The header size remains fixed at 56 bytes. Reserved bytes are kept for future compatibility and should be written as zero by current encoders.
+An older decoder can read the unchanged 56-byte layout of a protected 0.2 frame but ignores its payload checksum. Pair a current encoder with a current decoder to use the check. Legacy frames accepted by a current decoder remain unprotected at the payload level. CRC detection does not establish live transport rate, avatar performance, retransmission or restart/session behavior.
 
 Payload copy and FEC are not part of the current wire format. Current frames carry one payload body.

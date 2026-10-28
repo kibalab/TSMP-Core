@@ -40,6 +40,7 @@ byte 0                                                        byte 55
 | `4` | 2 | Protocol major/minor version. |
 | `7` | 1 | 코덱이 사용하는 symbol mode. |
 | `8` | 2 | Header size. 현재 값은 `56`. |
+| `10` | 2 | Frame flags. bit 0 (`FrameFlags.PayloadCrc32`)이 payload CRC32 존재를 표시합니다. |
 | `12` | 8 | Block 및 active layout 정보. |
 | `20` | 4 | Stream ID. |
 | `24` | 4 | Frame index. |
@@ -47,12 +48,21 @@ byte 0                                                        byte 55
 | `32` | 8 | Codec ID와 codec options. |
 | `40` | 2 | Payload type. |
 | `42` | 2 | Payload size in bytes. |
-| `44` | 6 | Reserved payload bytes. |
+| `44` | 4 | 보호 프레임의 payload CRC32. Legacy header는 0. |
+| `48` | 2 | Reserved. 0으로 기록합니다. |
 | `50` | 1 | Decode sample size. |
 | `51` | 1 | Quantization mode. |
 | `52` | 4 | Header CRC32. |
 
 CRC는 CRC field를 0으로 둔 상태에서 bytes `0..51`에 대해 계산됩니다. 수신자가 계산한 CRC가 다르면 프레임을 버리고 경고를 기록합니다.
+
+## Payload 무결성 {#payload-integrity}
+
+실제 `TSMPEncoder`가 생성하는 프레임은 프로토콜 **0.2**를 사용하며 항상 flag bit 0을 설정합니다. `44..47`바이트에 정확히 `PayloadSize`만큼의 payload를 계산한 little-endian CRC32/IEEE를 기록합니다. 기존 header CRC는 flag와 payload CRC 필드도 보호합니다. 56바이트 header, payload 용량과 NetworkFrame 메시지 형식은 유지되며 body 뒤에 checksum 바이트를 추가하지 않습니다.
+
+Payload 처리로 진행한 프레임은 readback 후 해당 프레임의 prediction 갱신이나 변수·RPC 적용 전에 표시된 payload CRC를 검증합니다. 불일치하면 적용 전에 프레임을 거부합니다. 순차·예측·combined-output·두 슬롯 경로와 payload-readback-only·parse-only 모드에 적용됩니다. 보호 프레임은 수동 layout에서도 실제 디코딩 길이가 header의 `PayloadSize`와 일치해야 합니다.
+
+Legacy header API의 기본값은 **0.1**이며 payload CRC flag가 없고 `44..49`바이트가 0입니다. 현재 decoder는 호환성을 위해 이 프레임을 기본 수용합니다. checksum이 없는 송신기를 거부하려면 `requirePayloadCrc32`를 켭니다. Header-only 모드는 body를 읽거나 검증하지 않습니다. Payload 처리 전에 건너뛴 중복·과거 프레임도 payload 검증 완료가 아닙니다. 예측 경로는 이때 CRC를 통과한 header 메타데이터만 갱신할 수 있으며 body를 채택하거나 적용하지 않습니다. `lastPayloadCrcPresent`는 flag 존재, `lastPayloadCrcVerified`는 완료된 payload 검증 성공을 나타냅니다.
 
 ## 프레임 바디
 
@@ -128,6 +138,6 @@ RPC-only frame은 유효합니다. 즉 variable state가 바뀌지 않은 프레
 
 ## 호환성 메모
 
-Header size는 56바이트로 고정되어 있습니다. Reserved bytes는 이후 호환성을 위해 유지되며 현재 encoder는 0으로 써야 합니다.
+구 decoder는 보호된 0.2 프레임의 동일한 56바이트 layout을 읽지만 payload checksum은 무시합니다. 검증을 사용하려면 현재 encoder와 decoder를 함께 사용하세요. 현재 decoder가 수용한 legacy 프레임의 payload는 계속 무보호입니다. CRC 검출이 실시간 전송률, 아바타 성능, 재전송이나 재시작·세션 동작을 보장하지는 않습니다.
 
 현재 wire format에는 payload copy와 FEC가 없습니다. 현재 프레임은 하나의 payload body만 운반합니다.

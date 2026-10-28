@@ -97,6 +97,8 @@ Toggle이 도착하지 않으면 더 많은 데이터를 추가하기 전에 tra
 
 실제로 사용할 전송 경로에서 알려진 송신 sequence와 payload 전체 바이트를 수신 결과와 비교하세요. 헤더 CRC와 `valid=yes`만으로 payload 정확성을 입증할 수 없습니다. 로컬 Spout 왕복, 압축 영상 왕복과 실제 VRChat 세션은 각각 검사합니다.
 
+현재 `TSMPEncoder` 출력에는 payload CRC가 있으며 현재 decoder는 적용 전에 검사합니다. **Payload Checksum Present**와 **Payload Checksum Verified**를 기록해 검증된 body와 수용된 legacy·header-only·건너뛴 프레임을 구분하세요. 모든 송신기에 checksum을 요구하려면 **Require Payload Checksum**을 켭니다. 구 decoder는 이 검사를 무시하고, 기본 legacy 수용은 payload checksum을 보장하지 않습니다. CRC 불일치는 프레임을 거부하며 전송 경로를 고치거나 누락된 업데이트를 복구하지 않습니다. [호환 규칙](../concepts/protocol.md#payload-integrity)을 참고하세요.
+
 목표 Hz, 실제 발행 Hz, 적용 Hz, 송신 마감 누락, 수신 누락, 데이터 불일치, 원본 데이터 경과 시간과 p95 지연을 CPU/GPU 부하와 함께 기록하세요. 발행된 모든 프레임을 수신해도 송신 목표율을 달성했다는 뜻은 아닙니다. 지연과 업데이트율 예산을 시험 전에 정하고, 재시작·재연결·입퇴장과 목표 인원의 장시간 운전을 확인하세요.
 
 RPC는 유한 반복 전송과 최근 32개 이벤트의 중복 방지 캐시를 사용합니다. 전달 ACK나 영구적인 exactly-once 보장은 없습니다. 같은 ID를 재사용하는 송신기 재시작과 오래된 영상 재등장을 애플리케이션 시험에 포함하세요. 로컬 루프백 성공이 미측정 외부 경로의 해당 동작까지 입증하지는 않습니다.

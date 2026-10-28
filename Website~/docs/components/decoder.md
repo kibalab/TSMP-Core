@@ -50,7 +50,20 @@ In `TSMPDebugCanvas`, a working decoder should show:
 - Message counts that match the kind of data being sent.
 - Low loss during steady playback.
 
-If the frame is valid but objects do not move, check network IDs, receive interpolation, and whether receiver objects are active. `valid=yes` means the frame passed the selected header/structural checks; it does not certify byte-for-byte equality with the sender. CRC32 covers header bytes 0..51, not the payload. Structurally valid changes to values or RPC arguments can therefore go undetected. Test the actual transport against known sent bytes or application markers.
+If the frame is valid but objects do not move, check network IDs, receive interpolation, and whether receiver objects are active. `valid=yes` reflects the selected decode mode and frame filtering; inspect the payload checksum indicators to see whether a body was verified. The header CRC covers bytes 0..51, and current encoder frames carry a separate payload CRC. Legacy frames accepted without that checksum can still contain structurally valid changes to values or RPC arguments. Test the actual transport against known sent bytes or application markers.
+
+## Payload integrity {#payload-integrity}
+
+When a frame proceeds to payload processing, its announced payload CRC32 is checked after readback, before it refreshes prediction or applies variables/RPCs. A mismatch rejects the frame. Sequential, predicted, combined-output and overlapping readbacks use this check, including payload-readback-only and parse-only safety modes. For protected frames, a manual layout or length override must still match the header's `PayloadSize`.
+
+**Require Payload Checksum** (`requirePayloadCrc32`) defaults to `false` so existing senders remain usable. Enable it when reception must reject frames without a payload checksum. Current `TSMPEncoder` output includes the checksum automatically; legacy header APIs and older senders may omit it.
+
+| Indicator | Meaning |
+| --- | --- |
+| Payload Checksum Present (`lastPayloadCrcPresent`) | The accepted header announces a payload CRC. |
+| Payload Checksum Verified (`lastPayloadCrcVerified`) | The payload was read and its checksum matched. |
+
+Header-only mode does not check the body. Duplicate or older frames skipped before payload processing are not payload-verified either; the predicted path may refresh only their CRC-valid header metadata without accepting or applying the body. A legacy frame may be accepted while both indicators are false. The flags distinguish these cases from a completed checksum check; `valid=yes` alone is not a payload-integrity claim. See [frame compatibility](../concepts/protocol.md#payload-integrity).
 
 ## Decode order
 
@@ -61,7 +74,8 @@ The first frame and the fallback path work in stages:
 3. Choose a codec handler from the codec ID.
 4. Decode payload bytes into the payload byte texture.
 5. Read payload bytes.
-6. Dispatch variable state messages and RPC messages.
+6. Verify the payload CRC when present; reject missing checksums when required.
+7. Dispatch variable state messages and RPC messages.
 
 After a valid frame, **Use Predicted Readback** is enabled by default. The decoder can recover the current header and payload together using the previous configuration, reducing two sequential GPU readback waits to one. It still checks the current header before applying any values or RPCs. Changed settings or payload length cause the same captured image to be processed through the fallback path.
 
@@ -87,7 +101,7 @@ Use `None` when a component should send data but not apply incoming data on that
 
 ## CRC failures
 
-If the decoder logs a CRC mismatch, the frame was damaged before decode. Check scaling, filtering, compression, and Luma4 setting mismatch first.
+The decoder reports header and payload CRC mismatches separately. Either means the received bytes do not match their checksum. Check scaling, filtering, compression, and Luma4 setting mismatch first. A missing checksum under strict reception is a sender compatibility issue, not a measured pixel-corruption event.
 
 Typical causes:
 
@@ -103,6 +117,7 @@ Typical causes:
 | --- | --- |
 | `header=no` | Confirm the full TSMP image reaches the decoder input. |
 | `valid=no` with CRC warnings | Remove scaling/filtering/color processing from the transport. |
+| Payload checksum required | Use a current encoder, or allow legacy reception only when that is intended. |
 | `msg=0` | Confirm encoder payload is non-zero and setup bindings exist. |
 | RPC count stays zero | Test with `TSMPNetworkGameObjectToggle` and check frame loss. |
 | Values are received but not applied | Check receive interpolation and active state. |

@@ -50,7 +50,20 @@ title: TSMPDecoder
 - 전송 중인 데이터 종류와 맞는 message count.
 - 안정적인 재생 중 낮은 loss.
 
-Frame은 valid인데 object가 움직이지 않으면 network ID, receive interpolation, receiver object active state를 확인하세요. `valid=yes`는 선택한 헤더·구조 검사를 통과했다는 뜻이며 송신 바이트와의 일치를 인증하지 않습니다. CRC32는 헤더 0..51바이트만 보호하고 payload는 포함하지 않습니다. 형식을 유지한 값이나 RPC 인자 변화는 검출하지 못할 수 있습니다. 실제 전송 경로에서 알려진 송신 바이트 또는 애플리케이션 표식과 대조하세요.
+Frame은 valid인데 object가 움직이지 않으면 network ID, receive interpolation, receiver object active state를 확인하세요. `valid=yes`는 선택한 decode 모드와 프레임 필터링 결과를 반영하므로, body 검증 여부는 payload checksum 지표로 확인합니다. Header CRC는 0..51바이트를 보호하고 현재 encoder 프레임은 별도 payload CRC를 포함합니다. checksum 없이 수용한 legacy 프레임은 형식을 유지한 값이나 RPC 인자 변화를 검출하지 못할 수 있습니다. 실제 전송 경로에서 알려진 송신 바이트 또는 애플리케이션 표식과 대조하세요.
+
+## Payload 무결성 {#payload-integrity}
+
+Payload 처리로 진행한 프레임은 readback 후 해당 프레임의 prediction 갱신과 변수·RPC 적용 전에 표시된 CRC32를 검증합니다. 불일치하면 프레임을 거부합니다. 순차·예측·combined-output·중첩 readback 경로와 payload-readback-only·parse-only 안전 모드가 이 검사를 사용합니다. 보호 프레임의 수동 layout이나 길이 override도 header의 `PayloadSize`와 일치해야 합니다.
+
+**Require Payload Checksum** (`requirePayloadCrc32`)은 기존 송신기와의 호환을 위해 기본 `false`입니다. payload checksum이 없는 프레임을 거부해야 할 때 켭니다. 현재 `TSMPEncoder` 출력은 checksum을 자동 포함하지만 legacy header API나 구 송신기는 생략할 수 있습니다.
+
+| 지표 | 의미 |
+| --- | --- |
+| Payload Checksum Present (`lastPayloadCrcPresent`) | 수용된 header가 payload CRC 존재를 표시합니다. |
+| Payload Checksum Verified (`lastPayloadCrcVerified`) | payload를 읽고 checksum 일치를 확인했습니다. |
+
+Header-only 모드는 body를 검사하지 않습니다. Payload 처리 전에 건너뛴 중복·과거 프레임도 payload 검증 완료가 아닙니다. 예측 경로는 이때 CRC를 통과한 header 메타데이터만 갱신할 수 있으며 body를 채택하거나 적용하지 않습니다. Legacy 프레임은 두 지표가 모두 false인 상태에서도 수용될 수 있습니다. 지표로 완료된 checksum 검사와 구분하며, `valid=yes`만으로 payload 무결성을 주장하지 않습니다. [프레임 호환성](../concepts/protocol.md#payload-integrity)을 참고하세요.
 
 ## Decode 순서
 
@@ -61,7 +74,8 @@ Decoder는 단계적으로 동작합니다.
 3. Codec ID로 codec handler를 선택합니다.
 4. Payload byte texture로 payload bytes를 decode합니다.
 5. Payload bytes를 읽습니다.
-6. Variable state messages와 RPC messages를 dispatch합니다.
+6. payload CRC가 있으면 검증하고, 필수 설정일 때 checksum 누락을 거부합니다.
+7. Variable state messages와 RPC messages를 dispatch합니다.
 
 위 순서는 첫 프레임과 폴백 경로에 해당합니다. 기본으로 켜진 **Use Predicted Readback**은 이전에 검증한 설정으로 현재 헤더와 payload를 함께 복원해, 순차 GPU readback 대기 두 번을 한 번으로 줄입니다. 현재 헤더를 검증하기 전에는 변수나 RPC를 적용하지 않으며, 설정이나 payload 길이가 달라지면 같은 스냅샷을 기존 경로로 다시 처리합니다.
 
@@ -87,7 +101,7 @@ Readback이 한 번의 업데이트보다 오래 걸릴 때 누락을 줄일 수
 
 ## CRC failures
 
-디코더가 CRC mismatch를 기록하면 decode 전에 frame이 손상된 것입니다. 먼저 scaling, filtering, compression, Luma4 setting mismatch를 확인하세요.
+디코더는 header와 payload CRC 불일치를 구분해 기록합니다. 수신 바이트와 해당 checksum이 일치하지 않는다는 뜻입니다. 먼저 scaling, filtering, compression, Luma4 setting mismatch를 확인하세요. 엄격 수신에서 checksum이 누락된 경우는 송신기 호환성 문제이며, 측정된 픽셀 손상으로 해석하지 않습니다.
 
 일반적인 원인:
 
@@ -103,6 +117,7 @@ Readback이 한 번의 업데이트보다 오래 걸릴 때 누락을 줄일 수
 | --- | --- |
 | `header=no` | 전체 TSMP 이미지가 decoder input에 도달하는지 확인합니다. |
 | CRC warning과 `valid=no` | 전송 경로의 scaling/filtering/color processing을 제거합니다. |
+| Payload checksum required | 현재 encoder를 사용하거나, legacy 수용이 필요한 경우에만 필수 검사를 해제합니다. |
 | `msg=0` | Encoder payload가 0보다 크고 setup binding이 있는지 확인합니다. |
 | RPC count가 0 | `TSMPNetworkGameObjectToggle`로 테스트하고 frame loss를 확인합니다. |
 | 값은 수신되지만 적용되지 않음 | Receive interpolation과 active state를 확인합니다. |

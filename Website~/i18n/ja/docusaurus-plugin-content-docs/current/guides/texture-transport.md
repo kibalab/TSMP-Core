@@ -97,6 +97,8 @@ OBSを使用する場合:
 
 実際に使う転送経路で、既知の送信 sequence と payload 全バイトを受信結果と比較します。ヘッダー CRC と `valid=yes` だけでは payload の正確さを証明できません。ローカル Spout 往復、圧縮動画の往復、実際の VRChat セッションは別々に検査します。
 
+現在の `TSMPEncoder` 出力は payload CRC を持ち、現在の decoder は適用前に検証します。**Payload Checksum Present** と **Payload Checksum Verified** を記録し、検証済みの本文を、受け入れた legacy・header-only・スキップ済みフレームと区別してください。全送信側に checksum が必要なら **Require Payload Checksum** を有効にします。旧 decoder はこの検証を無視し、既定の legacy 受信では payload checksum を保証しません。CRC 不一致はフレームを拒否し、転送経路の修復や欠落更新の復元は行いません。[互換規則](../concepts/protocol.md#payload-integrity)を参照してください。
+
 目標 Hz、実際の送信 Hz、適用 Hz、送信期限の取りこぼし、受信欠落、データ不一致、元データの経過時間、p95 遅延を CPU/GPU 負荷とともに記録します。送信済みフレームをすべて受信しても、目標送信率の達成を意味しません。遅延と更新率の予算を試験前に決め、再起動、再接続、入退場と目標人数での長時間運転を確認します。
 
 RPC は有限回の反復送信と直近32イベントの重複防止キャッシュを使います。配送 ACK や永続的な exactly-once 保証はありません。同じ ID を再利用する送信機の再起動と古い映像の再出現を試験に含めてください。ローカル loopback の成功は未測定の外部経路の動作まで証明しません。

@@ -17,6 +17,8 @@ Constants:
 | `Size` | `56` |
 | `BytesBeforeCrc` | `52` |
 | `CrcOffset` | `52` |
+| `PayloadCrc32Offset` | `44` |
+| `PayloadCrc32Bytes` | `4` |
 | `MaxCodecOptionBytes` | `5` |
 
 Important methods:
@@ -29,6 +31,10 @@ Important methods:
 | `ClampDecodeSampleSize(...)` | Decode sampling size를 clamp합니다. |
 
 `WriteTo`는 항상 header CRC를 씁니다.
+
+`CreateDefault()`는 legacy header 0.1 기본값을 유지합니다. `FrameFlags.PayloadCrc32`를 설정한 `WriteTo`는 전달된 `PayloadCrc32`를 쓰고 header minor version을 최소 0.2로 올립니다. Body checksum 자체를 계산하지는 않습니다. 실제 encoder는 `FrameHeaderWriter.TryWritePayloadCrc32`로 계산하고 flag·version·header CRC를 완성합니다. [Wire 계약](../concepts/protocol.md#payload-integrity)을 참고하세요.
+
+Header validity와 payload 바이트 검증은 별개입니다. `FrameHeaderReader.TryValidatePayload`가 payload CRC와 decoder의 checksum 필수 정책을 적용 전에 검사합니다.
 
 ## FrameHeaderReader
 
@@ -50,6 +56,7 @@ Test와 tool에서는 error string을 parsing하지 말고 reader status code를
 | Type | Values |
 | --- | --- |
 | `SymbolMode` | `Luma4` |
+| `FrameFlags` | `None`, `PayloadCrc32` (bit 0) |
 | `PayloadType` | `Empty`, `NetworkFrame` |
 | `NetworkMessageType` | `VariableState`, `RpcCall` |
 | `NetworkValueType` | Bool, Int32, Float32, vectors, quaternion, UTF8 string, raw bytes, supported arrays. |

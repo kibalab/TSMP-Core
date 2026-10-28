@@ -4,6 +4,12 @@ title: TSMPDecoder API
 
 # `TSMPDecoder`
 
+## Payload checksum
+
+実際の encoder は header 0.2 に payload CRC32 を含みます。Payload 処理へ進むフレームでは、payload-readback-only・parse-only モードも含め、readback 後、そのフレームによる prediction 更新と変数・RPC の適用より前に存在する checksum を検証します。保護フレームの手動 layout 長も header `PayloadSize` と一致する必要があります。`requirePayloadCrc32` は legacy 互換性のため既定 false で、true なら checksum のないフレームを拒否します。設定は decode 要求ごとに保持されるため、変更は後の要求へ反映されます。
+
+`lastPayloadCrcPresent` は header flag、`lastPayloadCrcVerified` は完了した本文検証の成功を示します。Header-only と本文検証前にスキップした重複・過去フレームは `Verified=false` です。予測 skip 経路は CRC を通過した header メタデータだけを更新できますが、本文を採用・適用しません。既定で受け入れた legacy payload は未保護です。[Checksum 契約](../concepts/protocol.md#payload-integrity)を参照してください。
+
 ## ヘッダーと本文の直接出力
 
 `useCombinedByteOutput` の既定値は `true` です。予測経路では対応コーデックが復元済みの56バイトヘッダーと本文を専用の RGBA8 readback テクスチャへ直接出力し、別の結合パスと本文の中間出力を省きます。元画像のスナップショット、ヘッダー CRC 検証、長さの完全一致と同じ画像でのフォールバックは維持されます。送信データグラムは変わらず、一定の受信率を保証する機能ではありません。
@@ -61,14 +67,15 @@ public void DecodeNow()
 3. マジック、バージョン、ペイロード レイアウト、および CRC を検証します。
 4. `codecId` でコーデック ハンドラーを選択します。
 5. 同じスナップショットからペイロードバイトをデコードします。
-6. ネットワークメッセージを解析します。
-7. 変数を適用し、RPC 呼び出しをディスパッチします。
+6. 存在する payload CRC と checksum 必須方針を検証します。
+7. ネットワークメッセージを解析します。
+8. 変数を適用し、RPC 呼び出しをディスパッチします。
 
 ## 予測 readback {#predicted-readback}
 
 有効なヘッダーを学習した後は、CPU がヘッダーを待たず、前回の設定で現在の画像の Luma4 ヘッダーパスと payload パスを実行できます。復元バイトを専用の linear RGBA8 ターゲットにまとめて1回だけ readback します。このバイトターゲットは入力形式を維持するスナップショットとは別です。
 
-現在のヘッダーの magic、version、size、CRC と通常のフレーム順序検査を通過する必要があります。CRC より前のバイトは、フレーム番号・時刻・payload 長を除いてキャッシュと一致する必要があります。payload 長は別途**完全一致**を検査し、解釈後の block/sample/start-block 設定も比較します。長さの増減、コーデック・オプション・ストリーム・レイアウトなどの変更があれば、推測した payload を破棄し、**同じスナップショット**から実際の payload を要求します。元画像は再キャプチャしません。CRC 不一致では、未検証データへフォールバックせずフレームを破棄します。
+現在のヘッダーの magic、version、size、header CRC と通常のフレーム順序検査を通過する必要があります。CRC より前のバイトは、フレーム番号・時刻・payload 長・フレームごとの payload CRC `44..47` を除いてキャッシュと一致する必要があります。payload 長は別途**完全一致**を検査し、解釈後の block/sample/start-block 設定も比較します。Flags と reserved `48..49` はメタデータ比較に残ります。長さ・コーデック・オプション・ストリーム・レイアウトなどが変われば推測した payload を破棄し、**同じスナップショット**から実際の payload を要求し、元画像は再キャプチャしません。復元後に現在の payload CRC を検査し、checksum 不一致では未検証データへ戻らずフレームを破棄します。
 
 長さの完全一致により、カスタムコーデックへ多くのバイトを要求した場合も同じ先頭データが得られるとは仮定しません。既存のコーデック API とシェーダーは変更せず、各パスの `PrepareDecode` も呼び出します。無効化、入力サイズ・向きの変更、手動レイアウト・安全モードの使用後はヘッダーを再学習します。結合リソースがなければ逐次経路を使います。マテリアルは Editor とビルド準備で自動設定し、通常 Unity の実行時生成ではパッケージのリソースから読み込みます。
 
@@ -110,7 +117,7 @@ Inspector に追加設定は不要です。各スロットが入力と同じサ�
 
 ### データグラム互換性
 
-データグラムとプロトコルバージョンは**変更しません**。ヘッダーは56バイト、payload形式も従来どおりです。`20..23` は `StreamId` UInt32 LE、`24..27` は `FrameIndex` UInt32 LE、`28..31` は `TimestampMs` UInt32 LE で、この判定に時刻は使いません。予約領域 `44..49` は引き続き0です。CRC32 は `0..51` を対象とし `52..55` に保存します。ウィンドウサイズもセッション ID も送信しません。他のフィールドは[フレームレイアウト](../concepts/protocol.md)を参照してください。既存送信側の変更は不要で、受信側の採用規則のみが変わります。
+フレームウィンドウ規則自体はデータグラムのフィールドを追加しません。ヘッダーは56バイト、payload メッセージ形式も維持します。`20..23` は `StreamId` UInt32 LE、`24..27` は `FrameIndex`、`28..31` は判定に使わない `TimestampMs` です。実際の encoder の header 0.2 は別に flag bit 0 と `44..47` を payload CRC に使い、`48..49` はゼロです。Header CRC32 は `0..51` を対象とし `52..55` に保存します。ウィンドウサイズもセッション ID も送信しません。Checksum が必須でなければ legacy 0.1 も受け入れます。[フレーム互換性](../concepts/protocol.md#payload-integrity)を参照してください。
 
 ## `ResetDecodeDiagnostics()`
 

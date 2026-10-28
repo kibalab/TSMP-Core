@@ -97,6 +97,8 @@ If the toggle does not arrive, fix transport and decoder status before adding mo
 
 For the transport you intend to use, compare known transmitted sequences and complete payload bytes with the received result. Header CRC and `valid=yes` alone do not prove payload integrity. Keep a local Spout roundtrip, a compressed video roundtrip and an actual VRChat session as separate checks.
 
+Current `TSMPEncoder` output carries a payload CRC and a current decoder checks it before application. Record **Payload Checksum Present** and **Payload Checksum Verified** to distinguish checked bodies from accepted legacy frames or header-only/skipped frames. Enable **Require Payload Checksum** when every sender should provide it. Older decoders ignore this check, and default legacy reception has no payload checksum guarantee. CRC mismatches reject frames; they do not repair the transport or restore missing updates. See [the compatibility rules](../concepts/protocol.md#payload-integrity).
+
 Record target Hz, actual published Hz, applied Hz, sender deadline misses, receiver misses, data mismatches, source age and p95 latency alongside CPU/GPU load. A receiver accepting every published frame does not prove the sender maintained its target rate. Choose latency and update-rate budgets before the trial, then test restart, reconnection, player join/leave and a longer run at the intended population.
 
 RPC uses finite repeats and a recent 32-event deduplication cache; it has no delivery ACK or persistent exactly-once guarantee. Include sender restarts with reused IDs and old video reappearing in application tests. A successful local loopback does not establish these behaviors for an unmeasured external route.
