@@ -56,6 +56,7 @@ namespace K13A.TSMP.Udon
 
         public bool applyEveryFrame = true;
         public bool skipDuplicateFrames = true;
+        public bool requirePayloadCrc32;
         [Min(1)] public int frameWindowSize = 256;
 
         [HideInInspector]
@@ -86,6 +87,8 @@ namespace K13A.TSMP.Udon
         [HideInInspector] public bool readbackInFlight;
         [HideInInspector] public bool lastFrameValid;
         [HideInInspector] public bool lastHeaderValid;
+        [HideInInspector] public bool lastPayloadCrcPresent;
+        [HideInInspector] public bool lastPayloadCrcVerified;
         [HideInInspector] public bool lastHeaderFlipY;
         [HideInInspector] public uint lastStreamId;
         [HideInInspector] public uint lastFrameIndex;
@@ -134,6 +137,7 @@ namespace K13A.TSMP.Udon
         private Texture _requestSource;
         private RenderTexture _requestByteTexture;
         private bool _requestUseHeaderLayout;
+        private bool _requestRequirePayloadCrc32;
         private int _requestSafetyMode;
         private Texture[] _slotSources = new Texture[2];
         private RenderTexture[] _slotSnapshots = new RenderTexture[2];
@@ -182,6 +186,7 @@ namespace K13A.TSMP.Udon
         private int[] _slotLastHeaderRows = new int[2];
         private int[] _slotHeaderSources = new int[2];
         private bool[] _slotHeaderLayouts = new bool[2];
+        private bool[] _slotRequirePayloadCrc32 = new bool[2];
         private int[] _slotSafetyModes = new int[2];
         private byte[] _headerBytes;
         private byte[] _payloadBytes;
@@ -348,6 +353,9 @@ namespace K13A.TSMP.Udon
             _slotErrors[_activeSlot] = null;
             _requestSource = sourceTexture;
             _requestUseHeaderLayout = useHeaderPayloadLayout;
+            _requestRequirePayloadCrc32 = requirePayloadCrc32;
+            lastPayloadCrcPresent = false;
+            lastPayloadCrcVerified = false;
             _requestSafetyMode = decodeSafetyMode;
             _requestByteTexture = _activeSlot == 0 ? payloadByteTexture :
                 DecoderPredictionRuntime.EnsureTexture(_slotByteTextures[_activeSlot], payloadByteTexture.width, payloadByteTexture.height);
@@ -538,6 +546,7 @@ namespace K13A.TSMP.Udon
             _slotLastHeaderRows[slot] = lastHeaderRow;
             _slotHeaderSources[slot] = lastHeaderSource;
             _slotHeaderLayouts[slot] = _requestUseHeaderLayout;
+            _slotRequirePayloadCrc32[slot] = _requestRequirePayloadCrc32;
             _slotSafetyModes[slot] = _requestSafetyMode;
             if (_decodeStage == 3)
             {
@@ -583,7 +592,11 @@ namespace K13A.TSMP.Udon
             lastHeaderRow = _slotLastHeaderRows[slot];
             lastHeaderSource = _slotHeaderSources[slot];
             _requestUseHeaderLayout = _slotHeaderLayouts[slot];
+            _requestRequirePayloadCrc32 = _slotRequirePayloadCrc32[slot];
             _requestSafetyMode = _slotSafetyModes[slot];
+            lastPayloadCrcPresent = lastHeaderValid && _headerBytes != null && _headerBytes.Length >= FrameHeader.Size
+                && (Binary.ReadUInt16LE(_headerBytes, FrameHeader.FlagsOffset) & (int)FrameFlags.PayloadCrc32) != 0;
+            lastPayloadCrcVerified = false;
         }
 
         private void ReleaseSlotTextures(int slot)
@@ -662,6 +675,20 @@ namespace K13A.TSMP.Udon
 
         private void CompletePayload()
         {
+            _crc32Table = Crc32Runtime.EnsureTable(_crc32Table);
+            bool present;
+            uint expected;
+            uint actual;
+            string integrityError;
+            if (!FrameHeaderReader.TryValidatePayload(_headerBytes, 0, _payloadBytes, _payloadDataBytes,
+                _requestRequirePayloadCrc32, _crc32Table, out present, out expected, out actual, out integrityError))
+            {
+                lastPayloadCrcPresent = present;
+                RejectPayloadIntegrity(integrityError);
+                return;
+            }
+            lastPayloadCrcPresent = present;
+            lastPayloadCrcVerified = present;
             CachePrediction();
 
             if (_requestSafetyMode == DecodeSafetyPayloadReadbackOnly)
@@ -678,6 +705,20 @@ namespace K13A.TSMP.Udon
             _lastAppliedFrameIndex = lastFrameIndex;
 
             lastFrameValid = true;
+        }
+
+        private bool RejectPayloadIntegrity(string error)
+        {
+            lastPayloadCrcVerified = false;
+            _predictionValid = false;
+            lastFrameValid = false;
+            lastAppliedVariableCount = 0;
+            lastRpcCallCount = 0;
+            lastNetworkMessageCount = 0;
+            lastRpcMethodName = string.Empty;
+            lastError = error;
+            LogTSMPRateLimitedWarning(LogPrefix, lastError, 1f);
+            return false;
         }
 
         private bool ValidateSetup()
@@ -975,6 +1016,8 @@ namespace K13A.TSMP.Udon
 
         private bool ReadHeader()
         {
+            lastPayloadCrcPresent = false;
+            lastPayloadCrcVerified = false;
             _crc32Table = Crc32Runtime.EnsureTable(_crc32Table);
             int headerStatus;
             uint decodedMagic;
@@ -1003,6 +1046,11 @@ namespace K13A.TSMP.Udon
             }
 
             lastHeaderValid = true;
+            lastPayloadCrcPresent = (Binary.ReadUInt16LE(_headerBytes, FrameHeader.FlagsOffset) & (int)FrameFlags.PayloadCrc32) != 0;
+            if (lastPayloadCrcPresent && _headerBytes[FrameHeader.VersionMinorOffset] < ProtocolConstants.PayloadCrcVersionMinor)
+                return RejectPayloadIntegrity("Payload CRC flag requires protocol minor 2 or newer.");
+            if (_requestRequirePayloadCrc32 && !lastPayloadCrcPresent)
+                return RejectPayloadIntegrity("Payload checksum is required; legacy frame discarded.");
             lastHeaderSource = 0;
             lastHeaderRow = _currentHeaderRow;
             lastHeaderFlipY = _decodeFlipY;

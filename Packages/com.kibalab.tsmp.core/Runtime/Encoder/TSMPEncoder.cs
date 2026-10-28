@@ -296,6 +296,12 @@ namespace K13A.TSMP
 
             BuildHeader();
 
+            if (!FrameHeaderWriter.TryWritePayloadCrc32(_header, 0, _encodedPayload, payloadBytes, _crc32Table))
+            {
+                SetLastError("Failed to add payload checksum.");
+                return;
+            }
+
             lastFrameUsedGpuLuma4 = codec.SupportsGpuLuma4Encoding
                 && TryWriteGpuLuma4(_header, _encodedPayload, payloadBytes, codec.GetPayloadStartRow(width, blockSize), 128f / 255f);
             if (!lastFrameUsedGpuLuma4)
@@ -933,6 +939,12 @@ namespace K13A.TSMP
             }
 
             BuildHeader();
+
+            if (!FrameHeaderWriter.TryWritePayloadCrc32(_headerBytes, 0, _payloadBytes, payloadBytes, _crc32Table))
+            {
+                AbortEncode("Failed to add payload checksum.");
+                return;
+            }
 
             lastEncodeStage = 4;
             if (!WriteFrameTexture())

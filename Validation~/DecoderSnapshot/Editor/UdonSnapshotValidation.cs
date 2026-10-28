@@ -204,6 +204,115 @@ public static class UdonSnapshotValidation
         finally { RenderTexture.active = previous; Object.DestroyImmediate(pixel); }
     }
 
+    static IEnumerator PayloadIntegrity(Program decoder, TSMPCodec[] codecs, Texture2D image, RenderTexture source)
+    {
+        uint frame = 10000;
+        decoder.Set("sampleSize", 4);
+        decoder.Set("requirePayloadCrc32", true);
+        foreach (var codec in codecs)
+        foreach (int mode in new[] { 2, 3 })
+        {
+            decoder.Set("decodeSafetyMode", mode);
+            byte[] packet = Data.NetworkPayload(7);
+            Data.Write(codec, image, packet, ++frame, 4, protectPayload: true);
+            Graphics.Blit(image, source); decoder.Call("DecodeNow");
+            var wait = Drain(decoder);
+            while (wait.MoveNext()) yield return wait.Current;
+            Check(decoder.Get<bool>("lastFrameValid") && decoder.Get<bool>("lastPayloadCrcPresent") && decoder.Get<bool>("lastPayloadCrcVerified"), "VM protected payload rejected: " + codec.displayName);
+            uint applied = decoder.Get<uint>("_lastAppliedFrameIndex");
+            Data.Write(codec, image, packet, ++frame, 4, protectPayload: true, corruptPayload: true);
+            Graphics.Blit(image, source); decoder.Call("DecodeNow");
+            wait = Drain(decoder);
+            while (wait.MoveNext()) yield return wait.Current;
+            Check(decoder.Get<bool>("lastHeaderValid") && !decoder.Get<bool>("lastFrameValid") && decoder.Get<bool>("lastPayloadCrcPresent") && !decoder.Get<bool>("lastPayloadCrcVerified"), "VM payload mutation accepted: " + codec.displayName);
+            Check(decoder.Get<uint>("_lastAppliedFrameIndex") == applied, "VM CRC failure advanced applied frame");
+        }
+        using (var state = new Program("Packages/com.kibalab.tsmp.core/Runtime/Network/TSMPNetworkVrchatAvatarPoseSync.asset"))
+        using (var toggle = new Program("Packages/com.kibalab.tsmp.core/Runtime/Network/TSMPNetworkGameObjectToggle.asset"))
+        {
+            var target = new GameObject("CRC VM toggle target");
+            toggle.Set("targetObject", target);
+            // A production Udon int field tests generic field dispatch without a new fixture program.
+            // avatarPoseBytes remains null, so no avatar capture or pose application is involved.
+            decoder.Set("bindingTargets", new Component[] { state.Backing, toggle.Backing });
+            decoder.Set("bindingUdonTargets", new[] { state.Backing, toggle.Backing });
+            decoder.Set("bindingNetworkIds", new ushort[] { 1, 2 });
+            decoder.Set("bindingVariableHashes", new[] { StableHash.Fnv1A32("receivedValue"), 0u });
+            decoder.Set("bindingValueTypes", new[] { (byte)NetworkFrameProtocol.ValueTypeInt32, (byte)NetworkFrameProtocol.ValueTypeUnsupported });
+            decoder.Set("bindingFieldNames", new[] { "encodedPoseBytes", string.Empty });
+            decoder.Set("bindingDirections", new int[2]);
+            decoder.Set("bindingPriorities", new int[2]);
+            decoder.Set("decodeSafetyMode", 0);
+            decoder.Set("skipDuplicateFrames", true);
+            int eventId = 30000;
+            foreach (bool prediction in new[] { false, true })
+            {
+                decoder.Set("usePredictedReadback", prediction);
+                decoder.Set("useCombinedByteOutput", prediction);
+                byte[] warm = Data.MixedValueRpcPacket(41, ++eventId);
+                Data.Write(codecs[0], image, warm, ++frame, 4, protectPayload: true);
+                Graphics.Blit(image, source); decoder.Call("DecodeNow");
+                var wait = Drain(decoder);
+                while (wait.MoveNext()) yield return wait.Current;
+                Check(decoder.Get<bool>("lastFrameValid") && decoder.Get<bool>("lastPayloadCrcVerified"), "VM CRC prediction warmup");
+                state.Set("encodedPoseBytes", -1); target.SetActive(false);
+                byte[] packet = Data.MixedValueRpcPacket(42, ++eventId);
+                uint retryFrame = ++frame;
+                Data.Write(codecs[0], image, packet, retryFrame, 4, protectPayload: true, corruptPayload: true);
+                Graphics.Blit(image, source); decoder.Call("DecodeNow");
+                wait = Drain(decoder);
+                while (wait.MoveNext()) yield return wait.Current;
+                Check(!decoder.Get<bool>("lastFrameValid") && state.Get<int>("encodedPoseBytes") == -1 && !target.activeSelf, "VM CRC failure partially applied field/RPC");
+                Data.Write(codecs[0], image, packet, retryFrame, 4, protectPayload: true);
+                Graphics.Blit(image, source); decoder.Call("DecodeNow");
+                wait = Drain(decoder);
+                while (wait.MoveNext()) yield return wait.Current;
+                Check(decoder.Get<bool>("lastFrameValid") && decoder.Get<bool>("lastPayloadCrcVerified") && state.Get<int>("encodedPoseBytes") == 42 && target.activeSelf, "VM CRC failure consumed frame/RPC identity");
+            }
+            decoder.Set("overlapReadbacks", true);
+            foreach (bool badHead in new[] { true, false })
+            {
+                state.Set("encodedPoseBytes", -1); target.SetActive(false);
+                byte[] first = Data.MixedValueRpcPacket(42, ++eventId);
+                byte[] second = Data.MixedValueRpcPacket(99, ++eventId, 701);
+                Data.Write(codecs[0], image, first, ++frame, 4, protectPayload: true, corruptPayload: badHead);
+                Graphics.Blit(image, source); decoder.Call("DecodeNow");
+                Data.Write(codecs[0], image, second, ++frame, 4, protectPayload: true, corruptPayload: !badHead);
+                Graphics.Blit(image, source); decoder.Call("DecodeNow");
+                Check(decoder.Get<int>("pendingDecodeCount") == 2, "VM protected overlap did not use both slots");
+                var wait = Drain(decoder);
+                while (wait.MoveNext()) yield return wait.Current;
+                Check(state.Get<int>("encodedPoseBytes") == (badHead ? 99 : 42) && target.activeSelf, "VM CRC slot ownership or atomic rejection failed");
+            }
+            Object.DestroyImmediate(target);
+        }
+        decoder.Set("decodeSafetyMode", 2);
+        Data.Write(codecs[0], image, Data.NetworkPayload(0), ++frame, 4);
+        Graphics.Blit(image, source); decoder.Call("DecodeNow");
+        decoder.Set("requirePayloadCrc32", false);
+        var legacyWait = Drain(decoder);
+        while (legacyWait.MoveNext()) yield return legacyWait.Current;
+        Check(!decoder.Get<bool>("lastFrameValid") && !decoder.Get<bool>("lastPayloadCrcPresent"), "VM strict mode admitted legacy frame");
+        decoder.Set("requirePayloadCrc32", false);
+        Data.Write(codecs[0], image, Data.NetworkPayload(0), ++frame, 4);
+        Graphics.Blit(image, source); decoder.Call("DecodeNow");
+        decoder.Set("requirePayloadCrc32", true);
+        legacyWait = Drain(decoder);
+        while (legacyWait.MoveNext()) yield return legacyWait.Current;
+        Check(decoder.Get<bool>("lastFrameValid") && !decoder.Get<bool>("lastPayloadCrcPresent") && !decoder.Get<bool>("lastPayloadCrcVerified"), "VM legacy compatibility lost");
+        decoder.Set("requirePayloadCrc32", false);
+        decoder.Set("skipDuplicateFrames", false);
+        decoder.Set("bindingTargets", new Component[0]);
+        decoder.Set("bindingUdonTargets", new UdonBehaviour[0]);
+        decoder.Set("bindingNetworkIds", new ushort[0]);
+        decoder.Set("bindingVariableHashes", new uint[0]);
+        decoder.Set("bindingValueTypes", new byte[0]);
+        decoder.Set("bindingFieldNames", new string[0]);
+        decoder.Set("bindingDirections", new int[0]);
+        decoder.Set("bindingPriorities", new int[0]);
+        Results.Add("PASS payload CRC VM: four codecs/readback+parse modes; field+RPC atomic rejection and same-frame/event retry; predicted/fallback/combined and both bad-slot orders; strict missing/legacy compatibility");
+    }
+
     static IEnumerator Validate()
     {
         // Play Mode can switch SDK assets back to editor bytecode. Retrieve client programs explicitly.
@@ -255,6 +364,8 @@ public static class UdonSnapshotValidation
                 Check(decoder.Get<uint>("lastFrameIndex") == frame && decoder.Get<int>("_payloadDataBytes") == bytes.Length && bytes.SequenceEqual(decoder.Get<byte[]>("_payloadBytes").Take(bytes.Length)), "VM frame isolation " + codec.displayName);
             }
             Results.Add("PASS " + frame + " decoder/codec VM changing-source cases, samples 1/4, payload/codec/length changes");
+            var integrity = PayloadIntegrity(decoder, codecs, a, source);
+            while (integrity.MoveNext()) yield return integrity.Current;
             decoder.Set("decodeSafetyMode", 3);
             decoder.Set("sampleSize", 1);
             foreach (int length in new[] { 200, 0, 400, 0, 1, 400, 0 })

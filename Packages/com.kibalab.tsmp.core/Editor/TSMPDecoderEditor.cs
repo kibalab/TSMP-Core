@@ -23,6 +23,7 @@ namespace K13A.TSMP.Editor
         private SerializedProperty _codecHandlers;
         private SerializedProperty _applyEveryFrame;
         private SerializedProperty _skipDuplicateFrames;
+        private SerializedProperty _requirePayloadCrc32;
         private SerializedProperty _frameWindowSize;
         private SerializedProperty _blockSize;
         private SerializedProperty _sampleSize;
@@ -47,6 +48,7 @@ namespace K13A.TSMP.Editor
             _codecHandlers = serializedObject.FindProperty("codecHandlers");
             _applyEveryFrame = serializedObject.FindProperty("applyEveryFrame");
             _skipDuplicateFrames = serializedObject.FindProperty("skipDuplicateFrames");
+            _requirePayloadCrc32 = serializedObject.FindProperty("requirePayloadCrc32");
             _frameWindowSize = serializedObject.FindProperty("frameWindowSize");
             _blockSize = serializedObject.FindProperty("blockSize");
             _sampleSize = serializedObject.FindProperty("sampleSize");
@@ -97,6 +99,7 @@ namespace K13A.TSMP.Editor
         {
             InspectorUI.BeginSection("Decode");
             InspectorUI.Property(_applyEveryFrame);
+            EditorGUILayout.PropertyField(_requirePayloadCrc32, new GUIContent("Require Payload Checksum", "Reject older senders without a payload checksum. Checksums present in a frame are always verified before applying data."));
             EditorGUILayout.PropertyField(_skipDuplicateFrames, new GUIContent("Filter Frames", "Skip duplicate and older frames, with a frame-zero restart exception based on Window Size."));
             using (new EditorGUI.DisabledScope(!_skipDuplicateFrames.hasMultipleDifferentValues && !_skipDuplicateFrames.boolValue))
                 EditorGUILayout.PropertyField(_frameWindowSize, new GUIContent("Window Size", "Frame count used to recognize a restart at frame zero. Default: 256."));
@@ -131,6 +134,8 @@ namespace K13A.TSMP.Editor
                 InspectorUI.ReadOnlyText("Last Error", decoder.lastError);
                 InspectorUI.ReadOnlyBool("Frame Valid", decoder.lastFrameValid);
                 InspectorUI.ReadOnlyBool("Header Valid", decoder.lastHeaderValid);
+                InspectorUI.ReadOnlyBool("Payload Checksum Present", decoder.lastPayloadCrcPresent);
+                InspectorUI.ReadOnlyBool("Payload Checksum Verified", decoder.lastPayloadCrcVerified);
                 InspectorUI.ReadOnlyUInt("Frame Index", decoder.lastFrameIndex);
                 InspectorUI.ReadOnlyInt("Payload Bytes", decoder.lastPayloadSizeFromHeader);
                 InspectorUI.ReadOnlyInt("Messages", decoder.lastNetworkMessageCount);
