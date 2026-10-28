@@ -27,6 +27,8 @@ namespace K13A.TSMP
         public const int PayloadSizeOffset = 42;
         public const int PayloadReservedOffset = 44;
         public const int PayloadReservedBytes = 6;
+        public const int PayloadCrc32Offset = PayloadReservedOffset;
+        public const int PayloadCrc32Bytes = 4;
         public const int DecodeSampleSizeOffset = 50;
         public const int QuantizationModeOffset = 51;
         public const int MaxDecodeSampleSize = 8;
@@ -53,6 +55,7 @@ namespace K13A.TSMP
         public byte CodecOption4;
         public PayloadType PayloadType;
         public ushort PayloadSize;
+        public uint PayloadCrc32;
         public byte DecodeSampleSize;
         public byte QuantizationMode;
         public uint HeaderCrc32;
@@ -72,9 +75,13 @@ namespace K13A.TSMP
 
         public void WriteTo(byte[] buffer, int offset)
         {
-            if (buffer == null || offset < 0 || offset + Size > buffer.Length)
+            if (buffer == null || offset < 0 || offset > buffer.Length - Size)
                 return;
 
+            bool hasPayloadCrc = (Flags & FrameFlags.PayloadCrc32) != 0;
+            if (hasPayloadCrc && VersionMinor < ProtocolConstants.PayloadCrcVersionMinor)
+                VersionMinor = ProtocolConstants.PayloadCrcVersionMinor;
+            uint[] crcTable = Crc32Runtime.EnsureTable(null);
             HeaderCrc32 = FrameHeaderWriter.WriteNetworkFrameHeaderWithCrc(
                 buffer,
                 offset,
@@ -101,7 +108,13 @@ namespace K13A.TSMP
                 PayloadSize,
                 DecodeSampleSize,
                 QuantizationMode,
-                null);
+                crcTable);
+            if (hasPayloadCrc)
+            {
+                Binary.WriteUInt32LE(buffer, offset + PayloadCrc32Offset, PayloadCrc32);
+                HeaderCrc32 = Crc32Runtime.Compute(buffer, offset, BytesBeforeCrc, crcTable);
+                Binary.WriteUInt32LE(buffer, offset + CrcOffset, HeaderCrc32);
+            }
         }
 
 #if !COMPILER_UDONSHARP

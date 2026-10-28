@@ -55,7 +55,8 @@ namespace K13A.TSMP
     [Flags]
     public enum FrameFlags : ushort
     {
-        None = 0
+        None = 0,
+        PayloadCrc32 = 1 << 0
     }
 
     public struct ResolutionProfile
