@@ -48,11 +48,12 @@ public static class VideoTransportValidation
         SessionState.SetBool("TSMP.VideoTransport", false);
         root = Environment.GetEnvironmentVariable("TSMP_VIDEO_RESULTS");
         Rows.Clear(); Details.Clear(); Owned.Clear(); profileFailed = false;
-        Rows.Add("profile,expectedFrame,actualFrame,expectedBytes,actualBytes,headerValid,frameValid,expectedFrameMatch,byteMismatches,status");
+        Rows.Add("profile,expectedFrame,actualFrame,expectedBytes,actualBytes,headerValid,frameValid,payloadCrcPresent,payloadCrcVerified,expectedFrameMatch,byteMismatches,status");
         Details.Add("Offline Luma4 / 1280x720 / block8 / sample4; 12 changing frames per profile.");
         Details.Add("Unity=" + Application.unityVersion + "; GPU=" + SystemInfo.graphicsDeviceName + "; ColorSpace=" + QualitySettings.activeColorSpace);
         Details.Add("Frame payload lengths 32/2495/5375 exercise small, Full16-size and Fingers16-size byte loads; these are synthetic bytes, not captured avatars.");
         Details.Add("Each payload is a structurally valid NetworkFrame with one raw-byte field. Decode mode is parse-only; no receiver state or RPC is applied.");
+        Details.Add("Protected protocol 0.2 frames; required payload CRC must verify before a frame counts as exact.");
         work = Validate();
         EditorApplication.update += Tick;
     }
@@ -149,6 +150,7 @@ public static class VideoTransportValidation
         image.filterMode = FilterMode.Point;
         string input = Path.Combine(root, "input");
         Directory.CreateDirectory(input);
+        uint[] crcTable = Crc32Runtime.EnsureTable(null);
         for (int frame = 1; frame <= Frames; frame++)
         {
             byte[] payload = Payload(frame);
@@ -158,11 +160,13 @@ public static class VideoTransportValidation
             header.PayloadSize = (ushort)payload.Length; header.FrameIndex = (uint)frame; header.DecodeSampleSize = 4;
             var bytes = new byte[FrameHeader.Size];
             header.WriteTo(bytes, 0);
+            Check(FrameHeaderWriter.TryWritePayloadCrc32(bytes, 0, payload, payload.Length, crcTable), "Payload checksum write");
             Check(codec.TryWriteFrame(image, 8, bytes, payload, out string error), error);
             File.WriteAllBytes(Path.Combine(input, "frame-" + frame.ToString("000") + ".png"), image.EncodeToPNG());
         }
         var decoder = Own(new GameObject("Offline video decoder")).AddComponent<TSMPDecoder>();
         decoder.applyEveryFrame = false; decoder.skipDuplicateFrames = false; decoder.decodeSafetyMode = 3;
+        decoder.requirePayloadCrc32 = true;
         decoder.debugLog = false; decoder.codecHandlers = new[] { codec }; decoder.sampleSize = 4;
         decoder.payloadByteTexture = Target(2048, 1);
         var source = Target(1280, 720);
@@ -198,14 +202,14 @@ public static class VideoTransportValidation
                 byte[] expected = Payload(frame);
                 byte[] actual = (byte[])typeof(TSMPDecoder).GetField("_payloadBytes", Private).GetValue(decoder);
                 int validLength = (int)typeof(TSMPDecoder).GetField("_payloadDataBytes", Private).GetValue(decoder);
-                bool valid = decoder.lastHeaderValid && decoder.lastFrameValid;
+                bool valid = decoder.lastHeaderValid && decoder.lastFrameValid && decoder.lastPayloadCrcVerified;
                 bool expectedFrame = decoder.lastFrameIndex == frame;
                 int mismatches = valid ? Math.Abs(expected.Length - validLength) : -1;
                 if (valid) for (int i = 0; i < Math.Min(expected.Length, validLength); i++)
                     if (actual[i] != expected[i]) mismatches++;
                 string status = !valid ? "REJECTED" : !expectedFrame ? "WRONG_FRAME" : mismatches == 0 ? "EXACT" : "CORRUPT";
                 if (!valid) rejected++; else if (!expectedFrame) wrongFrame++; else if (mismatches != 0) corrupt++; else accepted++;
-                Rows.Add(profile + "," + frame + "," + decoder.lastFrameIndex + "," + expected.Length + "," + validLength + "," + decoder.lastHeaderValid + "," + decoder.lastFrameValid + "," + expectedFrame + "," + mismatches + "," + status);
+                Rows.Add(profile + "," + frame + "," + decoder.lastFrameIndex + "," + expected.Length + "," + validLength + "," + decoder.lastHeaderValid + "," + decoder.lastFrameValid + "," + decoder.lastPayloadCrcPresent + "," + decoder.lastPayloadCrcVerified + "," + expectedFrame + "," + mismatches + "," + status);
                 if (!valid) Details.Add(profile + " frame " + frame + ": " + decoder.lastError);
             }
             bool pass = accepted == Frames;

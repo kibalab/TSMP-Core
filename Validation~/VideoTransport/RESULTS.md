@@ -1,5 +1,7 @@
 # Offline video accuracy, 2026-10-28
 
+These are historical results from before payload CRC protection. The current probe emits protected protocol 0.2 frames and requires verified payload CRC; new results belong in a separate evidence directory. The figures below remain unchanged.
+
 Environment: Windows, Unity 2022.3.22f1, Gamma, Direct3D11, RTX 4090. Luma4 at 1280x720, block8, sample4. Each profile contains 12 changing frames with payload sizes cycling through 32, 2495 and 5375 bytes. H.264 uses `libx264`, `veryfast`, `yuv420p`. The nominal file rate is 30; twelve frames cover only 0.4 seconds and do not measure live throughput.
 
 The final harness constructs valid NetworkFrames containing one raw-byte field, then performs actual GPU readback and parse-only decoding. Whole payloads are compared against their sender fixtures. No state or RPC is applied.
