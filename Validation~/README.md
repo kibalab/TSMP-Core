@@ -20,7 +20,7 @@ $unity = 'C:/Program Files/Unity/Hub/Editor/2022.3.22f1/Editor/Unity.exe'
 
 The suite imports first. The SDK profile then initializes SDK defines, copies all shared regression fixtures, creates their Udon program assets and compiles them in `PrepareSdk`, and starts a fresh client compilation before functional checks. This prevents later tests from introducing unprepared probe programs after compilation. It does not install TSMP packages or the SDK; use the separate projects described above.
 
-Each run gets a new evidence directory with original logs and `checks.csv`/`checks.json`. Preparation failure stops dependent checks and records them as `NOTRUN`, while functional failures remain `FAIL` and do not erase earlier evidence. A failed Build prevents Player from using an old executable. `ProductOrHarnessFailure` requires triage; it is not an automatic product-bug classification. Use `-Steps Workflow,Configuration,TransSync` to select a smaller suite; preparation remains automatic. `-IncludeSnapshot` adds the [snapshot suite](DecoderSnapshot/README.md), which requires all four codecs. World builds and Inspector UI checks are opt-in through `-Steps`.
+Each run gets a new evidence directory with original logs and `checks.csv`/`checks.json`. Preparation or script compilation failure stops dependent checks and records them as `NOTRUN`, while other functional failures remain `FAIL` and do not erase earlier evidence. `CompilerFailure` points to the original Unity compiler log; Inspector checks also perform a batch compilation preflight before opening a GUI editor. A failed Build prevents Player from using an old executable. `ProductOrHarnessFailure` requires triage; it is not an automatic product-bug classification. Use `-Steps Workflow,Configuration,TransSync` to select a smaller suite; preparation remains automatic. `-IncludeSnapshot` adds the [snapshot suite](DecoderSnapshot/README.md), which requires all four codecs. World builds and Inspector UI checks are opt-in through `-Steps`.
 
 | Project | Use | Excluded routes |
 | --- | --- | --- |
@@ -31,7 +31,7 @@ The runners reject mismatched routes before copying scripts or opening Unity. Wo
 
 For finite offline compressed-video byte accuracy, use the separate [VideoTransport probe](VideoTransport/README.md). It preserves failed compression profiles and compares complete payloads; it is not part of the Native/SDK functional suite or a live transport benchmark.
 
-The Native `PayloadIntegrity` step is a characterization of the current header-only CRC contract: a format-preserving value mutation can be applied. Its `PASS` means this limitation was reproduced, not that corrupted data was rejected. Suite output distinguishes it with `Stage=Characterization`.
+The Native `PayloadIntegrity` step combines legacy characterization with protected-frame regression (`Stage=CharacterizationAndRegression`). It confirms that a format-preserving mutation can still pass a legacy header-only CRC, then checks payload CRC32 vectors and boundaries, protected mutation rejection before state/RPC dispatch, strict rejection of missing checksums and successful retry of the intact frame/event. A legacy characterization pass alone does not establish corruption rejection. The [snapshot suite](DecoderSnapshot/README.md) adds real GPU readback and compiled Udon VM coverage.
 
 Individual commands remain available:
 

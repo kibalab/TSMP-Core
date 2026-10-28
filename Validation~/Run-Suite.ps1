@@ -35,11 +35,12 @@ New-Item -ItemType Directory -Path $runDirectory | Out-Null
 $runDirectory = (Resolve-Path -LiteralPath $runDirectory).Path
 $rows = [Collections.Generic.List[object]]::new()
 $blockedBy = $null
+$blockedReason = $null
 $buildFailed = $false
 foreach ($step in @($preparation + $Steps)) {
     $row = [pscustomobject]@{
         Step = $step
-        Stage = if ($step -in $preparation) { 'Preparation' } elseif ($step -eq 'PayloadIntegrity') { 'Characterization' } else { 'Validation' }
+        Stage = if ($step -in $preparation) { 'Preparation' } elseif ($step -eq 'PayloadIntegrity') { 'CharacterizationAndRegression' } else { 'Validation' }
         Status = 'NOTRUN'
         FailureKind = $null
         Started = (Get-Date).ToString('o')
@@ -52,7 +53,7 @@ foreach ($step in @($preparation + $Steps)) {
     $started = Get-Date
     if ($blockedBy -or ($step -eq 'Player' -and $buildFailed)) {
         $row.FailureKind = 'DependencyFailed'
-        $row.Error = if ($blockedBy) { "Preparation failed: $blockedBy" } else { 'Build failed; an old Player was not executed.' }
+        $row.Error = if ($blockedBy) { $blockedReason } else { 'Build failed; an old Player was not executed.' }
     } else {
         try {
             if ($step -eq 'Snapshot') {
@@ -64,10 +65,17 @@ foreach ($step in @($preparation + $Steps)) {
             $row.Status = 'PASS'
         } catch {
             $row.Status = 'FAIL'
-            $row.FailureKind = if ($row.Stage -eq 'Preparation') { 'PreparationFailure' } else { 'ProductOrHarnessFailure' }
+            $compilerFailure = $_.Exception.Data['FailureKind'] -eq 'CompilerFailure'
+            $row.FailureKind = if ($compilerFailure) { 'CompilerFailure' } elseif ($row.Stage -eq 'Preparation') { 'PreparationFailure' } else { 'ProductOrHarnessFailure' }
             $row.Error = $_.Exception.Message
             $_ | Out-String | Add-Content -LiteralPath $row.Log
-            if ($row.Stage -eq 'Preparation') { $blockedBy = $step }
+            if ($compilerFailure) {
+                $blockedBy = $step
+                $blockedReason = "Script compilation failed in $step; see its original compiler log."
+            } elseif ($row.Stage -eq 'Preparation') {
+                $blockedBy = $step
+                $blockedReason = "Preparation failed: $step"
+            }
             if ($step -eq 'Build') { $buildFailed = $true }
         }
     }

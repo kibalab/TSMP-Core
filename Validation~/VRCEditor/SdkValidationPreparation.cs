@@ -78,7 +78,8 @@ public static class SdkValidationPreparation
             AssetDatabase.SaveAssets();
             File.WriteAllText(output, "PASS\nPreparedPrograms=" + assets.Count + "\nBuildType=Udon client\n" +
                 string.Join("\n", assets.Select(AssetDatabase.GetAssetPath).Concat(skipped)));
-            EditorApplication.Exit(0);
+            // Return from the import/compile callback before entering Unity shutdown.
+            EditorApplication.delayCall += () => EditorApplication.Exit(0);
         }
         catch (Exception error)
         {

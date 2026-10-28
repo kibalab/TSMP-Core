@@ -25,6 +25,22 @@ $result = Join-Path $Results "$stamp-$Step-result.txt"
 $build = Join-Path $Project 'Build/Mono/TSMPValidation.exe'
 $oldResult = $env:TSMP_VALIDATION_RESULT
 $oldBuild = $env:TSMP_VALIDATION_BUILD
+
+function Assert-UnityScriptCompilation([string]$LogPath, [string]$ResultPath) {
+    if (-not (Test-Path -LiteralPath $LogPath)) { return }
+    $diagnostics = @(Select-String -LiteralPath $LogPath -Pattern '(?i)(\berror\s+(?:CS|BC)\d+\b|scripts have compiler errors|script compilation failed|all compiler errors have to be fixed)' |
+        ForEach-Object { $_.Line })
+    if ($diagnostics.Count -eq 0) { return }
+    @('FAIL', 'CompilerFailure', ('Log=' + $LogPath)) + $diagnostics |
+        Set-Content -LiteralPath $ResultPath -Encoding utf8
+    $failure = [InvalidOperationException]::new("CompilerFailure: Unity script compilation failed; see $LogPath")
+    $failure.Data['FailureKind'] = 'CompilerFailure'
+    $failure.Data['LogPath'] = $LogPath
+    $failure.Data['ResultPath'] = $ResultPath
+    $failure.Data['CompilerDiagnostics'] = $diagnostics
+    throw $failure
+}
+
 try {
     $env:TSMP_VALIDATION_RESULT = $result
     $env:TSMP_VALIDATION_BUILD = $build
@@ -126,6 +142,21 @@ try {
         ReceivePoliciesVm = 'ReceivePolicyValidation.RunVm'
         PayloadIntegrity = 'PayloadIntegrityValidation.Run'
     }
+    if ($Step -eq 'Inspect') {
+        # Compile newly copied harness files in batch mode before opening a GUI
+        # editor, where a script-error dialog could otherwise hold the run open.
+        $compileLog = Join-Path $Results "$stamp-Inspect-compile-preflight.log"
+        $compileArguments = "-projectPath `"$Project`" -batchmode -quit -logFile `"$compileLog`""
+        $compileProcess = Start-Process -FilePath $UnityEditor -ArgumentList $compileArguments -WindowStyle Hidden -PassThru
+        Write-Output "CompilePreflightPID=$($compileProcess.Id) Log=$compileLog"
+        if (-not $compileProcess.WaitForExit($TimeoutSeconds * 1000)) {
+            $compileProcess.Kill()
+            throw "Inspector compilation preflight timed out; see $compileLog"
+        }
+        $compileProcess.Refresh()
+        Assert-UnityScriptCompilation $compileLog $result
+        if ($compileProcess.ExitCode -ne 0) { throw "Inspector compilation preflight exited $($compileProcess.ExitCode); see $compileLog" }
+    }
     if ($Step -eq 'Player') {
         $arguments = "-screen-fullscreen 0 -screen-width 640 -screen-height 360 -logFile `"$log`""
         if ($PlayerMode -eq 'Batch') { $arguments += ' -batchmode' }
@@ -133,7 +164,7 @@ try {
     } else {
         $arguments = "-projectPath `"$Project`" -logFile `"$log`""
         if ($Step -ne 'Inspect') { $arguments += ' -batchmode' }
-        if ($Step -in @('Import', 'Build', 'InitializeSdk', 'PrepareSdk', 'Udon', 'ArrayCache', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'Configuration', 'TimelineRegression', 'TransSync', 'ReceivePolicies', 'PayloadIntegrity')) { $arguments += ' -quit' }
+        if ($Step -in @('Import', 'Build', 'InitializeSdk', 'Udon', 'ArrayCache', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'Configuration', 'TimelineRegression', 'TransSync', 'ReceivePolicies', 'PayloadIntegrity')) { $arguments += ' -quit' }
         if ($methods.ContainsKey($Step)) { $arguments += ' -executeMethod ' + $methods[$Step] }
         if ($Step -eq 'Build') { New-Item -ItemType Directory -Path (Split-Path -Parent $build) -Force | Out-Null }
         $process = Start-Process -FilePath $UnityEditor -ArgumentList $arguments -WindowStyle Hidden -PassThru
@@ -144,6 +175,7 @@ try {
         throw "Validation timed out; see $log"
     }
     $process.Refresh()
+    Assert-UnityScriptCompilation $log $result
     if ($process.ExitCode -ne 0) { throw "Validation exited $($process.ExitCode); see $log" }
     if ($Step -in @('Play', 'Player', 'Inspect', 'PrepareSdk', 'Udon', 'World', 'Workflow', 'ArrayCache', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'RpcQueueVm', 'Configuration', 'TimelineVm', 'TimelineRegression', 'TransSync', 'TransSyncVm', 'ReceivePolicies', 'ReceivePoliciesVm', 'PayloadIntegrity')) {
         if (!(Test-Path -LiteralPath $result) -or (Get-Content -LiteralPath $result -First 1) -ne 'PASS') {
