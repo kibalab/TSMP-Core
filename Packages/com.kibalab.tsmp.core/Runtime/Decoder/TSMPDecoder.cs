@@ -258,7 +258,7 @@ namespace K13A.TSMP.Udon
         {
             ResetDecodeDiagnostics();
             InitializeBuffers();
-            _crc32Table = Crc32Runtime.EnsureTable(_crc32Table);
+            _crc32Table = Crc32Runtime.EnsureFastTable(_crc32Table);
         }
 
         private void Update()
@@ -675,7 +675,7 @@ namespace K13A.TSMP.Udon
 
         private void CompletePayload()
         {
-            _crc32Table = Crc32Runtime.EnsureTable(_crc32Table);
+            _crc32Table = Crc32Runtime.EnsureFastTable(_crc32Table);
             bool present;
             uint expected;
             uint actual;
@@ -1018,7 +1018,7 @@ namespace K13A.TSMP.Udon
         {
             lastPayloadCrcPresent = false;
             lastPayloadCrcVerified = false;
-            _crc32Table = Crc32Runtime.EnsureTable(_crc32Table);
+            _crc32Table = Crc32Runtime.EnsureFastTable(_crc32Table);
             int headerStatus;
             uint decodedMagic;
             ushort decodedHeaderSize;

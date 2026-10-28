@@ -462,6 +462,7 @@ namespace K13A.TSMP
         private void EnsureResources()
         {
             SyncOutputDimensions();
+            _crc32Table = Crc32Runtime.EnsureFastTable(_crc32Table);
             if (_header == null || _header.Length != FrameHeader.Size)
                 _header = new byte[FrameHeader.Size];
         }
@@ -650,7 +651,6 @@ namespace K13A.TSMP
         private void Start()
         {
             EnsureResources();
-            _crc32Table = Crc32Runtime.EnsureTable(_crc32Table);
             ResetTSMPLogBudget(debugErrorLogBudget);
             _nextEncodeTime = 0f;
         }
@@ -1394,6 +1394,7 @@ namespace K13A.TSMP
         private void EnsureResources()
         {
             SyncOutputDimensions();
+            _crc32Table = Crc32Runtime.EnsureFastTable(_crc32Table);
             blockSize = EncoderUdonTextureRuntime.ClampBlockSize(blockSize);
             width = EncoderUdonTextureRuntime.ClampDimension(width, blockSize);
             height = EncoderUdonTextureRuntime.ClampDimension(height, blockSize);
