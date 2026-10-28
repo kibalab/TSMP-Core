@@ -90,4 +90,4 @@ Interact 테스트는 VRChat용입니다. 일반 Unity에서는 `TSMPNetworkTran
 5. Decoder message count가 0보다 큰가.
 6. 수신 오브젝트에 일치하는 TSMP 네트워크 컴포넌트가 있는가.
 7. Receive interpolation이 `None`이 아닌가.
-8. 마지막 씬 변경 후 `TSMPSetup`을 적용했는가.
+8. 마지막 씬 변경 후 `TSMPSetup`의 자동 준비가 완료됐는가.

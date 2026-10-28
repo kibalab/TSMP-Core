@@ -92,3 +92,13 @@ Before synchronizing a complex avatar:
 5. Add higher-bandwidth sync components last.
 
 If the toggle does not arrive, fix transport and decoder status before adding more data.
+
+## Acceptance measurements
+
+For the transport you intend to use, compare known transmitted sequences and complete payload bytes with the received result. Header CRC and `valid=yes` alone do not prove payload integrity. Keep a local Spout roundtrip, a compressed video roundtrip and an actual VRChat session as separate checks.
+
+Record target Hz, actual published Hz, applied Hz, sender deadline misses, receiver misses, data mismatches, source age and p95 latency alongside CPU/GPU load. A receiver accepting every published frame does not prove the sender maintained its target rate. Choose latency and update-rate budgets before the trial, then test restart, reconnection, player join/leave and a longer run at the intended population.
+
+RPC uses finite repeats and a recent 32-event deduplication cache; it has no delivery ACK or persistent exactly-once guarantee. Include sender restarts with reused IDs and old video reappearing in application tests. A successful local loopback does not establish these behaviors for an unmeasured external route.
+
+The repository's `Validation~/VideoTransport` probe compares complete payloads after finite offline FFmpeg video roundtrips. It reports rejected or changed frames as failures. This is separate from live OBS/Spout, network and VRChat checks; passing one compression setting does not certify other settings or arbitrary content.

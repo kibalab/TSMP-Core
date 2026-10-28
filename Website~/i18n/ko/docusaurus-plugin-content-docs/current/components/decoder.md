@@ -20,7 +20,7 @@ title: TSMPDecoder
 - 호환되는 Luma4 handler.
 - Payload byte texture.
 - 일치하는 TSMP network behaviours와 bindings.
-- Reference 지정 후 적용된 `TSMPSetup`.
+- Reference 지정 후 `TSMPSetup`의 자동 준비 완료.
 
 ## 사용 방법
 
@@ -28,7 +28,7 @@ title: TSMPDecoder
 2. Sender와 같은 Luma4 경로를 사용합니다.
 3. `TSMPSetup`을 통해 payload byte texture를 지정하거나 auto-size합니다.
 4. Receiver object에 일치하는 TSMP network component가 있는지 확인합니다.
-5. `Apply Setup`을 클릭합니다.
+5. Setup 자동 준비가 끝났는지 확인합니다. `Apply Setup`은 선택적인 수동 갱신에 사용합니다.
 6. 로그 또는 `TSMPDebugCanvas`로 frame status를 확인합니다.
 
 ## 프레임 윈도우
@@ -50,7 +50,7 @@ title: TSMPDecoder
 - 전송 중인 데이터 종류와 맞는 message count.
 - 안정적인 재생 중 낮은 loss.
 
-Frame은 valid인데 object가 움직이지 않으면 network ID, receive interpolation, receiver object active state를 확인하세요.
+Frame은 valid인데 object가 움직이지 않으면 network ID, receive interpolation, receiver object active state를 확인하세요. `valid=yes`는 선택한 헤더·구조 검사를 통과했다는 뜻이며 송신 바이트와의 일치를 인증하지 않습니다. CRC32는 헤더 0..51바이트만 보호하고 payload는 포함하지 않습니다. 형식을 유지한 값이나 RPC 인자 변화는 검출하지 못할 수 있습니다. 실제 전송 경로에서 알려진 송신 바이트 또는 애플리케이션 표식과 대조하세요.
 
 ## Decode 순서
 
@@ -71,7 +71,7 @@ Decoder는 단계적으로 동작합니다.
 
 **Diagnostics > Advanced Decode**의 **Overlap Readbacks**는 기본으로 켜져 있습니다. 디코더가 최대 두 이미지를 보관하며, 첫 이미지의 GPU 응답을 기다리는 동안 다음 이미지를 캡처합니다. 결과는 캡처 순서대로 적용합니다. 두 슬롯이 모두 차면 새 캡처를 건너뛰고 대기열을 늘리지 않습니다. 이 옵션을 끄면 1슬롯 동작과 비교할 수 있으며 송신 측 설정은 바꿀 필요가 없습니다.
 
-Readback이 한 번의 업데이트보다 오래 걸릴 때 누락을 줄일 수 있지만, 메모리 사용량과 적용 지연, GPU/CPU 부하가 늘어날 수 있습니다. 스냅샷 하나는 640x360에서 약 3.52 MiB, 1920x1080에서 약 31.64 MiB이며, 두 슬롯을 할당하면 바이트 버퍼를 제외하고도 두 배가 필요합니다. 입력 텍스처에 도착하지 않은 프레임은 복구하지 못합니다. **Pending Frames**는 사용 중인 슬롯 수이고, **Skipped Busy Captures**는 용량 부족으로 거부된 시도 횟수이지 고유 손실 프레임 수가 아닙니다.
+Readback이 한 번의 업데이트보다 오래 걸릴 때 누락을 줄일 수 있지만, 메모리 사용량과 적용 지연, GPU/CPU 부하가 늘어날 수 있습니다. 스냅샷의 texel 저장량은 입력 형식에 따라 ARGB32 4바이트/픽셀, ARGBHalf 8바이트, ARGBFloat 16바이트입니다. 다른 입력이나 지원하지 않는 형식은 Float32 폴백을 사용할 수 있습니다. Udon 경로는 지원하는 RenderTexture 형식만 일치시키며 다른 텍스처 타입은 Float32를 사용합니다. 1280x720 한 장은 각각 약 3.52 / 7.03 / 14.06 MiB이며, 두 슬롯은 두 배입니다. 바이트 텍스처, CPU 버퍼와 드라이버 오버헤드는 별도입니다. 입력 텍스처에 도착하지 않은 프레임은 복구하지 못합니다. **Pending Frames**는 사용 중인 슬롯 수이고, **Skipped Busy Captures**는 용량 부족으로 거부된 시도 횟수이지 고유 손실 프레임 수가 아닙니다.
 
 ## Receive interpolation
 

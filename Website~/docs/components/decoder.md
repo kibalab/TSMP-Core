@@ -20,7 +20,7 @@ Most decode problems are caused by the input texture not containing an unmodifie
 - A compatible Luma4 handler.
 - A payload byte texture.
 - Matching TSMP network behaviours and bindings.
-- `TSMPSetup` applied after references are assigned.
+- `TSMPSetup` automatic preparation completed after references are assigned.
 
 ## How to use it
 
@@ -28,7 +28,7 @@ Most decode problems are caused by the input texture not containing an unmodifie
 2. Use the same Luma4 path as the sender.
 3. Assign or auto-size the payload byte texture through `TSMPSetup`.
 4. Make sure receiver objects have matching TSMP network components.
-5. Click `Apply Setup`.
+5. Allow automatic Setup preparation to finish; use `Apply Setup` only for an optional manual refresh.
 6. Watch logs or `TSMPDebugCanvas` for frame status.
 
 ## Frame window
@@ -50,7 +50,7 @@ In `TSMPDebugCanvas`, a working decoder should show:
 - Message counts that match the kind of data being sent.
 - Low loss during steady playback.
 
-If the frame is valid but objects do not move, check network IDs, receive interpolation, and whether receiver objects are active.
+If the frame is valid but objects do not move, check network IDs, receive interpolation, and whether receiver objects are active. `valid=yes` means the frame passed the selected header/structural checks; it does not certify byte-for-byte equality with the sender. CRC32 covers header bytes 0..51, not the payload. Structurally valid changes to values or RPC arguments can therefore go undetected. Test the actual transport against known sent bytes or application markers.
 
 ## Decode order
 
@@ -71,7 +71,7 @@ No extra material assignment is required. You can disable the optimization under
 
 **Overlap Readbacks** is enabled by default under **Diagnostics > Advanced Decode**. The decoder can retain two images, starting the next capture while the first is waiting on the GPU. Results are applied in capture order. If both slots are occupied, it skips a new capture instead of extending a queue. Disable this option to compare with single-slot operation; no sender change is needed.
 
-This can reduce missing frames when a readback takes longer than one update, but uses more memory and can increase application latency and GPU/CPU load. Each snapshot needs about 3.52 MiB at 640x360 or 31.64 MiB at 1920x1080; two allocated slots double that storage, excluding byte buffers. It cannot recover frames that never reached the input texture. **Pending Frames** shows occupied slots and **Skipped Busy Captures** counts attempts rejected at capacity, not unique lost frames.
+This can reduce missing frames when a readback takes longer than one update, but uses more memory and can increase application latency and GPU/CPU load. Snapshot texel storage depends on the input format: ARGB32 uses 4 bytes/pixel, ARGBHalf 8, and ARGBFloat 16; other inputs or unsupported formats can use the Float32 fallback. In the Udon path, matching applies to supported RenderTexture formats; other texture types use Float32. At 1280x720 this is about 3.52 / 7.03 / 14.06 MiB per snapshot respectively. Two allocated slots double those amounts, excluding byte textures, CPU buffers and driver overhead. It cannot recover frames that never reached the input texture. **Pending Frames** shows occupied slots and **Skipped Busy Captures** counts attempts rejected at capacity, not unique lost frames.
 
 ## Receive interpolation
 

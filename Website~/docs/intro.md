@@ -38,7 +38,7 @@ The recommended first setup is:
 Packages/com.kibalab.tsmp.core/Samples/TSMPController.prefab
 ```
 
-Drag this prefab into your scene, assign the textures and references it asks for, then run `Apply Setup` on `TSMPSetup`.
+Drag this prefab into your scene and confirm the textures and references in `TSMPSetup`. Components, codecs and bindings are prepared automatically after changes and before Play Mode or builds. `Apply Setup` is an optional manual refresh.
 
 Start with a loopback test before building a complex scene. A loopback proves that the encoder, transport, decoder, bindings, and receiver objects agree with each other.
 
@@ -52,7 +52,7 @@ Start with a loopback test before building a complex scene. A loopback proves th
 | `TSMPNetwork*` components | Select which scene data should be sent or received. |
 | `TSMPDebugCanvas` | Shows frame, bandwidth, loss, payload, header, and error diagnostics in-game. |
 
-TSMP includes Luma4 as the default codec. The user-facing setup path uses Luma4 by default.
+Install the separate Luma4 package alongside Core for the recommended first setup. See the [starting profile and validation scope](./getting-started/installation.md#starting-profile).
 
 ## What TSMP is good at
 

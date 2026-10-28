@@ -22,15 +22,15 @@ title: TSMPSetup
 - Manual network ID를 바꾼 경우.
 - TSMP 컴포넌트를 prefab 안팎으로 옮긴 경우.
 
-인코딩 텍스처는 변하지만 수신 오브젝트가 움직이지 않는다면 Bindings 탭과 디코더의 입력 텍스처를 확인하세요. `Apply Setup`은 수동 갱신이 필요할 때 사용할 수 있으며, 매번 눌러야 하는 버튼은 아닙니다.
+인코딩 텍스처는 변하지만 수신 오브젝트가 움직이지 않는다면 Debug 탭의 Network IDs와 디코더의 입력 텍스처를 확인하세요. `Apply Setup`은 수동 갱신이 필요할 때 사용할 수 있으며, 매번 눌러야 하는 버튼은 아닙니다.
 
 ## 일반 작업 흐름
 
 1. `TSMPController.prefab`을 씬에 넣습니다.
-2. Reference 탭에서 텍스처와 씬 참조를 지정합니다.
+2. Setup 탭에서 씬·입력 텍스처 참조를, Output 탭에서 작업 렌더 텍스처를 지정합니다.
 3. Codec 탭에서 Luma4가 선택되어 있는지 확인합니다.
 4. 오브젝트에 TSMP sync 컴포넌트를 추가합니다.
-5. Bindings 탭에 동기화할 오브젝트가 표시되는지 확인합니다.
+5. Debug 탭의 Network IDs 목록에 동기화할 오브젝트가 표시되는지 확인합니다.
 6. Play 모드 또는 VRChat에서 테스트합니다.
 7. 오브젝트를 움직이거나 상호작용하는 동안 `TSMPDebugCanvas`를 봅니다.
 
@@ -38,10 +38,12 @@ title: TSMPSetup
 
 | 탭 | 용도 |
 | --- | --- |
-| Reference | Encoder, decoder, textures, render textures, shared scene references 지정. |
+| Setup | Encoder, decoder와 입력 텍스처 참조 지정. |
 | Codec | Luma4 handler 선택, codec package metadata 확인, codec discovery refresh. |
-| Bindings | 동기화 behaviour, generated bindings, network IDs 확인. |
-| Debug | 수동 encode 실행과 setup diagnostics 확인. |
+| Frame | 해상도, block size, sampling과 방향 설정. |
+| Output | 출력·바이트 렌더 텍스처 지정과 크기 설정. |
+| Auto | 자동 준비와 에디터 인코딩 설정. |
+| Debug | 용량·Network IDs 확인과 수동 encode 실행. |
 
 ## 먼저 지정할 것
 
@@ -74,7 +76,7 @@ title: TSMPSetup
 - Codec decode material 설정.
 - 필요한 runtime codec instance 생성.
 
-적용 후 Bindings 탭을 확인하세요. 동기화되길 기대한 컴포넌트가 목록에 없다면 encoder가 그 데이터를 보내지 않습니다.
+준비 후 Debug의 Network IDs를 확인하세요. 예상한 데이터가 없다면 Encoder/Decoder의 바인딩 진단도 확인하세요.
 
 ## 안전한 기본값
 

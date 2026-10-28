@@ -63,6 +63,16 @@ SDK가 없는 프로젝트에 `UDONSHARP`나 `COMPILER_UDONSHARP`를 수동 정�
 
 패키지의 Udon Program Asset은 SDK 환경에서만 사용합니다. 공용 Controller는 SDK 없이 사용할 수 있지만, 다른 데모 씬은 아바타 에셋이나 스트리밍 플러그인, VRChat 컴포넌트 등 별도의 의존성이 필요할 수 있습니다.
 
+## 시작 프로필 {#starting-profile}
+
+첫 아바타 검증 후보는 Core 1.0 + Luma4 1.0, 공용 Controller, 1280x720, block size 8, Full Humanoid 22개 레코드, 손가락·이름 끔, `maxPlayers=16`입니다. 목표 30Hz로 시작하고 실제 발행률과 적용률을 측정하세요. 이는 기준 후보이며 실제 16명 실시간 성능 인증은 아닙니다.
+
+이 설정의 Luma4 payload 용량은 6,720바이트입니다. 초기 캐시가 없는 상태에서 16명의 모든 root를 포함하는 아바타 필드 하나는 NetworkFrame framing까지 2,495바이트이며, 다른 필드와 RPC는 추가 용량을 사용합니다. Avatar Pose 인스펙터는 이 초기 추정량, 인코더 용량과 포즈만 고려한 잔여량을 표시합니다. 캐시가 준비되면 root 바이트를 줄일 수 있지만 초기 용량 조건이 없어지지는 않습니다. 설정 상한 80명과 산술적인 바이트 수용 상한은 실제 검증 인원이 아닙니다.
+
+`TSMPSetup` 기본 해상도는 1280x720입니다. 별도로 추가한 Encoder는 출력 텍스처나 Setup이 설정하기 전까지 640x360을 기본값으로 사용합니다. 용량을 비교할 때 실제 인코더 출력 크기를 확인하세요.
+
+2026-10-27 검사는 Windows, Unity 2022.3.22f1, D3D11, RTX 4090에서 수행했습니다. Native GPU 루프백, Windows Mono, Worlds 3.10.4-beta.2의 실제 Editor Udon VM과 로컬 월드 번들 빌드를 확인했습니다. 실제 VRChat 월드 입장은 인증·UI 접근 문제로 확인하지 못했습니다. 실제 16명 아바타 부하, 압축된 외부 전송, 장시간 운전, 낮은 사양, Quest와 IL2CPP는 미검증입니다. 루프백, VM 실행과 월드 빌드는 각각 해당 단계의 증거입니다.
+
 ## 기존 씬
 
 기존 Controller 인스턴스의 프리팹 참조와 오버라이드를 유지하기 위해 이전 프리팹은 원래 GUID 그대로 `Samples/Legacy/TSMPControllerLegacy.prefab`에 보관합니다. 새 인스턴스에는 공용 `Samples/TSMPController.prefab`을 사용합니다. 기존 SDK 씬을 변환하는 명령은 필요하지 않습니다. 다만 이전 씬을 SDK 없는 프로젝트로 옮길 때는 공용 Controller를 사용하고 나머지 선택적 의존성도 확인하세요. Legacy 프리팹 자체가 SDK 없는 환경의 공용 샘플은 아닙니다.

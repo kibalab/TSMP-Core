@@ -38,7 +38,7 @@ TSMP는 네 단계 파이프라인으로 이해하면 쉽습니다.
 Packages/com.kibalab.tsmp.core/Samples/TSMPController.prefab
 ```
 
-이 프리팹을 씬에 넣고 필요한 텍스처와 참조를 지정한 뒤 `TSMPSetup`에서 `Apply Setup`을 실행하세요.
+이 프리팹을 씬에 넣고 `TSMPSetup`에서 텍스처와 참조를 확인하세요. 컴포넌트, 코덱과 바인딩은 변경 시와 Play 모드·빌드 전에 자동으로 준비됩니다. `Apply Setup`은 선택적인 수동 갱신입니다.
 
 복잡한 씬을 만들기 전에 먼저 루프백 테스트를 하는 것이 좋습니다. 루프백은 인코더, 전송 경로, 디코더, 바인딩, 수신 오브젝트가 서로 맞는지 확인해 줍니다.
 
@@ -52,7 +52,7 @@ Packages/com.kibalab.tsmp.core/Samples/TSMPController.prefab
 | `TSMPNetwork*` 컴포넌트 | 어떤 씬 데이터를 보내거나 받을지 선택합니다. |
 | `TSMPDebugCanvas` | 인게임에서 프레임, 대역폭, 손실률, 페이로드, 헤더, 오류 상태를 보여줍니다. |
 
-TSMP에는 기본 코덱인 Luma4가 포함되어 있습니다. 기본 설정 경로는 Luma4를 기준으로 합니다.
+권장 시작 구성은 Core와 별도 Luma4 패키지입니다. [시작 프로필과 검증 범위](./getting-started/installation.md#starting-profile)를 확인하세요.
 
 ## TSMP에 적합한 용도
 
