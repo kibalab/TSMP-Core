@@ -2,15 +2,24 @@ param(
     [Parameter(Mandatory = $true)][string]$UnityEditor,
     [Parameter(Mandatory = $true)][string]$Project,
     [Parameter(Mandatory = $true)][string]$Results,
-    [Parameter(Mandatory = $true)][ValidateSet('Import', 'Play', 'Build', 'Player', 'Inspect', 'InitializeSdk', 'Udon', 'World', 'Workflow', 'ArrayCache', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'RpcQueueVm', 'Configuration', 'TimelineVm', 'TimelineRegression', 'TransSync', 'TransSyncVm', 'ReceivePolicies', 'ReceivePoliciesVm')][string]$Step
+    [Parameter(Mandatory = $true)][ValidateSet('Import', 'Play', 'Build', 'Player', 'Inspect', 'InitializeSdk', 'PrepareSdk', 'Udon', 'World', 'Workflow', 'ArrayCache', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'RpcQueueVm', 'Configuration', 'TimelineVm', 'TimelineRegression', 'TransSync', 'TransSyncVm', 'ReceivePolicies', 'ReceivePoliciesVm', 'PayloadIntegrity')][string]$Step,
+    [ValidateRange(30, 3600)][int]$TimeoutSeconds = 900,
+    [ValidateSet('Windowed', 'Batch')][string]$PlayerMode = 'Windowed'
 )
 
 $ErrorActionPreference = 'Stop'
 $Project = (Resolve-Path -LiteralPath $Project).Path
 if (!(Test-Path -LiteralPath (Join-Path $Project 'Packages/manifest.json'))) { throw 'A dedicated Unity validation project is required.' }
+$manifest = Get-Content -LiteralPath (Join-Path $Project 'Packages/manifest.json') -Raw | ConvertFrom-Json
+$sdk = (Test-Path -LiteralPath (Join-Path $Project 'Packages/com.vrchat.worlds/package.json')) -or
+    ($manifest.dependencies.PSObject.Properties.Name -contains 'com.vrchat.worlds')
+$nativeOnly = @('Play', 'Build', 'Player', 'Inspect', 'ArrayCache', 'TimelineRegression', 'ReceivePolicies', 'PayloadIntegrity')
+$sdkOnly = @('InitializeSdk', 'PrepareSdk', 'Udon', 'World', 'UdonArrays', 'RpcQueueVm', 'TimelineVm', 'TransSyncVm', 'ReceivePoliciesVm')
+if ($sdk -and $Step -in $nativeOnly) { throw "Scope mismatch: $Step is Native-only. Use the dedicated VM step in the SDK project." }
+if (-not $sdk -and $Step -in $sdkOnly) { throw "Scope mismatch: $Step requires a Worlds SDK project." }
 New-Item -ItemType Directory -Path $Results -Force | Out-Null
 $Results = (Resolve-Path -LiteralPath $Results).Path
-$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
 $log = Join-Path $Results "$stamp-$Step.log"
 $result = Join-Path $Results "$stamp-$Step-result.txt"
 $build = Join-Path $Project 'Build/Mono/TSMPValidation.exe'
@@ -19,7 +28,25 @@ $oldBuild = $env:TSMP_VALIDATION_BUILD
 try {
     $env:TSMP_VALIDATION_RESULT = $result
     $env:TSMP_VALIDATION_BUILD = $build
-    if ($Step -in @('ReceivePolicies', 'ReceivePoliciesVm')) {
+    if ($Step -eq 'PayloadIntegrity') {
+        $destination = Join-Path $Project 'Assets/Validation/VideoTransport/Editor'
+        New-Item -ItemType Directory -Path $destination -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'VideoTransport/Editor/PayloadIntegrityValidation.cs') -Destination $destination -Force
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'VideoTransport/Runtime') -Destination (Split-Path -Parent $destination) -Recurse -Force
+    } elseif ($Step -eq 'PrepareSdk') {
+        foreach ($suite in @('Configuration', 'RpcDelivery', 'TransSync', 'ReceivePolicies')) {
+            $destination = Join-Path $Project "Assets/Validation/$suite"
+            New-Item -ItemType Directory -Path $destination -Force | Out-Null
+            Copy-Item -LiteralPath (Join-Path $PSScriptRoot "$suite/Editor"),(Join-Path $PSScriptRoot "$suite/Runtime") -Destination $destination -Recurse -Force
+        }
+        $arrayEditor = Join-Path $Project 'Assets/Validation/ArrayCache/Editor'
+        New-Item -ItemType Directory -Path $arrayEditor -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ArrayCache/Editor/ArrayCacheCases.cs'),(Join-Path $PSScriptRoot 'ArrayCache/VRCEditor/DecoderArrayCacheUdonValidation.cs') -Destination $arrayEditor -Force
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ArrayCache/Udon') -Destination (Split-Path -Parent $arrayEditor) -Recurse -Force
+        $editor = Join-Path $Project 'Assets/Validation/Editor'
+        New-Item -ItemType Directory -Path $editor -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'VRCEditor/SdkValidationPreparation.cs') -Destination $editor -Force
+    } elseif ($Step -in @('ReceivePolicies', 'ReceivePoliciesVm')) {
         $destination = Join-Path $Project 'Assets/Validation/ReceivePolicies'
         New-Item -ItemType Directory -Path $destination -Force | Out-Null
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ReceivePolicies/Editor'),(Join-Path $PSScriptRoot 'ReceivePolicies/Runtime') -Destination $destination -Recurse -Force
@@ -80,6 +107,7 @@ try {
         Build = 'UnitySupportValidation.BuildMono'
         Inspect = 'InspectorValidationWindow.Run'
         InitializeSdk = 'VrcSupportValidation.InitializeSdk'
+        PrepareSdk = 'SdkValidationPreparation.Run'
         Udon = 'VrcSupportValidation.Compile'
         World = 'VrcSupportValidation.BuildWorld'
         Workflow = 'SharedWorkflowValidation.Run'
@@ -96,26 +124,28 @@ try {
         TransSyncVm = 'TransSyncSchedulingValidation.RunVm'
         ReceivePolicies = 'ReceivePolicyValidation.Run'
         ReceivePoliciesVm = 'ReceivePolicyValidation.RunVm'
+        PayloadIntegrity = 'PayloadIntegrityValidation.Run'
     }
     if ($Step -eq 'Player') {
         $arguments = "-screen-fullscreen 0 -screen-width 640 -screen-height 360 -logFile `"$log`""
+        if ($PlayerMode -eq 'Batch') { $arguments += ' -batchmode' }
         $process = Start-Process -FilePath $build -ArgumentList $arguments -WindowStyle Hidden -PassThru
     } else {
         $arguments = "-projectPath `"$Project`" -logFile `"$log`""
         if ($Step -ne 'Inspect') { $arguments += ' -batchmode' }
-        if ($Step -in @('Import', 'Build', 'InitializeSdk', 'Udon', 'ArrayCache', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'Configuration', 'TimelineRegression', 'TransSync', 'ReceivePolicies')) { $arguments += ' -quit' }
+        if ($Step -in @('Import', 'Build', 'InitializeSdk', 'PrepareSdk', 'Udon', 'ArrayCache', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'Configuration', 'TimelineRegression', 'TransSync', 'ReceivePolicies', 'PayloadIntegrity')) { $arguments += ' -quit' }
         if ($methods.ContainsKey($Step)) { $arguments += ' -executeMethod ' + $methods[$Step] }
         if ($Step -eq 'Build') { New-Item -ItemType Directory -Path (Split-Path -Parent $build) -Force | Out-Null }
         $process = Start-Process -FilePath $UnityEditor -ArgumentList $arguments -WindowStyle Hidden -PassThru
     }
     Write-Output "PID=$($process.Id) Log=$log Result=$result"
-    if (!$process.WaitForExit(900000)) {
+    if (!$process.WaitForExit($TimeoutSeconds * 1000)) {
         $process.Kill()
         throw "Validation timed out; see $log"
     }
     $process.Refresh()
     if ($process.ExitCode -ne 0) { throw "Validation exited $($process.ExitCode); see $log" }
-    if ($Step -in @('Play', 'Player', 'Inspect', 'Udon', 'World', 'Workflow', 'ArrayCache', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'RpcQueueVm', 'Configuration', 'TimelineVm', 'TimelineRegression', 'TransSync', 'TransSyncVm', 'ReceivePolicies', 'ReceivePoliciesVm')) {
+    if ($Step -in @('Play', 'Player', 'Inspect', 'PrepareSdk', 'Udon', 'World', 'Workflow', 'ArrayCache', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'RpcQueueVm', 'Configuration', 'TimelineVm', 'TimelineRegression', 'TransSync', 'TransSyncVm', 'ReceivePolicies', 'ReceivePoliciesVm', 'PayloadIntegrity')) {
         if (!(Test-Path -LiteralPath $result) -or (Get-Content -LiteralPath $result -First 1) -ne 'PASS') {
             throw "Validation did not produce PASS; see $log"
         }

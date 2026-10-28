@@ -10,6 +10,31 @@ For VRChat, create a separate Worlds project with the SDK, then reference the sa
 
 ## Run
 
+For a prepared, dedicated project, run the current suite with one command:
+
+```powershell
+$unity = 'C:/Program Files/Unity/Hub/Editor/2022.3.22f1/Editor/Unity.exe'
+& './Validation~/Run-Suite.ps1' -UnityEditor $unity -Project 'F:/Validation/NoSDK' -Results 'F:/Results/TSMP' -Profile Native
+& './Validation~/Run-Suite.ps1' -UnityEditor $unity -Project 'F:/Validation/VRC' -Results 'F:/Results/TSMP' -Profile Sdk
+```
+
+The suite imports first. The SDK profile then initializes SDK defines, copies all shared regression fixtures, creates their Udon program assets and compiles them in `PrepareSdk`, and starts a fresh client compilation before functional checks. This prevents later tests from introducing unprepared probe programs after compilation. It does not install TSMP packages or the SDK; use the separate projects described above.
+
+Each run gets a new evidence directory with original logs and `checks.csv`/`checks.json`. Preparation failure stops dependent checks and records them as `NOTRUN`, while functional failures remain `FAIL` and do not erase earlier evidence. A failed Build prevents Player from using an old executable. `ProductOrHarnessFailure` requires triage; it is not an automatic product-bug classification. Use `-Steps Workflow,Configuration,TransSync` to select a smaller suite; preparation remains automatic. `-IncludeSnapshot` adds the [snapshot suite](DecoderSnapshot/README.md), which requires all four codecs. World builds and Inspector UI checks are opt-in through `-Steps`.
+
+| Project | Use | Excluded routes |
+| --- | --- | --- |
+| Native | Play/Build/Player, ArrayCache, TimelineRegression, ReceivePolicies and shared Editor regressions | Udon and VM steps |
+| SDK | PrepareSdk/Udon, UdonArrays, TimelineVm, ReceivePoliciesVm, RpcQueueVm, TransSyncVm and shared Editor regressions | Native Play/Build/Player, ArrayCache, TimelineRegression and ReceivePolicies |
+
+The runners reject mismatched routes before copying scripts or opening Unity. Workflow compares the Controller's decoder handlers with all discovered codec IDs, so installing additional codecs does not violate a single-handler assertion. These checks still require the real Luma4 package for loopback and several shared regressions.
+
+For finite offline compressed-video byte accuracy, use the separate [VideoTransport probe](VideoTransport/README.md). It preserves failed compression profiles and compares complete payloads; it is not part of the Native/SDK functional suite or a live transport benchmark.
+
+The Native `PayloadIntegrity` step is a characterization of the current header-only CRC contract: a format-preserving value mutation can be applied. Its `PASS` means this limitation was reproduced, not that corrupted data was rejected. Suite output distinguishes it with `Stage=Characterization`.
+
+Individual commands remain available:
+
 ```powershell
 $unity = 'C:\Program Files\Unity\Hub\Editor\2022.3.22f1\Editor\Unity.exe'
 $runner = '.\Validation~\Run-Validation.ps1'
@@ -24,6 +49,7 @@ $runner = '.\Validation~\Run-Validation.ps1'
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-NoSDK -Results F:\Unity\TSMP\Validation-Results -Step Player
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-NoSDK -Results F:\Unity\TSMP\Validation-Results -Step Inspect
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step InitializeSdk
+& $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step PrepareSdk
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step Udon
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step UdonArrays
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step EditorEncoding
@@ -36,7 +62,7 @@ $runner = '.\Validation~\Run-Validation.ps1'
 
 Run steps sequentially after import settles. `InitializeSdk` uses the SDK's `EnvConfig.SetActiveSDKDefines` to configure the isolated Worlds project; restart Unity before `Udon`. `World` uses `IVRCSdkWorldBuilderApi.Build`, including SDK validation and callbacks, and never calls an upload API. A first SDK build can change Player settings and request another Unity compile. Wait for that import and retry rather than bypassing validation.
 
-`Build` creates a Development Windows x64 Mono Player with managed stripping disabled. `Player` deliberately does not use `-batchmode` or `-nographics`: an earlier Windows batch-mode Player did not complete GPU readback in the test timeout despite reporting a graphics adapter. The harness enables Run In Background. `Inspect` opens an EditorWindow and executes the six custom inspectors' IMGUI paths, then exits; it is not a screenshot-based layout review.
+`Build` creates a Development Windows x64 Mono Player with managed stripping disabled. `Player` defaults to a hidden windowed invocation and enables Run In Background. Use `-PlayerMode Batch` for an explicit graphics-enabled batch-mode control; neither mode uses `-nographics`. Historical runs have encountered readback timeouts under different invocation conditions, while the same executable passed controls. Preserve both logs and the invocation mode rather than treating a successful control as the cause of the failure. `-TimeoutSeconds` bounds each process and the runners restore their environment variables after success or failure. `Inspect` opens an EditorWindow and executes the six custom inspectors' IMGUI paths, then exits; it is not a screenshot-based layout review.
 
 `ArrayCache` runs the decoder's payload parsing and field dispatch in the SDK-free Editor. It verifies independent arrays for different fields and for multiple recipients of the same variable. `UdonArrays` compiles all installed UdonSharp programs for the client, then executes the array-decoding helpers as real Udon bytecode in the Editor VM. Neither array step exercises a GPU; run `Play` separately for the existing texture loopback. Keep the two array steps in their respective SDK-free and SDK projects.
 
