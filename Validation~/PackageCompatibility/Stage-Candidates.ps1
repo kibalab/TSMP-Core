@@ -14,12 +14,13 @@ $archives = Join-Path $root 'archives'
 [IO.Directory]::CreateDirectory($packages) | Out-Null
 [IO.Directory]::CreateDirectory($archives) | Out-Null
 $specs = @(
-    @('TSMP-Core-main', 'com.kibalab.tsmp.core', '0.3.0-beta.2'),
-    @('TSMPCodec-Luma4', 'com.kibalab.tsmp.codec.luma4', '0.0.4-beta.1'),
-    @('TSMPCodec-RGB16', 'com.kibalab.tsmp.codec.rgb16', '0.0.3-beta.3'),
-    @('TSMPCodec-RGB20', 'com.kibalab.tsmp.codec.rgb20', '0.0.3-beta.4'),
-    @('TSMPCodec-Color256', 'com.kibalab.tsmp.codec.color256', '0.0.3-beta.3')
+    @('TSMP-Core-main', 'com.kibalab.tsmp.core'),
+    @('TSMPCodec-Luma4', 'com.kibalab.tsmp.codec.luma4'),
+    @('TSMPCodec-RGB16', 'com.kibalab.tsmp.codec.rgb16'),
+    @('TSMPCodec-RGB20', 'com.kibalab.tsmp.codec.rgb20'),
+    @('TSMPCodec-Color256', 'com.kibalab.tsmp.codec.color256')
 )
+$coreManifest = Get-Content -LiteralPath (Join-Path $RepositoriesRoot 'TSMP-Core-main/Packages/com.kibalab.tsmp.core/package.json') -Raw | ConvertFrom-Json
 $inventory = @()
 foreach ($spec in $specs) {
     $repo = Join-Path $RepositoriesRoot $spec[0]
@@ -28,16 +29,17 @@ foreach ($spec in $specs) {
     if ($LASTEXITCODE -ne 0 -or $dirty) { throw "Commit package changes first: $repo" }
     $commit = git -C $repo rev-parse HEAD
     if ($LASTEXITCODE -ne 0) { throw "Cannot read commit: $repo" }
-    $zip = Join-Path $archives "$id-$($spec[2]).zip"
+    $candidateManifest = git -C $repo show "HEAD:Packages/$id/package.json" | Out-String | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $candidateManifest.name -ne $id) { throw "Cannot read package manifest: $id" }
+    $zip = Join-Path $archives "$id-$($candidateManifest.version).zip"
     git -C $repo archive --format=zip "--output=$zip" "HEAD:Packages/$id"
     if ($LASTEXITCODE -ne 0) { throw "Cannot archive $id" }
     $destination = Join-Path $packages $id
     Expand-Archive -LiteralPath $zip -DestinationPath $destination
     $manifest = Get-Content -LiteralPath (Join-Path $destination 'package.json') -Raw | ConvertFrom-Json
-    if ($manifest.name -ne $id -or $manifest.version -ne $spec[2]) { throw "Version mismatch: $id" }
+    if ($manifest.name -ne $id -or $manifest.version -ne $candidateManifest.version) { throw "Version mismatch: $id" }
     if ($id -ne 'com.kibalab.tsmp.core') {
-        if ($manifest.dependencies.'com.kibalab.tsmp.core' -ne '0.3.0-beta.2' -or
-            $manifest.vpmDependencies.'com.kibalab.tsmp.core' -ne '>=0.3.0-beta.2') {
+        if ($manifest.dependencies.'com.kibalab.tsmp.core' -ne $coreManifest.version) {
             throw "Core dependency mismatch: $id"
         }
     }
