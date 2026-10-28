@@ -1,5 +1,7 @@
 # Payload integrity follow-up, 2026-10-28
 
+The performance figures below describe the initial payload CRC implementation. See the [subsequent CRC optimization results](CrcPerformance/RESULTS.md) for the measured faster implementation; the historical figures remain preserved.
+
 Production Encoder frames now carry a payload CRC32 in the existing 56-byte header. A checksum failure is rejected before payload parsing, state assignment or RPC dispatch. This closes the demonstrated legacy case where a value could change from 42 to 43 while the header CRC remained valid. It detects corruption; it does not recover lost data or authenticate a sender.
 
 ## Contract and compatibility

@@ -14,4 +14,6 @@ The result directory contains source images, encoded files, restored images, exa
 
 ## Payload mutation characterization
 
+For the measured cause of CRF28 rejection, calibration boundary measurements and isolated color-conversion/lossless/filter controls, see [CRF28-ANALYSIS.md](CRF28-ANALYSIS.md). Its reproduction script uses the saved images and a CPU symbol model, independently checked against the saved GPU outcomes; the new controls are not additional GPU or live-client certification.
+
 Run `Validation~/Run-Validation.ps1 -Step PayloadIntegrity` in a dedicated Native project (with the usual UnityEditor, Project and Results arguments). It preserves the legacy characterization (a format-preserving Int32 42-to-43 change can be applied without a checksum), then checks the protected `CompletePayload` boundary rejects the mutation and accepts the original retry. It also checks the standard CRC vector, empty CRC zero, valid-length/dirty-tail behavior and strict/compatible legacy policies. A `PASS` covers both the recorded legacy limitation and protected rejection. No GPU, video, Udon or RPC is involved in this separate test; Snapshot and ContinuousFrames cover those integration boundaries.
