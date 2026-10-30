@@ -24,6 +24,8 @@ public static class TransportMeasurementValidation
         public string framesDirectory;
         public string expectedDirectory;
         public string expectedPayloadDirectory;
+        // Omitted paths retain the original Luma4 measurement behavior.
+        public string codecPrefabPath;
         public string fixture;
         public FrameMapping[] frameMappings;
     }
@@ -93,7 +95,7 @@ public static class TransportMeasurementValidation
         Rows.Clear(); Details.Clear(); Summaries.Clear(); Owned.Clear(); failed = false;
         Rows.Add("profile,file,expectedFile,expectedFrame,expectedFrameUnknown,actualFrame,actualFrameTrusted,width,height,expectedBytes,actualBytes,retainedPayloadDataBytes,actualBytesTrusted,headerValid,frameValid,payloadCrcPresent,payloadCrcVerified,headerCrcExpected,headerCrcActual,payloadCrcExpected,payloadCrcActual,rejectionStage,byteMismatches,status,error");
         Summaries.Add("profile,expectedFrames,observedPngs,exact,rejected,wrong,corrupt,missing,timeouts,inputErrors,pass");
-        Details.Add("Decode-only imported PNG measurement: Native TSMP GPU decoder, Luma4, original PNG dimensions, block8, sample4, parse-only, required payload CRC.");
+        Details.Add("Decode-only imported PNG measurement: Native TSMP GPU decoder, per-profile production codec prefab (default Luma4), original PNG dimensions, block8, sample4, parse-only, required payload CRC.");
         Details.Add("Unity=" + Application.unityVersion + "; GPU=" + SystemInfo.graphicsDeviceName + "; API=" + SystemInfo.graphicsDeviceType + "; ColorSpace=" + QualitySettings.activeColorSpace);
         Details.Add("Manifest=" + manifestPath);
         Details.Add("Default mapping uses numeric PNG IDs, not file enumeration order. Explicit frameMappings define the expected output list when supplied.");
@@ -225,12 +227,12 @@ public static class TransportMeasurementValidation
         return texture;
     }
 
-    static TSMPCodec CreateCodec()
+    static TSMPCodec CreateCodec(string prefabPath)
     {
-        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>("Packages/com.kibalab.tsmp.codec.luma4/Runtime/Codec_Luma4.prefab");
-        Check(prefab != null, "Luma4 prefab missing.");
+        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+        Check(prefab != null, "Codec prefab missing: " + prefabPath);
         var codec = Own(Object.Instantiate(prefab)).GetComponent<TSMPCodec>();
-        Check(codec != null, "Luma4 codec component missing.");
+        Check(codec != null, "TSMPCodec component missing: " + prefabPath);
         var copies = new Dictionary<Material, Material>();
         Func<Material, Material> clone = original =>
         {
@@ -300,19 +302,32 @@ public static class TransportMeasurementValidation
         Check(manifest != null && manifest.profiles != null && manifest.profiles.Length > 0, "Manifest profiles are required.");
         Check(manifest.profiles.All(p => p != null && !string.IsNullOrWhiteSpace(p.name)), "Every profile needs a name.");
         Check(manifest.profiles.Select(p => p.name).Distinct(StringComparer.Ordinal).Count() == manifest.profiles.Length, "Profile names must be unique.");
-        TSMPCodec codec = CreateCodec();
+        var codecs = new Dictionary<string, TSMPCodec>(StringComparer.Ordinal);
+        const string luma4Path = "Packages/com.kibalab.tsmp.codec.luma4/Runtime/Codec_Luma4.prefab";
+        // Every protocol header is Luma4, even when its payload uses a color codec.
+        codecs.Add(luma4Path, CreateCodec(luma4Path));
+        foreach (Profile profile in manifest.profiles)
+        {
+            if (string.IsNullOrWhiteSpace(profile.codecPrefabPath))
+                profile.codecPrefabPath = luma4Path;
+            if (!codecs.ContainsKey(profile.codecPrefabPath))
+                codecs.Add(profile.codecPrefabPath, CreateCodec(profile.codecPrefabPath));
+        }
         var image = Own(new Texture2D(1280, 720, TextureFormat.RGBA32, false, true));
         image.filterMode = FilterMode.Point;
         RenderTexture source = null;
         var decoder = Own(new GameObject("Imported transport measurement decoder")).AddComponent<TSMPDecoder>();
         decoder.applyEveryFrame = false; decoder.skipDuplicateFrames = false; decoder.decodeSafetyMode = 3;
         decoder.requirePayloadCrc32 = true; decoder.debugLog = false;
-        decoder.codecHandlers = new[] { codec }; decoder.blockSize = 8; decoder.sampleSize = 4;
+        decoder.codecHandlers = codecs.Values.ToArray(); decoder.blockSize = 8; decoder.sampleSize = 4;
         decoder.overlapReadbacks = false; decoder.payloadByteTexture = Target(2048, 1); decoder.sourceTexture = source;
         uint[] crcTable = Crc32Runtime.EnsureTable(null);
         yield return null;
         foreach (Profile profile in manifest.profiles)
         {
+            TSMPCodec codec = codecs[profile.codecPrefabPath];
+            decoder.codecHandlers = codec == codecs[luma4Path] ? new[] { codec } : new[] { codecs[luma4Path], codec };
+            Details.Add("Profile=" + profile.name + "; codec=" + codec.displayName + "; codecId=" + codec.codecId + "; prefab=" + profile.codecPrefabPath);
             int observed = 0;
             List<FrameCase> frames = null;
             string inputError = null;
