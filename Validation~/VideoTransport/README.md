@@ -2,6 +2,18 @@
 
 See [OBS-TRANSPORT-RESULTS.md](OBS-TRANSPORT-RESULTS.md) for the 720p/1440p CBR matrix, actual isolated OBS recordings, GPU checks and local FLV/HLS file-packaging results. Live relay/CDN measurements are separate.
 
+See [CODEC-TRANSPORT-RESULTS.md](CODEC-TRANSPORT-RESULTS.md) for the same-load comparison of the shipped Color256, RGB16 and RGB20 codecs, including RGB-lossless controls and actual OBS recordings.
+
+## Measuring other codecs
+
+`Run-CodecTransportFixture.ps1 -UnityEditor <exe> -Project <Native-project> -Plan <json> -Results <new-directory>` calls each production prefab's `TryWriteFrame`. Its plan contains `fixtures`, each with a unique `name`, `codecPrefabPath` and `sourceFixtureDirectory`. The source is a completed fixture from `Generate-Transport-Fixture.py`. Payload bins are reused unchanged; codec ID, symbol mode and actual prefab options are stamped into the header with valid CRC. This preserves equal byte loads across codecs. Generated PNG/header/payload hashes and package source hashes are recorded. Generation completion does not certify raster or transport accuracy.
+
+`Measure-CodecStreaming.py --fixture <generated-fixture> --codec-prefab-path Packages/...prefab --results <new-directory> --ffmpeg <exe> --ffprobe <exe> --core-package <dir> --codec-package <dir>` runs RGB FFV1 plus the existing native-resolution CBR/QP0 matrix. Add `--include-crf` for CRF18/28. It requires independent pre-raster bins, verifies source CSV hashes when supplied, and emits explicit GPU mappings. No Luma4 payload model is used for color codecs. `MEASURED` means process completion; byte accuracy remains `AWAITING_GPU` until the GPU harness runs.
+
+The GPU manifest supports an optional per-profile `codecPrefabPath`, defaulting to Luma4 for older manifests. The harness registers Luma4 for the common header and the selected codec for its payload, with cloned materials. Run PNG controls as well as encoded profiles and compare complete bytes against the independent bins. These common-load tests use at most 5,375 payload bytes; the harness's 8,192-byte readback target is not a codec maximum-capacity test.
+
+For a color OBS recording, add `--header-only-association --codec-prefab-path Packages/...prefab` to `Analyze-ObsRecording.py`. This associates IDs using the shared grayscale base header and leaves payload accuracy explicitly unmeasured. The resulting manifest must undergo production GPU validation. Header coverage, exact payload coverage and repeated observations are different measurements.
+
 ## Extended measurement tools
 
 - `Generate-Transport-Fixture.py`: creates structured/random protected Luma4 fixtures and independent payload/header bins. Supply `--template`, fresh `--results`, `--width/--height`, `--frames`, `--fps 30`, `--pattern` and actual `--core-package/--codec-package` directories.
