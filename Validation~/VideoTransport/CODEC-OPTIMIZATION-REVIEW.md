@@ -1,5 +1,7 @@
 # Performance improvement review, 2026-10-30
 
+The subsequent [implementation and measured results](../ColorRaster/RESULTS.md) cover Native color-buffer reuse and the accepted RGB16 refinement change. The review below records the evidence and decisions preceding that implementation.
+
 The transport report supports useful efficiency improvements, but does not itself measure current codec CPU/GPU time. The strongest new implementation candidate is Native color-codec raster-buffer reuse. The strongest saved-data efficiency choice is using an existing codec and native resolution that fit the actual payload. Codec robustness, useful delivered data, allocation churn and frame-processing time must be evaluated separately.
 
 This is a read-only implementation review and saved-evidence reanalysis. No new encoder, Unity, OBS, GPU timing or live-client experiment was run. Runtime, shaders and codec repositories were not changed. Documentation remains on `codex/tsmp-reliability`, without a merge or push.
