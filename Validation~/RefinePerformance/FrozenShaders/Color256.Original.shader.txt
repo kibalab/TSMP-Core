@@ -1,0 +1,133 @@
+Shader "Hidden/TSMP/RefinePerformance/Color256/Original"
+{
+    Properties
+    {
+        [HideInInspector] _TSMPHeaderTex ("Decoded Header", 2D) = "black" {}
+        [HideInInspector] _TSMPHeaderPixels ("Header Pixels", Float) = 0
+        [HideInInspector] _CalibrationLut ("Calibration LUT", 2D) = "black" {}
+        _MainTex ("TSMP Source", 2D) = "black" {}
+        _BlockSize ("Block Size", Float) = 8
+        _SampleSize ("Sample Size", Float) = 0
+        _StartBlock ("Start Block", Float) = 0
+        _ByteCount ("Byte Count", Float) = 0
+        _ActiveWidthBlocks ("Active Width Blocks", Float) = 80
+        _SourceWidth ("Source Width", Float) = 640
+        _SourceHeight ("Source Height", Float) = 360
+        _OutputWidth ("Output Width", Float) = 14
+        _OutputHeight ("Output Height", Float) = 1
+        _FlipY ("Flip Y", Float) = 1
+        _ColorCalibrationStartBlock ("Color Calibration Start Block", Float) = 640
+        _InterleaveMode ("Interleave Mode", Float) = 0
+    }
+
+    SubShader
+    {
+        Tags { "RenderType" = "Opaque" "Queue" = "Overlay" }
+        Cull Off
+        ZWrite Off
+        ZTest Always
+
+        Pass
+        {
+            CGPROGRAM
+            #pragma target 3.5
+            #pragma vertex vert
+            #pragma fragment frag
+            #pragma multi_compile_local _ TSMP_CALIBRATION_LUT
+            #include "Packages/com.kibalab.tsmp.core/Runtime/Codecs/Common/Shaders/cgincs/TSMPDecodeCommon.cginc"
+
+            float _ColorCalibrationStartBlock;
+            float _InterleaveMode;
+
+            #include "Packages/com.kibalab.tsmp.codec.color256/Runtime/Shaders/Color256Calibration.cginc"
+
+
+
+            int ClassifyChannelLevel(float value, int channel, int levelCount)
+            {
+                int bestLevel = 0;
+                float bestDistance = 999999.0;
+
+                [loop]
+                for (int level = 0; level < 8; level++)
+                {
+                    if (level < levelCount)
+                    {
+                        float c = AverageCalibrationChannel(level, channel);
+                        float d = abs(value - c);
+                        if (d < bestDistance)
+                        {
+                            bestDistance = d;
+                            bestLevel = level;
+                        }
+                    }
+                }
+
+                return bestLevel;
+            }
+
+            int RefineLocalColor256(float3 rgb, int r0, int g0, int b0)
+            {
+                float3 p = RgbToYCoCg(rgb);
+                int bestSymbol = MakeColor256Symbol(r0, g0, b0);
+                float bestDistance = 999999.0;
+
+                [loop]
+                for (int db = -1; db <= 1; db++)
+                {
+                    [loop]
+                    for (int dg = -1; dg <= 1; dg++)
+                    {
+                        [loop]
+                        for (int dr = -1; dr <= 1; dr++)
+                        {
+                            int r = clamp(r0 + dr, 0, 7);
+                            int g = clamp(g0 + dg, 0, 7);
+                            int b = clamp(b0 + db, 0, 3);
+                            int symbol = MakeColor256Symbol(r, g, b);
+#if defined(TSMP_CALIBRATION_LUT)
+                            float3 c = RgbToYCoCg(_CalibrationLut.Load(int3(symbol, 0, 0)).rgb);
+#else
+                            float3 c = RgbToYCoCg(SampleBlockByIndex(_ColorCalibrationStartBlock + symbol));
+#endif
+                            float3 d = p - c;
+                            float distance = d.x * d.x * 2.0 + d.y * d.y * 0.85 + d.z * d.z * 0.85;
+                            if (distance < bestDistance)
+                            {
+                                bestDistance = distance;
+                                bestSymbol = symbol;
+                            }
+                        }
+                    }
+                }
+
+                return bestSymbol;
+            }
+
+            int DecodeByte(int byteIndex)
+            {
+                if (byteIndex < 0 || byteIndex >= (int)_ByteCount)
+                    return 0;
+
+                float blockOffset = byteIndex;
+                if (_InterleaveMode > 0.5)
+                {
+                    float rows = ceil(_ByteCount / _ActiveWidthBlocks);
+                    float logicalByte = (float)byteIndex;
+                    blockOffset = fmod(logicalByte, rows) * _ActiveWidthBlocks + floor(logicalByte / rows);
+                }
+
+                float3 rgb = SampleBlockByIndex(_StartBlock + blockOffset);
+                int r = ClassifyChannelLevel(rgb.r, 0, 8);
+                int g = ClassifyChannelLevel(rgb.g, 1, 8);
+                int b = ClassifyChannelLevel(rgb.b, 2, 4);
+                return RefineLocalColor256(rgb, r, g, b);
+            }
+
+            #include "Packages/com.kibalab.tsmp.core/Runtime/Codecs/Common/Shaders/cgincs/TSMPDecodeByteOutput.cginc"
+            ENDCG
+        }
+    }
+
+    Fallback Off
+}
