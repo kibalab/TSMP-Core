@@ -25,6 +25,8 @@ public sealed class ColorRasterValidation : MonoBehaviour
     readonly List<string> checks = new List<string>();
     readonly List<string> profiles = new List<string>();
     readonly List<string> samples = new List<string>();
+    readonly List<string> referenceChecks = new List<string>();
+    readonly Dictionary<string, string> baselinePixelHashes = new Dictionary<string, string>(StringComparer.Ordinal);
     TSMPCodec[] codecs;
     string root, phase, reference;
     bool optimized, scopedAllocationValid, frameAllocationValid;
@@ -53,6 +55,15 @@ public sealed class ColorRasterValidation : MonoBehaviour
         checks.Add("case,kind,codec,width,height,payloadBytes,pixelSHA256,reused,independent,note");
         profiles.Add("case,codec,width,height,payloadBytes,valueBytes,samples,warmCalls,meanEncodeUs,p50EncodeUs,p95EncodeUs,maxEncodeUs,meanScopedAllocationBytes,meanFrameAllocationBytes,p95FrameAllocationBytes,gc0Collections,elapsedSeconds,observedCallsPerSecond,warmRasterPresent,warmRasterReused");
         samples.Add("case,sample,encodeUs,scopedAllocationBytes,frameAllocationBytes");
+        referenceChecks.Add("case,actualFormat,actualRawBytes,actualRawSHA256,baselineOriginalRawSHA256,loadedFormat,loadedRawBytes,loadedRawSHA256,loadedCanonicalRGBA_SHA256,baselinePngSHA256");
+        if (optimized)
+        {
+            foreach (string line in File.ReadLines(Path.Combine(reference, "checks.csv")).Skip(1))
+            {
+                string[] fields = ReadCsv(line);
+                if (fields.Length >= 7 && fields[1] == "direct") baselinePixelHashes.Add(fields[0], fields[6]);
+            }
+        }
         var stack = new Stack<IEnumerator>(); stack.Push(Run());
         while (stack.Count > 0)
         {
@@ -105,6 +116,7 @@ public sealed class ColorRasterValidation : MonoBehaviour
         File.WriteAllLines(Path.Combine(root, "checks.csv"), checks);
         File.WriteAllLines(Path.Combine(root, "profiles.csv"), profiles);
         File.WriteAllLines(Path.Combine(root, "samples.csv"), samples);
+        File.WriteAllLines(Path.Combine(root, "reference-validation.csv"), referenceChecks);
         foreach (Object value in owned.AsEnumerable().Reverse())
         {
             if (value is RenderTexture target) target.Release();
@@ -123,6 +135,35 @@ public sealed class ColorRasterValidation : MonoBehaviour
     static string Required(string name) { string value = Environment.GetEnvironmentVariable(name); if (string.IsNullOrWhiteSpace(value)) throw new InvalidOperationException(name + " is required"); return value; }
     static string Csv(object value) => "\"" + (Convert.ToString(value, CultureInfo.InvariantCulture) ?? "").Replace("\"", "\"\"") + "\"";
     static string Row(params object[] values) => string.Join(",", values.Select(Csv));
+    static string[] ReadCsv(string line)
+    {
+        var values = new List<string>(); var value = new System.Text.StringBuilder(); bool quoted = false;
+        for (int i = 0; i < line.Length; i++)
+        {
+            char character = line[i];
+            if (character == '"')
+            {
+                if (quoted && i + 1 < line.Length && line[i + 1] == '"') { value.Append('"'); i++; }
+                else quoted = !quoted;
+            }
+            else if (character == ',' && !quoted) { values.Add(value.ToString()); value.Length = 0; }
+            else value.Append(character);
+        }
+        values.Add(value.ToString()); return values.ToArray();
+    }
+    static byte[] CanonicalRgba(Texture2D texture)
+    {
+        // LoadImage may choose ARGB32 storage; GetPixels32 returns logical RGBA
+        // channels independently of its raw byte ordering. Both use Unity's
+        // bottom-to-top pixel order, matching the original baseline raw hash.
+        Color32[] colors = texture.GetPixels32(); var result = new byte[colors.Length * 4];
+        for (int i = 0; i < colors.Length; i++)
+        {
+            int start = i * 4; result[start] = colors[i].r; result[start + 1] = colors[i].g;
+            result[start + 2] = colors[i].b; result[start + 3] = colors[i].a;
+        }
+        return result;
+    }
     static string Digest(byte[] value) { using (var hash = SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(value)).Replace("-", "").ToLowerInvariant(); }
     static T Field<T>(TSMPEncoder encoder, string name) => (T)typeof(TSMPEncoder).GetField(name, Private).GetValue(encoder);
     T Own<T>(T value) where T : Object { owned.Add(value); return value; }
@@ -204,7 +245,24 @@ public sealed class ColorRasterValidation : MonoBehaviour
                             if (optimized)
                             {
                                 var frozen = Image(2, 2);
-                                try { Require(frozen.LoadImage(File.ReadAllBytes(Path.Combine(reference, "controls", name + ".png"))), name + " frozen PNG load"); Require(pixels.SequenceEqual(frozen.GetRawTextureData<byte>().ToArray()), name + " differs from original baseline pixels"); }
+                                try
+                                {
+                                    byte[] png = File.ReadAllBytes(Path.Combine(reference, "controls", name + ".png"));
+                                    Require(frozen.LoadImage(png), name + " frozen PNG load");
+                                    byte[] loadedRaw = frozen.GetRawTextureData<byte>().ToArray(), canonical = CanonicalRgba(frozen);
+                                    Require(baselinePixelHashes.TryGetValue(name, out string originalHash), name + " original baseline pixel hash missing");
+                                    string actualHash = Digest(pixels);
+                                    referenceChecks.Add(Row(name, actual.format, pixels.Length, actualHash, originalHash, frozen.format, loadedRaw.Length,
+                                        Digest(loadedRaw), Digest(canonical), Digest(png)));
+                                    File.WriteAllLines(Path.Combine(root, "reference-validation.csv"), referenceChecks);
+                                    // Save the current image before any comparison failure; an
+                                    // original baseline is never regenerated or overwritten.
+                                    File.WriteAllBytes(expectedPath, actual.EncodeToPNG());
+                                    Require(actualHash == originalHash, name + " differs from independent original baseline raw pixel hash");
+                                    Require(pixels.SequenceEqual(canonical), name + " differs from normalized baseline PNG pixels");
+                                    Require(header.SequenceEqual(File.ReadAllBytes(Path.Combine(reference, "controls", name + ".header.bin"))) &&
+                                        payload.SequenceEqual(File.ReadAllBytes(Path.Combine(reference, "controls", name + ".payload.bin"))), name + " deterministic raw fixture changed");
+                                }
                                 finally { Object.DestroyImmediate(frozen); }
                             }
                             File.WriteAllBytes(expectedPath, actual.EncodeToPNG());
