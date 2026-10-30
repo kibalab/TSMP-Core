@@ -68,7 +68,7 @@ def differences(actual, expected):
     return abs(len(actual) - len(expected)) + sum(left != right for left, right in zip(actual, expected))
 
 
-def inspect_frame(path, dimensions, references):
+def inspect_frame(path, dimensions, references, header_only=False):
     rgb, _, calibration, symbols, _ = STREAM.samples(path)
     width, height = dimensions
     if rgb.shape != (height, width, 3):
@@ -115,6 +115,14 @@ def inspect_frame(path, dimensions, references):
     if (block, active_width, active_height, layout, header[50]) != (8, columns, height // 8, 0, 4):
         row["reason"] = "Header layout is outside this block8/sample4 CPU model"
         return row, mapping
+    if header_only:
+        # Color codecs share the grayscale base-header raster, but have distinct
+        # payload palettes, calibration rows and bit packing. Never apply the
+        # Luma4 payload model to them. The production GPU validates full bytes.
+        row.update(status="HEADER_MATCH_PAYLOAD_UNMEASURED" if reference and not row["sourceHeaderByteErrors"]
+                   else "UNKNOWN_REFERENCE" if unknown else "HEADER_CHANGED",
+                   reason="Base header association only; complete payload requires the production GPU decoder")
+        return row, mapping
     count = struct.unpack_from("<H", header, 42)[0]
     if count * 2 > columns * (height // 8 - 6):
         row["reason"] = "Header payload size exceeds native raster capacity"
@@ -155,9 +163,13 @@ def analyze(args):
     results.mkdir(parents=True, exist_ok=True)
     if any(results.iterdir()):
         raise ValueError("Choose a new empty results directory; existing evidence is preserved")
+    if args.header_only_association and not args.codec_prefab_path:
+        raise ValueError("Header-only association requires --codec-prefab-path for the production GPU check")
     summary = dict(status="INCOMPLETE", startedUtc=STREAM.utc_now(), recording=str(recording),
                    sourceFixture=str(fixture_root),
-                   scope="Offline CPU model of actual OBS-rendered/NVENC recording; independent source-bin comparison, not new GPU validation",
+                   scope=("Offline base-header association of actual OBS recording; payload accuracy UNMEASURED until GPU validation"
+                          if args.header_only_association else
+                          "Offline CPU model of actual OBS-rendered/NVENC recording; independent source-bin comparison, not new GPU validation"),
                    limitations=["Recording may include pre-restart playback, repeated frames, source transitions and a held tail. A PAUSED API response does not certify frozen output pixels.",
                                 "Recording PTS and frame rate do not establish network latency, source age, live delivery rate or applied Hz.",
                                 "Float64 CPU means can differ from GPU float32 classification at exact decision boundaries.",
@@ -166,6 +178,9 @@ def analyze(args):
     STREAM.write_json(results / "summary.json", summary)
     try:
         fixture, dimensions, references, provenance = load_fixture(fixture_root)
+        codec_ids = {struct.unpack_from("<H", reference["header"], 32)[0] for reference in references.values()}
+        if not args.header_only_association and codec_ids != {0}:
+            raise ValueError("The payload CPU model supports Luma4 only; use --header-only-association and the actual codec prefab")
         summary["referenceOrigin"] = "Generated pre-raster payload/header bins, SHA256 checked against source-frames.csv; never recovered from recording outputs"
         summary["fixture"] = {key: fixture[key] for key in ("width", "height", "frames", "fps", "durationSeconds", "pattern")}
         summary["provenance"] = dict(recordingSha256=STREAM.sha256(recording),
@@ -207,7 +222,7 @@ def analyze(args):
             raise ValueError("ffprobe frame count and passthrough PNG count differ")
         rows, mappings = [], []
         for ordinal, (path, frame) in enumerate(zip(files, frames), 1):
-            row, mapping = inspect_frame(path, dimensions, references)
+            row, mapping = inspect_frame(path, dimensions, references, args.header_only_association)
             row = dict(recordingFrame=ordinal,
                        pts=frame.get("pts"), ptsTime=frame.get("pts_time"),
                        bestEffortTimestamp=frame.get("best_effort_timestamp"),
@@ -220,6 +235,8 @@ def analyze(args):
         manifest = dict(profiles=[dict(name=args.name, fixture=str(fixture_root), framesDirectory=str(decoded),
                                       expectedDirectory=str(fixture_root / "input"),
                                       expectedPayloadDirectory=str(fixture_root / "payload"), frameMappings=mappings)])
+        if args.codec_prefab_path:
+            manifest["profiles"][0]["codecPrefabPath"] = args.codec_prefab_path
         STREAM.write_json(results / "gpu-manifest.json", manifest)
         known = [row["resolvedSourceId"] for row in rows if row["resolvedSourceId"] is not None]
         exact = [row["resolvedSourceId"] for row in rows if row["status"] == "EXACT"]
@@ -240,14 +257,18 @@ def analyze(args):
             raise ValueError("A decoded frame lacks a finite presentation timestamp")
         intervals = [right - left for left, right in zip(pts, pts[1:])]
         summary.update(status="COMPLETE", finishedUtc=STREAM.utc_now(),
-                       cpuAccuracyVerdict="PASS" if statuses.get("EXACT", 0) == len(rows) else "FAIL",
-                       exactSourceCoverageVerdict="PASS" if set(exact) == expected_ids else "FAIL",
+                       cpuAccuracyVerdict=("UNMEASURED_GPU_REQUIRED" if args.header_only_association else
+                                           "PASS" if statuses.get("EXACT", 0) == len(rows) else "FAIL"),
+                       exactSourceCoverageVerdict=("UNMEASURED_GPU_REQUIRED" if args.header_only_association else
+                                                  "PASS" if set(exact) == expected_ids else "FAIL"),
                        observedRecordingFrames=len(rows), expectedUniqueSourceFrames=len(references),
                        countsByCpuStatus=dict(statuses), expectedFrameUnknownObservations=sum(row["expectedFrameUnknown"] for row in rows),
                        crcCheckedKnownHeaderObservations=len(known), uniqueKnownSourceIDs=sorted(set(known)),
                        duplicateKnownSourceObservations=len(known) - len(set(known)),
-                       uniqueExactSourceIDs=sorted(set(exact)), duplicateExactSourceObservations=len(exact) - len(set(exact)),
-                       missingExpectedIDs=sorted(expected_ids - set(known)), missingExactExpectedIDs=sorted(expected_ids - set(exact)),
+                       uniqueExactSourceIDs=None if args.header_only_association else sorted(set(exact)),
+                       duplicateExactSourceObservations=None if args.header_only_association else len(exact) - len(set(exact)),
+                       missingExpectedIDs=sorted(expected_ids - set(known)),
+                       missingExactExpectedIDs=None if args.header_only_association else sorted(expected_ids - set(exact)),
                        leadingContiguousFirstSourceIDObservations=leading, trailingContiguousLastSourceIDObservations=trailing,
                        holdCountInterpretation="Content-based contiguous counts include the original first/last frame; request-time phases are not inferred from them.",
                        recordingVideo=dict(width=dimensions[0], height=dimensions[1], codec=stream.get("codec_name"),
@@ -278,6 +299,9 @@ def main():
     parser.add_argument("--ffmpeg", default="ffmpeg")
     parser.add_argument("--ffprobe", default="ffprobe")
     parser.add_argument("--name", default="obs-recording")
+    parser.add_argument("--header-only-association", action="store_true",
+                        help="Associate shared base-header IDs only; leave color payload accuracy to the GPU")
+    parser.add_argument("--codec-prefab-path", help="Production codec prefab asset path for the GPU manifest")
     parser.add_argument("--timeout", default=600, type=float, help="Maximum seconds per FFmpeg/ffprobe command")
     args = parser.parse_args()
     try:
