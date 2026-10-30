@@ -158,7 +158,7 @@ def analyze(args):
     summary = dict(status="INCOMPLETE", startedUtc=STREAM.utc_now(), recording=str(recording),
                    sourceFixture=str(fixture_root),
                    scope="Offline CPU model of actual OBS-rendered/NVENC recording; independent source-bin comparison, not new GPU validation",
-                   limitations=["This recording contains paused-first-frame and held-last-frame output in addition to changing source frames.",
+                   limitations=["Recording may include pre-restart playback, repeated frames, source transitions and a held tail. A PAUSED API response does not certify frozen output pixels.",
                                 "Recording PTS and frame rate do not establish network latency, source age, live delivery rate or applied Hz.",
                                 "Float64 CPU means can differ from GPU float32 classification at exact decision boundaries.",
                                 "CRC-valid frame identity is not cryptographic authentication; independent source bytes are required for EXACT.",

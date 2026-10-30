@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Measure owned portable OBS with a local recording and timed media playhead.
 
-Windows/Python + websocket-client. stream-ready.json signals a paused first
-frame is already in output;
+Windows/Python + websocket-client. stream-ready.json signals API preparation
+and active recording, not verified pixel freeze;
 create results/go.signal to restart the source. This script never reads the
 user's OBS configuration or accepts an external publishing destination.
 Only --record-only is currently enabled; relay measurement is deferred.

@@ -1,5 +1,20 @@
 # Offline video roundtrip
 
+See [OBS-TRANSPORT-RESULTS.md](OBS-TRANSPORT-RESULTS.md) for the 720p/1440p CBR matrix, actual isolated OBS recordings, GPU checks and local FLV/HLS file-packaging results. Live relay/CDN measurements are separate.
+
+## Extended measurement tools
+
+- `Generate-Transport-Fixture.py`: creates structured/random protected Luma4 fixtures and independent payload/header bins. Supply `--template`, fresh `--results`, `--width/--height`, `--frames`, `--fps 30`, `--pattern` and actual `--core-package/--codec-package` directories.
+- `Measure-Streaming.py --input <fixture/input> --results <new-directory> --ffmpeg <exe> --ffprobe <exe> --seconds 10 --codec-package <package>`: measures x264/NVENC profiles and produces a GPU manifest. Requires NumPy/Pillow. `MEASURED` means completion, not an integrity pass.
+- `Run-TransportMeasurement.ps1 -UnityEditor <exe> -Project <isolated-Native-project> -Manifest <json> -Results <new-directory>`: strict-CRC parse-only GPU comparison against original raw bins. Rejections make the command fail and remain in the evidence; no state/RPC is applied.
+- `Measure-ObsTransport.py --record-only`: controls a private portable OBS via authenticated obs-websocket (`websocket-client` required). Provide `--obs-root`, `--source-video`, fresh `--results`, native `--width/--height`, `--bitrate`, `--duration`, `--drain` and `--color-range Full|Partial`. Wait for `stream-ready.json`, then create `go.signal`. API readiness does not certify frozen pixels. Network publishing is disabled. Existing OBS processes are left untouched; the tool refuses to start alongside one.
+- `Analyze-ObsRecording.py --recording <mkv> --source-fixture <fixture-root> --results <new-directory> --ffmpeg <exe> --ffprobe <exe>`: associates trusted IDs with independent bins, records unknown/duplicate/missing source IDs and produces a GPU manifest. CPU classification remains a numerical model.
+- `Measure-Remux.py --input <H.264-recording> --results <new-directory> --ffmpeg <exe> --ffprobe <exe>`: compares decoded RGB hashes after local FLV/HLS remuxing without a server or video re-encoding. It measures file packaging, not live delivery or latency.
+
+Use fresh output directories. Generated recordings, fixtures and local automation configuration belong outside the repository and runtime package.
+
+## Original finite probe
+
 Run in a dedicated SDK-free Unity 2022.3 project with Core and Luma4 installed:
 
 ```powershell
