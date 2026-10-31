@@ -29,8 +29,8 @@ Evidence: `F:/Unity/TSMP/Validation-Results/followup-performance-20261031/frame-
   does not establish Udon allocation behavior.
 
 Decoder client bytecode is **138,380 B**, versus 135,744 B at the Sparse-only
-rollback, an increase of 2,636 B. The helper traverses existing message/entry
-headers twice for application mode; bulk value bytes are skipped by their length.
+rollback, an increase of 2,636 B. Application mode traverses message/entry headers
+twice, once for preflight and once for application; bulk value bytes are skipped by their length.
 Readback-only behavior and the earlier trusted-header prediction cache are retained.
 There is no claim of arbitrary callback rollback or additional semantic validation
 inside UTF8/string-array values.
