@@ -58,6 +58,7 @@ namespace K13A.TSMP.Udon
         public bool skipDuplicateFrames = true;
         public bool requirePayloadCrc32;
         [Range(0, 2)] public int maxCrcRecoveryAttempts = 2;
+        public bool recoverHeaderCrc;
         [Min(1)] public int frameWindowSize = 256;
 
         [HideInInspector]
@@ -145,6 +146,7 @@ namespace K13A.TSMP.Udon
         private bool _requestRequirePayloadCrc32;
         private int _requestSafetyMode;
         private int _requestRecoveryLimit;
+        private bool _requestRecoverHeaderCrc;
         private int _headerRecoveryAttempt;
         private int _payloadRecoveryAttempt;
         private Texture[] _slotSources = new Texture[2];
@@ -197,6 +199,7 @@ namespace K13A.TSMP.Udon
         private bool[] _slotRequirePayloadCrc32 = new bool[2];
         private int[] _slotSafetyModes = new int[2];
         private int[] _slotRecoveryLimits = new int[2];
+        private bool[] _slotRecoverHeaderCrc = new bool[2];
         private int[] _slotHeaderRecoveryAttempts = new int[2];
         private int[] _slotPayloadRecoveryAttempts = new int[2];
         private byte[] _headerBytes;
@@ -373,6 +376,7 @@ namespace K13A.TSMP.Udon
             lastPayloadCrcVerified = false;
             _requestSafetyMode = decodeSafetyMode;
             _requestRecoveryLimit = Mathf.Clamp(maxCrcRecoveryAttempts, 0, 2);
+            _requestRecoverHeaderCrc = recoverHeaderCrc;
             _headerRecoveryAttempt = 0;
             _payloadRecoveryAttempt = 0;
             _requestByteTexture = _activeSlot == 0 ? payloadByteTexture :
@@ -567,6 +571,7 @@ namespace K13A.TSMP.Udon
             _slotRequirePayloadCrc32[slot] = _requestRequirePayloadCrc32;
             _slotSafetyModes[slot] = _requestSafetyMode;
             _slotRecoveryLimits[slot] = _requestRecoveryLimit;
+            _slotRecoverHeaderCrc[slot] = _requestRecoverHeaderCrc;
             _slotHeaderRecoveryAttempts[slot] = _headerRecoveryAttempt;
             _slotPayloadRecoveryAttempts[slot] = _payloadRecoveryAttempt;
             if (_decodeStage == 3)
@@ -616,6 +621,7 @@ namespace K13A.TSMP.Udon
             _requestRequirePayloadCrc32 = _slotRequirePayloadCrc32[slot];
             _requestSafetyMode = _slotSafetyModes[slot];
             _requestRecoveryLimit = _slotRecoveryLimits[slot];
+            _requestRecoverHeaderCrc = _slotRecoverHeaderCrc[slot];
             _headerRecoveryAttempt = _slotHeaderRecoveryAttempts[slot];
             _payloadRecoveryAttempt = _slotPayloadRecoveryAttempts[slot];
             lastPayloadCrcPresent = lastHeaderValid && _headerBytes != null && _headerBytes.Length >= FrameHeader.Size
@@ -757,7 +763,7 @@ namespace K13A.TSMP.Udon
         // Each slot owns its attempt counters and at most two extra readbacks per stage.
         private bool TryRequestCrcRecovery(bool header)
         {
-            if (_activeSlot < 0 || _requestRecoveryLimit <= 0 || _decodeSuspended ||
+            if (_activeSlot < 0 || _requestRecoveryLimit <= 0 || (header && !_requestRecoverHeaderCrc) || _decodeSuspended ||
                 _slotDiscarded[_activeSlot])
                 return false;
             int attempt = header ? _headerRecoveryAttempt : _payloadRecoveryAttempt;

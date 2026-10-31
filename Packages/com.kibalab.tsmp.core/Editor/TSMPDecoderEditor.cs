@@ -25,6 +25,7 @@ namespace K13A.TSMP.Editor
         private SerializedProperty _skipDuplicateFrames;
         private SerializedProperty _requirePayloadCrc32;
         private SerializedProperty _maxCrcRecoveryAttempts;
+        private SerializedProperty _recoverHeaderCrc;
         private SerializedProperty _frameWindowSize;
         private SerializedProperty _blockSize;
         private SerializedProperty _sampleSize;
@@ -51,6 +52,7 @@ namespace K13A.TSMP.Editor
             _skipDuplicateFrames = serializedObject.FindProperty("skipDuplicateFrames");
             _requirePayloadCrc32 = serializedObject.FindProperty("requirePayloadCrc32");
             _maxCrcRecoveryAttempts = serializedObject.FindProperty("maxCrcRecoveryAttempts");
+            _recoverHeaderCrc = serializedObject.FindProperty("recoverHeaderCrc");
             _frameWindowSize = serializedObject.FindProperty("frameWindowSize");
             _blockSize = serializedObject.FindProperty("blockSize");
             _sampleSize = serializedObject.FindProperty("sampleSize");
@@ -161,6 +163,7 @@ namespace K13A.TSMP.Editor
 
         private void DrawAdvancedDecode()
         {
+            EditorGUILayout.PropertyField(_recoverHeaderCrc, new GUIContent("Recover Header CRC", "Also retry damaged headers. Disabled by default: this adds readbacks and may delay later frames even when the payload cannot be recovered."));
             InspectorUI.Property(_usePredictedReadback);
             InspectorUI.Property(_useCombinedByteOutput);
             InspectorUI.Property(_overlapReadbacks);

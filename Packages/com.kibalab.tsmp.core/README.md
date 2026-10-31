@@ -10,6 +10,10 @@ Existing scene instances retain their original prefab through `Samples/Legacy/TS
 
 Windows x64 Mono (managed stripping disabled) is validated with Unity 2022.3.22f1. VRChat player capture requires the SDK; Animator-based humanoid capture and pose reception do not. IL2CPP and stripping require separate validation of reflection-based fields and RPC methods. See the installation guide for local package paths and migration details.
 
+Decoder CRC recovery uses alternative hypotheses supplied by compatible codec materials after the ordinary CRC check fails. `maxCrcRecoveryAttempts` defaults to two additional payload attempts; zero disables recovery. Optional `recoverHeaderCrc` enables header retries and defaults to false: the measured damaged-header recoveries did not produce additional intact payloads. Every attempt uses the same slot-owned source snapshot and captured settings. Clean frames keep the ordinary path. Failed frames can add two GPU readbacks by default, or four when header recovery is enabled, and delay later queued frames.
+
+Recovery preserves the sender raster, packet layout and CRC algorithm. A recovered header must declare a protected payload, and payload recovery requires a valid header and payload checksum. State and RPC application still follow complete integrity validation. Luma4 supplies alternative calibration models, RGB16 Refine supplies cross-channel models, and Color256 Robust Refine supplies alternative distance weights. Unsupported codec materials keep their existing rejection behavior. Recovery is finite and cannot reconstruct arbitrary information lost to video compression or missing frames.
+
 ## Requirements
 
 - Unity 2022.3

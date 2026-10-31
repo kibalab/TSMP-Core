@@ -73,6 +73,7 @@ public sealed class CoreRecoveryValidation : MonoBehaviour
     void Check(bool value, string message) { checks++; if (!value) throw new InvalidOperationException(message); }
     static T Field<T>(TSMPDecoder decoder, string name) => (T)typeof(TSMPDecoder).GetField(name, Private | BindingFlags.Public).GetValue(decoder);
     static void Set(TSMPDecoder decoder, string name, int value) => typeof(TSMPDecoder).GetField(name).SetValue(decoder, value);
+    static void SetBool(TSMPDecoder decoder, string name, bool value) => typeof(TSMPDecoder).GetField(name).SetValue(decoder, value);
     static int Attempts(TSMPDecoder decoder, bool header) => Field<int>(decoder, header ? "headerRecoveryAttemptCount" : "payloadRecoveryAttemptCount");
     void Hash(string path)
     {
@@ -121,6 +122,7 @@ public sealed class CoreRecoveryValidation : MonoBehaviour
         Check(typeof(TSMPDecoder).GetField("maxCrcRecoveryAttempts") != null, "Recovery API missing.");
         TSMPCodec[] codecs = new[] { "Luma4", "RGB16", "Color256", "RGB20" }.Select(Codec).ToArray();
         TSMPDecoder decoder = Own(new GameObject("Bounded recovery decoder")).AddComponent<TSMPDecoder>();
+        Check(!Field<bool>(decoder, "recoverHeaderCrc"), "Experimental header recovery must default off.");
         decoder.applyEveryFrame = false; decoder.skipDuplicateFrames = true; decoder.requirePayloadCrc32 = true; decoder.decodeSafetyMode = 0;
         decoder.debugLog = false; decoder.overlapReadbacks = false; decoder.codecHandlers = codecs; decoder.flipY = true; decoder.blockSize = 8; decoder.sampleSize = 4;
         decoder.payloadByteTexture = Own(DecoderSnapshotValidation.Target(2048, 1));
@@ -133,6 +135,36 @@ public sealed class CoreRecoveryValidation : MonoBehaviour
         decoder.bindingValueTypes = new[] { (byte)NetworkValueType.Int32, (byte)NetworkFrameProtocol.ValueTypeUnsupported };
         decoder.bindingFieldNames = new[] { nameof(receivedValue), string.Empty }; decoder.bindingDirections = new int[2];
         yield return null;
+
+        Set(decoder, "maxCrcRecoveryAttempts", 2);
+        foreach (bool badHeader in new[] { true, false })
+        {
+            decoder.ResetDecodeDiagnostics(); receivedValue = -1; target.SetActive(false);
+            Write(codecs[0], image, 52, badHeader, !badHeader); Upload(image, source); decoder.DecodeNow(); yield return Drain(decoder);
+            Check(Attempts(decoder, true) == 0 && Attempts(decoder, false) == (badHeader ? 0 : 2), "Default-off header policy changed payload recovery budget.");
+            Check(!decoder.lastFrameValid && receivedValue == -1 && !target.activeSelf, "Default policy applied corrupt state/RPC.");
+        }
+        foreach (bool enabledAtRequest in new[] { false, true })
+        {
+            decoder.ResetDecodeDiagnostics(); SetBool(decoder, "recoverHeaderCrc", enabledAtRequest);
+            receivedValue = -1; target.SetActive(false); Write(codecs[0], image, 52, true); Upload(image, source); decoder.DecodeNow();
+            SetBool(decoder, "recoverHeaderCrc", !enabledAtRequest); yield return Drain(decoder);
+            Check(Attempts(decoder, true) == (enabledAtRequest ? 2 : 0), "In-flight header recovery option changed.");
+            Check(!decoder.lastFrameValid && receivedValue == -1 && !target.activeSelf, "Captured header option applied corrupt data.");
+        }
+        // Each pending slot captures its own experimental header option.
+        decoder.overlapReadbacks = true;
+        foreach (bool firstEnabled in new[] { false, true })
+        {
+            decoder.ResetDecodeDiagnostics(); receivedValue = -1; target.SetActive(false);
+            SetBool(decoder, "recoverHeaderCrc", firstEnabled); Write(codecs[0], image, 52, true); Upload(image, source); decoder.DecodeNow();
+            SetBool(decoder, "recoverHeaderCrc", !firstEnabled); Write(codecs[0], image, 53, true); Upload(image, source); decoder.DecodeNow();
+            SetBool(decoder, "recoverHeaderCrc", false); Check(decoder.pendingDecodeCount == 2, "Header-option capture did not queue two slots.");
+            yield return Drain(decoder); Check(Attempts(decoder, true) == 2 && Attempts(decoder, false) == 0, "Header option leaked between pending slots.");
+            Check(receivedValue == -1 && !target.activeSelf, "Mixed header options applied corrupt state/RPC.");
+        }
+        decoder.overlapReadbacks = false; SetBool(decoder, "recoverHeaderCrc", true);
+        details.Add("PASS default-off header recovery/payload budget, mutable header-option capture in both directions and per-slot option ownership.");
 
         foreach (TSMPCodec codec in codecs)
         foreach (bool prediction in new[] { false, true })
@@ -237,14 +269,17 @@ public sealed class CoreRecoveryValidation : MonoBehaviour
             byte[] payload = File.ReadAllBytes(item.payload), header = File.ReadAllBytes(item.header); Check(FrameHeader.TryRead(header, 0, out FrameHeader info), "Saved header invalid.");
             Texture2D image = Own(new Texture2D(2, 2, TextureFormat.RGBA32, false, true)); Check(image.LoadImage(File.ReadAllBytes(item.input)), "Saved input cannot load."); image.filterMode = FilterMode.Point;
             RenderTexture source = Own(DecoderSnapshotValidation.Target(image.width, image.height)); decoder.sourceTexture = source;
+            SetBool(decoder, "recoverHeaderCrc", item.stage == "Header");
             if (!codecs.Any(value => value.codecId == info.CodecId)) throw new InvalidOperationException("Saved codec handler missing.");
             Set(decoder, "maxCrcRecoveryAttempts", 0); Upload(image, source); decoder.DecodeNow(); yield return Drain(decoder); Check(!decoder.lastFrameValid, "Saved baseline unexpectedly exact: " + item.name);
             if (item.stage == "Header") Check(!decoder.lastHeaderValid && (decoder.lastError ?? "").StartsWith("Header CRC mismatch.", StringComparison.Ordinal), "Saved baseline did not fail at header CRC: " + item.name);
             else Check(decoder.lastHeaderValid && decoder.lastPayloadCrcPresent && !decoder.lastPayloadCrcVerified && (decoder.lastError ?? "").StartsWith("Payload CRC mismatch.", StringComparison.Ordinal), "Saved baseline did not fail at payload CRC: " + item.name);
             int before = Field<int>(decoder, item.stage == "Header" ? "recoveredHeaderCount" : "recoveredPayloadCount");
+            int headerAttemptsBefore = Attempts(decoder, true);
             Set(decoder, "maxCrcRecoveryAttempts", 2); Upload(image, source); decoder.DecodeNow(); yield return Drain(decoder); Verify(decoder, payload, info.FrameIndex);
             Check(header.SequenceEqual(Field<byte[]>(decoder, "_headerBytes").Take(FrameHeader.Size)), "Saved recovered header differs from independent source.");
             Check(Field<int>(decoder, item.stage == "Header" ? "recoveredHeaderCount" : "recoveredPayloadCount") == before + 1, "Saved successful recovery counter missing.");
+            if (item.stage == "Payload") Check(Attempts(decoder, true) == headerAttemptsBefore, "Default-off actual payload recovery retried the header.");
             details.Add("PASS saved actual compressed recovery: " + item.name + "; stage=" + item.stage);
         }
     }
