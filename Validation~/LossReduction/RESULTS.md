@@ -1,15 +1,20 @@
 # Additional loss reduction, 2026-10-31
 
-Two changes are implemented: bounded combinations of previously observed decoder
-bytes, and an independent Encoder transmission-size target. A separately measured
-FEC prototype shows larger potential, particularly for Color256, but remains a
-validation receiver and experimental packet format.
+The independent Encoder transmission-size target remains implemented. The Sparse
+byte-combination experiment was rolled back on 2026-10-31 because its small
+recovery gain did not justify the measured Udon CPU cost. Existing whole-payload
+Refine recovery and CRC optimizations remain. See [the rollback record](SPARSE-ROLLBACK.md).
+A separately measured FEC prototype remains a validation receiver and experimental
+packet format, with no production execution cost.
+
+The detailed receiver measurements below describe frozen pre-rollback Core
+`9069850`; their results are preserved as historical evidence.
 
 All work stays on `codex/tsmp-reliability`. No main merge, push, release or live
 VRChat/VRCDN run was performed. The five repository baselines and package archives
 are preserved under `F:/Unity/TSMP/Validation-Results/loss-reduction-20261031`.
 
-## Implemented receiver improvement
+## Rolled-back receiver experiment
 
 After the ordinary decode and both existing recovery modes fail their protected
 payload CRC, the receiver can combine at most two observed byte alternatives.
@@ -19,7 +24,7 @@ enumerates at most 384 hypotheses using CRC differences, accepts only one distin
 matching candidate, then performs the usual full payload CRC before application.
 No sender pixels, codec shaders or production wire fields change.
 
-`recoverSparsePayload=true` is the default; false disables this additional step.
+At the measured snapshot, `recoverSparsePayload=true` was the default; false disabled this additional step.
 The option is captured independently for each pending snapshot. Baseline buffers
 are allocated/copied only after a protected failure on a material supporting the
 existing recovery modes. Budget zero/one and unsupported Direct/RGB20 materials
@@ -53,7 +58,7 @@ previous seed. PNG, x264 CBR 3.5M, NVENC CBR 3.5M, CRF18 and CRF28 files form th
 900-observation comparison. Selection parameters were frozen before its results
 were inspected. These are offline observations, not unique applied events or Hz.
 
-## Processing cost
+## Historical processing cost of the removed feature
 
 Measurements execute freshly compiled Udon client bytecode in the editor VM on
 this Windows machine. After five warm samples, thirty samples are measured per
@@ -72,8 +77,8 @@ waiting, application work and actual VRChat frame timing.
 The last two are deliberately saturated successful-search fixtures, not a proven
 upper time bound. Their observed maxima are 7.309 / 10.362 ms. A rejected saturated
 search skips the final CRC and therefore must not be used as the total worst-cost
-example. Normal successes do not run this work. Disabling the feature is available
-when callback processing cost matters more than these additional recoveries.
+example. Normal successes did not run this work. This extra CPU path has now been
+removed; these measurements are not current decoder timings.
 
 The first linear suffix implementation was too costly in the VM. Logarithmic CRC
 arithmetic and exact eight-byte equal-run scans replace it. Earlier/pilot runs are
@@ -96,7 +101,7 @@ Large fields are not fragmented; a deferred head RPC can block later RPCs. This
 feature has no measured video-loss percentage or automatic target-selection claim.
 See [PayloadBudget/RESULTS.md](../PayloadBudget/RESULTS.md).
 
-## Measured FEC prototype, separate from the implemented receiver
+## Measured FEC prototype, separate from the production receiver
 
 The focused prototype adds shortened Reed-Solomon body parity, spatial
 interleaving and a protected fixed metadata bootstrap. Actual production writers,
@@ -104,7 +109,7 @@ encoded videos and GPU outputs feed a Python reference receiver, which requires
 received-header integrity, metadata/body correction, original CRC, reconstructed
 outer CRC and complete equality with independent originals.
 
-| Same new-input x264 profile | Current sparse receiver | FEC body RS16 | FEC body RS32 |
+| Same new-input x264 profile | Pre-rollback sparse receiver | FEC body RS16 | FEC body RS32 |
 | --- | ---: | ---: | ---: |
 | Color256 / CBR 3.5M | 55/90 | 90/90 | 90/90 |
 | Color256 / CRF18 | 33/90 | 90/90 | 90/90 |
@@ -129,7 +134,7 @@ and service latency are not established. Both experimental payload types are
 rejected by the real existing decoder as unsupported. The prototype changes no
 production protocol. See [FecFeasibility/RESULTS.md](../FecFeasibility/RESULTS.md).
 
-## Verification and retained history
+## Pre-rollback verification and retained history
 
 - Core integration passes 1,630 assertions, including 28 actual compressed sparse
   winners applying their complete original RawBytes fields, captured on/off policy
@@ -159,4 +164,5 @@ production protocol. See [FecFeasibility/RESULTS.md](../FecFeasibility/RESULTS.m
 Primary evidence: `loss-reduction-20261031`, `sparse-recovery-20261031`,
 `payload-budget-20261031` and `fec-feasibility-20261031` beneath
 `F:/Unity/TSMP/Validation-Results/`. The final source audit and `summary.json` in
-the overall evidence root bind the final commits and required checks.
+the overall evidence root bind the original pre-rollback commits and required
+checks. Post-rollback evidence uses the separate `sparse-rollback-20261031` root.

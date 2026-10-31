@@ -1,5 +1,11 @@
 # Sparse receiver recovery, 2026-10-31
 
+**Historical measurements at `9069850`, before the Sparse-only rollback.** This
+feature is no longer implemented or configurable in the current runtime. Existing
+Refine recovery remains. See [the rollback record](../LossReduction/SPARSE-ROLLBACK.md)
+for the decision and post-rollback validation. Original results below are retained
+without changing their measured outcomes.
+
 The receiver now recovers **23 additional complete original payloads** from the
 same 20,439 saved observations, five from the previously screened 900-input
 sequence, and **four from an untouched new 900-input sequence**. No previously

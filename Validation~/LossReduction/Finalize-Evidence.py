@@ -1,4 +1,8 @@
-"""Bind the completed automated checks and final refs into one evidence summary."""
+"""Finalize only the historical pre-rollback Core 9069850 evidence snapshot.
+
+Do not use this script to describe the current runtime or overwrite the separate
+sparse-rollback-20261031 evidence. See SPARSE-ROLLBACK.md.
+"""
 import argparse
 from datetime import datetime, timezone
 import json
@@ -46,12 +50,16 @@ def main():
         assert data['status'] == 'PASS', f'{label}: {path}'
         loaded[label] = data
     source = loaded['sourceOwnership']
+    snapshot = '9069850a2f5c9212de2074c233705840a825411d'
+    assert any(item['name'] == 'Core' and item['head'] == snapshot
+               for item in source['repositories']), 'Historical pre-rollback snapshot only'
     production = loaded['productionRecount']
     assert production['main']['observations'] == 20439
     assert production['screenedPriorInput']['observations'] == 900
     assert production['untouchedFreshInput']['observations'] == 900
     summary = dict(
         status='IMPLEMENTED_AND_AUTOMATICALLY_VALIDATED_WITH_SEPARATE_FEC_PROTOTYPE',
+        historicalSnapshotOnly=True, snapshotCoreHead=snapshot,
         finishedUtc=datetime.now(timezone.utc).isoformat(),
         repositories=source['repositories'],
         newCommits=sum(item['newCommits'] for item in source['repositories']),

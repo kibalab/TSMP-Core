@@ -1,5 +1,16 @@
 # Bounded sparse payload recovery
 
+**Archived experiment, rolled back on 2026-10-31.** The current runtime has no
+Sparse recovery option, helper, buffers or search path. Its small recovery gain
+did not justify the measured Udon CPU cost. Existing whole-payload Refine retries
+remain. See [the rollback record](../LossReduction/SPARSE-ROLLBACK.md).
+
+The descriptions and commands below apply only to the frozen pre-rollback
+snapshot `9069850a2f5c9212de2074c233705840a825411d`. Its C# probes were removed
+along with the runtime helper; use that historical revision in a separate checkout
+to reproduce them. Python analyzers and original measurements remain available
+for auditing archived results.
+
 This receiver-only experiment combines byte values already observed in normal
 decoding and the two existing recovery modes. It never invents arbitrary byte
 values or reads a newer video frame. Sender pixels, palettes, protected packet

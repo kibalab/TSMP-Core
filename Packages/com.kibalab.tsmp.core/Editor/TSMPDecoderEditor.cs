@@ -26,7 +26,6 @@ namespace K13A.TSMP.Editor
         private SerializedProperty _requirePayloadCrc32;
         private SerializedProperty _maxCrcRecoveryAttempts;
         private SerializedProperty _recoverHeaderCrc;
-        private SerializedProperty _recoverSparsePayload;
         private SerializedProperty _frameWindowSize;
         private SerializedProperty _blockSize;
         private SerializedProperty _sampleSize;
@@ -54,7 +53,6 @@ namespace K13A.TSMP.Editor
             _requirePayloadCrc32 = serializedObject.FindProperty("requirePayloadCrc32");
             _maxCrcRecoveryAttempts = serializedObject.FindProperty("maxCrcRecoveryAttempts");
             _recoverHeaderCrc = serializedObject.FindProperty("recoverHeaderCrc");
-            _recoverSparsePayload = serializedObject.FindProperty("recoverSparsePayload");
             _frameWindowSize = serializedObject.FindProperty("frameWindowSize");
             _blockSize = serializedObject.FindProperty("blockSize");
             _sampleSize = serializedObject.FindProperty("sampleSize");
@@ -165,7 +163,6 @@ namespace K13A.TSMP.Editor
 
         private void DrawAdvancedDecode()
         {
-            EditorGUILayout.PropertyField(_recoverSparsePayload, new GUIContent("Recover Sparse Payload", "After both recovery modes fail, combine at most two observed byte alternatives across at most eight differing positions. Payloads up to 8192 bytes only; no additional GPU readback. Full payload checksum remains required."));
             EditorGUILayout.PropertyField(_recoverHeaderCrc, new GUIContent("Recover Header CRC", "Also retry damaged headers. Disabled by default: this adds readbacks and may delay later frames even when the payload cannot be recovered."));
             InspectorUI.Property(_usePredictedReadback);
             InspectorUI.Property(_useCombinedByteOutput);
@@ -186,9 +183,6 @@ namespace K13A.TSMP.Editor
             InspectorUI.ReadOnlyInt("Payload Recovery Attempts", decoder.payloadRecoveryAttemptCount);
             InspectorUI.ReadOnlyInt("Recovered Headers", decoder.recoveredHeaderCount);
             InspectorUI.ReadOnlyInt("Recovered Payloads", decoder.recoveredPayloadCount);
-            InspectorUI.ReadOnlyInt("Sparse Recovery Searches", decoder.sparseRecoverySearchCount);
-            InspectorUI.ReadOnlyInt("Sparse Recovery Hypotheses", decoder.sparseRecoveryHypothesisCount);
-            InspectorUI.ReadOnlyInt("Recovered Sparse Payloads", decoder.recoveredSparsePayloadCount);
             InspectorUI.ReadOnlyBool("Readback In Flight", decoder.readbackInFlight);
             InspectorUI.ReadOnlyInt("Payload Bytes", decoder.lastPayloadSizeFromHeader);
             InspectorUI.ReadOnlyInt("Available Payload Bytes", decoder.lastPayloadAvailableBytes);

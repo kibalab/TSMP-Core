@@ -1,5 +1,11 @@
 # FEC feasibility, 2026-10-31
 
+The phrase **current SparseRecovery** below refers to frozen pre-rollback Core
+`9069850`. Sparse recovery was subsequently removed; these historical comparison
+counts have not been relabelled as new measurements. The frozen three-mode
+baseline retains the Refine behavior kept by the rollback. FEC remains validation
+only. See [the rollback record](../LossReduction/SPARSE-ROLLBACK.md).
+
 **The measurement-only Color256 FEC prototype restored all ninety original
 payloads in both tested x264 CBR 3.5 Mbps and CRF18 sequences.** This is actual
 production-raster/video/GPU corruption followed by a Python reference FEC receiver.

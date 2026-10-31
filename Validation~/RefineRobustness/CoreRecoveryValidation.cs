@@ -27,12 +27,10 @@ public sealed class CoreRecoveryValidation : MonoBehaviour
     readonly List<string> sourceHashes = new List<string> { "path,sha256" };
     readonly HashSet<string> hashed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     public int receivedValue;
-    public byte[] sparseReceivedValue;
-    int variableNotifications;
     uint sequence = 300000;
     int eventId = 1000000, checks;
 
-    public void OnTSMPVariableReceived() { variableNotifications++; }
+    public void OnTSMPVariableReceived() { }
     public static void Run() { PlayerSettings.colorSpace = ColorSpace.Gamma; Begin(); }
     public static void RunLinear() { PlayerSettings.colorSpace = ColorSpace.Linear; Begin(); }
     static void Begin()
@@ -141,12 +139,6 @@ public sealed class CoreRecoveryValidation : MonoBehaviour
         yield return null;
 
         Set(decoder, "maxCrcRecoveryAttempts", 2);
-        Check(Field<bool>(decoder, "recoverSparsePayload"), "Sparse recovery default changed without updating its validation policy.");
-        byte[] firstClean = Write(codecs[0], image, 10); Upload(image, source); decoder.DecodeNow(); yield return Drain(decoder); Verify(decoder, firstClean, sequence);
-        Check(Field<byte[]>(decoder, "_sparseNormalZero") == null && Field<byte[]>(decoder, "_sparseNormalOne") == null,
-            "A successful ordinary decode allocated sparse baseline buffers.");
-        Check(Field<byte[]>(decoder, "_sparseValues") == null && decoder.sparseRecoverySearchCount == 0,
-            "A successful ordinary decode started a sparse search.");
         foreach (bool badHeader in new[] { true, false })
         {
             decoder.ResetDecodeDiagnostics(); receivedValue = -1; target.SetActive(false);
@@ -175,50 +167,6 @@ public sealed class CoreRecoveryValidation : MonoBehaviour
         }
         decoder.overlapReadbacks = false; SetBool(decoder, "recoverHeaderCrc", true);
         details.Add("PASS default-off header recovery/payload budget, mutable header-option capture in both directions and per-slot option ownership.");
-
-        // Equal raw mode outputs cannot repair these deliberately wrong checksums.
-        // They still exercise real GPU callbacks, failure-only capture and the
-        // independently captured per-request policy without a mocked decoder.
-        SetBool(decoder, "recoverHeaderCrc", false);
-        foreach (bool prediction in new[] { false, true })
-        foreach (int budget in new[] { 0, 1, 2 })
-        foreach (bool enabledAtRequest in new[] { false, true })
-        {
-            decoder.ResetDecodeDiagnostics(); decoder.usePredictedReadback = prediction; decoder.useCombinedByteOutput = prediction;
-            Set(decoder, "maxCrcRecoveryAttempts", budget); SetBool(decoder, "recoverSparsePayload", enabledAtRequest);
-            receivedValue = -1; target.SetActive(false);
-            int slot = (Field<int>(decoder, "_slotHead") + decoder.pendingDecodeCount) % 2;
-            Write(codecs[0], image, 52, badPayload: true); Upload(image, source); decoder.DecodeNow();
-            SetBool(decoder, "recoverSparsePayload", !enabledAtRequest); yield return Drain(decoder);
-            Check(Attempts(decoder, false) == budget, "Sparse policy changed the captured GPU retry budget.");
-            Check(Field<int[]>(decoder, "_slotSparseCounts")[slot] == (enabledAtRequest && budget == 2 ? 0 : -1),
-                "Sparse capture did not respect the submitted policy and two-retry requirement.");
-            Check(!decoder.lastFrameValid && receivedValue == -1 && !target.activeSelf,
-                "Captured sparse policy applied a damaged state/RPC.");
-            Check(decoder.sparseRecoverySearchCount == 0 && decoder.recoveredSparsePayloadCount == 0,
-                "Identical failed candidates started a sparse search or were accepted.");
-        }
-        Set(decoder, "maxCrcRecoveryAttempts", 2); decoder.overlapReadbacks = true;
-        foreach (bool firstEnabled in new[] { false, true })
-        {
-            decoder.ResetDecodeDiagnostics(); receivedValue = -1; target.SetActive(false);
-            int firstSlot = Field<int>(decoder, "_slotHead");
-            SetBool(decoder, "recoverSparsePayload", firstEnabled);
-            Write(codecs[0], image, 52, badPayload: true); Upload(image, source); decoder.DecodeNow();
-            SetBool(decoder, "recoverSparsePayload", !firstEnabled);
-            Write(codecs[0], image, 53, badPayload: true, extra: 701); Upload(image, source); decoder.DecodeNow();
-            SetBool(decoder, "recoverSparsePayload", false);
-            Check(decoder.pendingDecodeCount == 2, "Sparse policy test failed to submit both snapshots.");
-            Write(codecs[0], image, 777); Upload(image, source);
-            yield return Drain(decoder);
-            Check(Field<int[]>(decoder, "_slotSparseCounts")[firstSlot] == (firstEnabled ? 0 : -1)
-                && Field<int[]>(decoder, "_slotSparseCounts")[1 - firstSlot] == (firstEnabled ? -1 : 0),
-                "Sparse policy/baseline leaked between different-sized pending snapshots.");
-            Check(Attempts(decoder, false) == 4 && receivedValue == -1 && !target.activeSelf,
-                "Sparse overlap changed retry bounds or applied damaged state/RPC.");
-        }
-        decoder.overlapReadbacks = false; SetBool(decoder, "recoverSparsePayload", true); SetBool(decoder, "recoverHeaderCrc", true);
-        details.Add("PASS sparse failure-only allocation, mutable policy capture in both directions, budgets0/1/2, prediction/combined and two-slot ownership with different sizes/source mutation.");
 
         foreach (TSMPCodec codec in codecs)
         foreach (bool prediction in new[] { false, true })
@@ -308,7 +256,6 @@ public sealed class CoreRecoveryValidation : MonoBehaviour
         }
         details.Add("PASS component/GameObject disable/re-enable during header/payload recovery.");
         yield return Saved(decoder, codecs);
-        yield return SavedSparse(decoder, codecs);
     }
     IEnumerator Saved(TSMPDecoder decoder, TSMPCodec[] codecs)
     {
@@ -337,58 +284,6 @@ public sealed class CoreRecoveryValidation : MonoBehaviour
             if (item.stage == "Payload") Check(Attempts(decoder, true) == headerAttemptsBefore, "Default-off actual payload recovery retried the header.");
             details.Add("PASS saved actual compressed recovery: " + item.name + "; stage=" + item.stage);
         }
-    }
-    IEnumerator SavedSparse(TSMPDecoder decoder, TSMPCodec[] codecs)
-    {
-        string path = Environment.GetEnvironmentVariable("TSMP_SPARSE_CASES");
-        if (string.IsNullOrWhiteSpace(path)) { details.Add("Saved sparse application fixtures: NOT_REQUESTED."); yield break; }
-        Hash(path); string json = File.ReadAllText(path); File.WriteAllText(Path.Combine(Root, "saved-sparse-cases-used.json"), json);
-        SavedCases saved = JsonUtility.FromJson<SavedCases>(json);
-        Check(saved != null && saved.cases != null && saved.cases.Length > 0, "Saved sparse cases required.");
-        decoder.decodeSafetyMode = 0; decoder.requirePayloadCrc32 = true; decoder.overlapReadbacks = false;
-        decoder.bindingTargets = new Component[] { this }; decoder.bindingNetworkIds = new ushort[] { 1 };
-        decoder.bindingVariableHashes = new uint[] { 100 }; decoder.bindingValueTypes = new[] { (byte)NetworkValueType.RawBytes };
-        decoder.bindingFieldNames = new[] { nameof(sparseReceivedValue) }; decoder.bindingDirections = new int[1];
-        Set(decoder, "maxCrcRecoveryAttempts", 2); SetBool(decoder, "recoverHeaderCrc", false);
-        foreach (SavedCase item in saved.cases)
-        {
-            Hash(item.input); Hash(item.header); Hash(item.payload);
-            byte[] payload = File.ReadAllBytes(item.payload), header = File.ReadAllBytes(item.header);
-            Check(FrameHeader.TryRead(header, 0, out FrameHeader info), "Saved sparse original header invalid.");
-            // The production transport fixtures contain one networkId=1/hash=100
-            // RawBytes field. Validate that schema before binding/applying it.
-            Check(payload.Length >= 25 && Binary.ReadUInt16LE(payload, 2) == 1
-                && Binary.ReadUInt16LE(payload, 8) == 1 && payload[10] == NetworkFrameProtocol.MessageTypeVariableState
-                && Binary.ReadUInt16LE(payload, 16) == 1 && Binary.ReadUInt32LE(payload, 18) == 100
-                && payload[22] == NetworkFrameProtocol.ValueTypeRawBytes && Binary.ReadUInt16LE(payload, 23) == payload.Length - 25,
-                "Saved sparse packet does not match its independent RawBytes binding schema.");
-            byte[] expectedValue = payload.Skip(25).ToArray();
-            Texture2D image = Own(new Texture2D(2, 2, TextureFormat.RGBA32, false, true));
-            Check(image.LoadImage(File.ReadAllBytes(item.input)), "Cannot load saved sparse input."); image.filterMode = FilterMode.Point;
-            decoder.sourceTexture = Own(DecoderSnapshotValidation.Target(image.width, image.height));
-            foreach (bool prediction in new[] { false, true })
-            {
-                decoder.usePredictedReadback = prediction; decoder.useCombinedByteOutput = prediction; decoder.skipDuplicateFrames = false;
-                sparseReceivedValue = null; int notificationsBefore = variableNotifications;
-                SetBool(decoder, "recoverSparsePayload", false); Upload(image, (RenderTexture)decoder.sourceTexture); decoder.DecodeNow();
-                SetBool(decoder, "recoverSparsePayload", true); yield return Drain(decoder);
-                Check(decoder.lastHeaderValid && !decoder.lastFrameValid && sparseReceivedValue == null && variableNotifications == notificationsBefore,
-                    "Disabled-at-submission sparse request applied a damaged field: " + item.name);
-                int recoveredBefore = decoder.recoveredSparsePayloadCount;
-                SetBool(decoder, "recoverSparsePayload", true); Upload(image, (RenderTexture)decoder.sourceTexture); decoder.DecodeNow();
-                SetBool(decoder, "recoverSparsePayload", false); yield return Drain(decoder);
-                Verify(decoder, payload, info.FrameIndex);
-                Check(sparseReceivedValue != null && expectedValue.SequenceEqual(sparseReceivedValue) && variableNotifications == notificationsBefore + 1,
-                    "Sparse recovery did not apply the complete original field exactly once: " + item.name);
-                Check(decoder.recoveredSparsePayloadCount == recoveredBefore + 1 && decoder.lastAppliedVariableCount == 1,
-                    "Sparse recovery application diagnostics invalid: " + item.name);
-                decoder.skipDuplicateFrames = true; decoder.DecodeNow(); yield return Drain(decoder);
-                Check(variableNotifications == notificationsBefore + 1 && expectedValue.SequenceEqual(sparseReceivedValue),
-                    "Repeating the recovered source frame applied the field twice: " + item.name);
-            }
-            details.Add("PASS saved sparse application with captured on/off, prediction/combined and duplicate suppression: " + item.name);
-        }
-        SetBool(decoder, "recoverSparsePayload", true);
     }
 }
 #endif

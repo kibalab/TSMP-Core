@@ -14,8 +14,6 @@ Decoder CRC recovery uses alternative hypotheses supplied by compatible codec ma
 
 Recovery preserves the sender raster, packet layout and CRC algorithm. A recovered header must declare a protected payload, and payload recovery requires a valid header and payload checksum. State and RPC application still follow complete integrity validation. Luma4 supplies alternative calibration models, RGB16 Refine supplies cross-channel models, and Color256 Robust Refine supplies alternative distance weights. Unsupported codec materials keep their existing rejection behavior. Recovery is finite and cannot reconstruct arbitrary information lost to video compression or missing frames.
 
-`recoverSparsePayload` defaults to true. If both payload recovery modes fail, it can combine at most two observed byte alternatives across at most eight differing positions, for protected payloads up to 8,192 bytes. It requires the two-attempt budget, adds no GPU readback, and rejects ambiguous CRC candidates before performing the usual full payload validation. CPU work and up to one retained 8,192-byte baseline buffer per decoder slot are added only after supported protected-payload failures. Disable this option to retain only whole-payload recovery modes. See the repository's `Validation~/SparseRecovery` for finite-file, safety and Udon VM validation and processing-cost limits.
-
 ## Requirements
 
 - Unity 2022.3

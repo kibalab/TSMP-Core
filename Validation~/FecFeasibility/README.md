@@ -1,5 +1,10 @@
 # FEC feasibility measurements
 
+SparseRecovery CSV comparisons describe the frozen pre-rollback receiver at Core
+`9069850`, not the current runtime. Sparse recovery has been removed. These tools
+still analyze historical CSVs and are independent of that removed helper; FEC
+remains validation only. See [the rollback record](../LossReduction/SPARSE-ROLLBACK.md).
+
 This directory contains **measurement-only** Python references and fixture tools.
 No runtime package imports these files. No production protocol, codec palette,
 CRC policy or package version is changed by this experiment.

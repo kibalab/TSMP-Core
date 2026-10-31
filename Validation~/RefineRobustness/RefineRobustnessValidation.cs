@@ -117,7 +117,7 @@ public sealed class RefineRobustnessValidation : MonoBehaviour
         Own(new GameObject("Refine robustness frame pump")).AddComponent<Camera>().cullingMask = 0;
         crc = Crc32Runtime.EnsureFastTable(null);
         rows.Add("profile,file,frame,variant,mode,codecId,width,height,bytes,sample,radius,lut,byteMismatches,bitMismatches,exact,crcValid,status,actualCrc32,expectedCrc32,inputSha256,referenceSha256");
-        production.Add("profile,file,variant,expectedFrame,actualFrame,headerValid,payloadCrcVerified,frameValid,currentPayload,expectedBytes,bytes,byteMismatches,status,elapsedMs,headerAttempts,payloadAttempts,recoveredHeaders,recoveredPayloads,sparseSearches,sparseHypotheses,recoveredSparsePayloads,error");
+        production.Add("profile,file,variant,expectedFrame,actualFrame,headerValid,payloadCrcVerified,frameValid,currentPayload,expectedBytes,bytes,byteMismatches,status,elapsedMs,headerAttempts,payloadAttempts,recoveredHeaders,recoveredPayloads,error");
         summaries.Add("profile,variant,mode,frames,exact,crcValid,wrongAccepted,bytes,exactBytes,byteMismatches,bitMismatches");
         timingRows.Add("case,profile,file,baselineVariant,variant,mode,width,height,bytes,sample,radius,lut,batch,validPairs,status,baselineMeanUs,candidateMeanUs,baselineP50Us,candidateP50Us,baselineP95Us,candidateP95Us");
         rawTimingRows.Add("case,frame,order,validGpuPair,baselineGpuNs,candidateGpuNs,baselineBlocks,candidateBlocks");
@@ -441,7 +441,6 @@ public sealed class RefineRobustnessValidation : MonoBehaviour
                         Graphics.Blit(image, source); decoder.lastHeaderValid = false; decoder.lastFrameValid = false; decoder.lastPayloadCrcVerified = false;
                         int recoveredHeaderBefore = PublicInt(decoder, "recoveredHeaderCount"), recoveredPayloadBefore = PublicInt(decoder, "recoveredPayloadCount");
                         int headerAttemptsBefore = PublicInt(decoder, "headerRecoveryAttemptCount"), payloadAttemptsBefore = PublicInt(decoder, "payloadRecoveryAttemptCount");
-                        int sparseSearchesBefore = PublicInt(decoder, "sparseRecoverySearchCount"), sparseHypothesesBefore = PublicInt(decoder, "sparseRecoveryHypothesisCount"), recoveredSparseBefore = PublicInt(decoder, "recoveredSparsePayloadCount");
                         double start = EditorApplication.timeSinceStartup, deadline = start + 30; decoder.DecodeNow();
                         while (decoder.readbackInFlight && EditorApplication.timeSinceStartup < deadline) yield return null;
                         Check(!decoder.readbackInFlight, "Production readback timeout.");
@@ -458,9 +457,7 @@ public sealed class RefineRobustnessValidation : MonoBehaviour
                         production.Add(Row(profile.name, item.file, productionVariant.name, item.unknown ? "" : item.frame.ToString(CultureInfo.InvariantCulture), decoder.lastHeaderValid ? decoder.lastFrameIndex.ToString(CultureInfo.InvariantCulture) : "",
                             decoder.lastHeaderValid, decoder.lastPayloadCrcVerified, decoder.lastFrameValid, current, payload == null ? "" : payload.Length.ToString(CultureInfo.InvariantCulture), current ? length.ToString(CultureInfo.InvariantCulture) : "", mismatch < 0 ? "" : mismatch.ToString(CultureInfo.InvariantCulture), status,
                             ((EditorApplication.timeSinceStartup - start) * 1000).ToString("F6", CultureInfo.InvariantCulture), CounterDelta(headerAttemptsBefore, PublicInt(decoder, "headerRecoveryAttemptCount")), CounterDelta(payloadAttemptsBefore, PublicInt(decoder, "payloadRecoveryAttemptCount")),
-                            CounterDelta(recoveredHeaderBefore, PublicInt(decoder, "recoveredHeaderCount")), CounterDelta(recoveredPayloadBefore, PublicInt(decoder, "recoveredPayloadCount")),
-                            CounterDelta(sparseSearchesBefore, PublicInt(decoder, "sparseRecoverySearchCount")), CounterDelta(sparseHypothesesBefore, PublicInt(decoder, "sparseRecoveryHypothesisCount")),
-                            CounterDelta(recoveredSparseBefore, PublicInt(decoder, "recoveredSparsePayloadCount")), decoder.lastError));
+                            CounterDelta(recoveredHeaderBefore, PublicInt(decoder, "recoveredHeaderCount")), CounterDelta(recoveredPayloadBefore, PublicInt(decoder, "recoveredPayloadCount")), decoder.lastError));
                     }
                 }
                 Drop(image); if (++processedInputs % 32 == 0) Flush(); yield return null;

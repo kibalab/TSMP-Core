@@ -1,4 +1,8 @@
-"""Independently recount production CSV pairs for the loss-reduction report."""
+"""Recount historical pre-rollback Sparse CSV pairs for the loss-reduction report.
+
+These frozen measurements do not describe the current runtime. See
+SPARSE-ROLLBACK.md for the subsequent Sparse-only rollback.
+"""
 import argparse
 import csv
 import hashlib
