@@ -7,14 +7,16 @@ param(
     [switch]$CoreRecovery,
     [switch]$ModeCoverage,
     [switch]$Linear,
-    [string]$SavedCases
+    [string]$SavedCases,
+    [string]$SparseCases
 )
 $ErrorActionPreference='Stop'
 if($CoreRecovery -and $ModeCoverage){throw 'Choose either CoreRecovery or ModeCoverage'}
-if($Linear -and -not$ModeCoverage){throw 'Linear is supported with ModeCoverage'}
+if($Linear -and -not($ModeCoverage -or $CoreRecovery)){throw 'Linear is supported with CoreRecovery or ModeCoverage'}
 $projectPath=(Resolve-Path -LiteralPath $Project).Path
 $planPath=if($CoreRecovery -or $ModeCoverage){''}else{if([string]::IsNullOrWhiteSpace($Plan)){throw 'Plan is required for shadow/production measurement'};(Resolve-Path -LiteralPath $Plan).Path}
 $savedCasesPath=if([string]::IsNullOrWhiteSpace($SavedCases)){''}else{(Resolve-Path -LiteralPath $SavedCases).Path}
+$sparseCasesPath=if([string]::IsNullOrWhiteSpace($SparseCases)){''}else{(Resolve-Path -LiteralPath $SparseCases).Path}
 if(-not(Test-Path -LiteralPath (Join-Path $projectPath 'ProjectSettings/ProjectVersion.txt'))){throw 'Use a dedicated Unity validation project'}
 $manifest=Get-Content -LiteralPath (Join-Path $projectPath 'Packages/manifest.json') -Raw|ConvertFrom-Json
 if((Test-Path -LiteralPath (Join-Path $projectPath 'Packages/com.vrchat.worlds')) -or ($manifest.dependencies.PSObject.Properties.Name -contains 'com.vrchat.worlds')){throw 'Use a dedicated SDK-free project'}
@@ -37,13 +39,14 @@ if(Test-Path -LiteralPath $candidates){
     Copy-Item -LiteralPath $candidates -Destination (Join-Path $resultsPath 'CandidateSources') -Recurse
 }
 $saved=@{}
-foreach($variable in @('TSMP_ROBUSTNESS_RESULTS','TSMP_ROBUSTNESS_PLAN','TSMP_RECOVERY_CASES')){$saved[$variable]=[Environment]::GetEnvironmentVariable($variable)}
+foreach($variable in @('TSMP_ROBUSTNESS_RESULTS','TSMP_ROBUSTNESS_PLAN','TSMP_RECOVERY_CASES','TSMP_SPARSE_CASES')){$saved[$variable]=[Environment]::GetEnvironmentVariable($variable)}
 try{
     $env:TSMP_ROBUSTNESS_RESULTS=$resultsPath
     $env:TSMP_ROBUSTNESS_PLAN=$planPath
     $env:TSMP_RECOVERY_CASES=$savedCasesPath
+    $env:TSMP_SPARSE_CASES=$sparseCasesPath
     $log=Join-Path $resultsPath 'editor.log'
-    $method=if($CoreRecovery){'CoreRecoveryValidation.Run'}elseif($ModeCoverage -and $Linear){'ModeCoverageValidation.RunLinear'}elseif($ModeCoverage){'ModeCoverageValidation.Run'}else{'RefineRobustnessValidation.Run'}
+    $method=if($CoreRecovery -and $Linear){'CoreRecoveryValidation.RunLinear'}elseif($CoreRecovery){'CoreRecoveryValidation.Run'}elseif($ModeCoverage -and $Linear){'ModeCoverageValidation.RunLinear'}elseif($ModeCoverage){'ModeCoverageValidation.Run'}else{'RefineRobustnessValidation.Run'}
     $arguments="-batchmode -force-d3d11 -projectPath `"$projectPath`" -executeMethod $method -logFile `"$log`""
     $process=Start-Process -FilePath $UnityEditor -ArgumentList $arguments -WindowStyle Hidden -PassThru
     Write-Output "PID=$($process.Id) Log=$log"

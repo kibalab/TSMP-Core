@@ -47,6 +47,10 @@ Run `Run-Validation.ps1 -CoreRecovery` (without `-Plan`) after installing the re
 
 Optional `-SavedCases '<json>'` additionally requires actual previously rejected compressed inputs to recover exactly with the production runtime. Its schema is `{ "cases": [{"name":"...", "input":"<PNG>", "header":"<original header bin>", "payload":"<original payload bin>", "stage":"Header|Payload"}] }`. Each case must reject with retries disabled, accept with retries enabled, match every original byte/frame ID and increment the appropriate successful-recovery counter. Use independently measured recovered cases, not a new guessed success target.
 
+Core recovery runs explicitly select Gamma; `-CoreRecovery -Linear` selects Linear. The suite also checks failure-only sparse allocation, captured sparse policy in both directions, budgets zero/one/two and independent options for two different-sized pending snapshots while the live source changes.
+
+Optional `-SparseCases '<json>'` uses the same case schema for independently measured sparse-recovery winners. These application fixtures must contain the transport generator's single `networkId=1`, `hash=100` RawBytes field. The suite validates that schema before binding it. With two GPU retries retained, sparse-disabled submission must reject without applying state even if the setting is subsequently enabled; sparse-enabled submission must apply the entire original field once even if subsequently disabled. Both prediction/combined settings are exercised, followed by duplicate-source suppression. This positive application test is separate from the existing malformed state/RPC rejection fixtures and from parse-only production measurements.
+
 ## Recovery mode coverage
 
 Run `Run-Validation.ps1 -ModeCoverage` and a separate fresh run with `-ModeCoverage -Linear`. These explicitly select Gamma/Linear in the dedicated project and copy `ModeCoverageValidation.cs` plus the Snapshot fixture helper. No live-client test is performed.
