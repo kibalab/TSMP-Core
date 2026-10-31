@@ -26,6 +26,7 @@ public sealed class RefineRobustnessValidation : MonoBehaviour
         public Profile[] profiles;
         public Variant[] variants;
         public bool runProduction;
+        public bool dumpRawBytes;
         public bool timing;
         public int timingFramesPerProfile = 3;
         public int maxFramesPerProfile;
@@ -83,7 +84,7 @@ public sealed class RefineRobustnessValidation : MonoBehaviour
     static string Root => Environment.GetEnvironmentVariable("TSMP_ROBUSTNESS_RESULTS");
     static string PlanPath => Environment.GetEnvironmentVariable("TSMP_ROBUSTNESS_PLAN");
     readonly List<Object> owned = new List<Object>();
-    readonly List<string> rows = new List<string>(), production = new List<string>(), summaries = new List<string>(), timingRows = new List<string>(), rawTimingRows = new List<string>(), hashes = new List<string>(), details = new List<string>();
+    readonly List<string> rows = new List<string>(), production = new List<string>(), summaries = new List<string>(), timingRows = new List<string>(), rawTimingRows = new List<string>(), hashes = new List<string>(), details = new List<string>(), dumps = new List<string>();
     readonly HashSet<string> hashed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, Stats> stats = new Dictionary<string, Stats>();
     uint[] crc;
@@ -116,11 +117,12 @@ public sealed class RefineRobustnessValidation : MonoBehaviour
         Own(new GameObject("Refine robustness frame pump")).AddComponent<Camera>().cullingMask = 0;
         crc = Crc32Runtime.EnsureFastTable(null);
         rows.Add("profile,file,frame,variant,mode,codecId,width,height,bytes,sample,radius,lut,byteMismatches,bitMismatches,exact,crcValid,status,actualCrc32,expectedCrc32,inputSha256,referenceSha256");
-        production.Add("profile,file,variant,expectedFrame,actualFrame,headerValid,payloadCrcVerified,frameValid,currentPayload,expectedBytes,bytes,byteMismatches,status,elapsedMs,headerAttempts,payloadAttempts,recoveredHeaders,recoveredPayloads,error");
+        production.Add("profile,file,variant,expectedFrame,actualFrame,headerValid,payloadCrcVerified,frameValid,currentPayload,expectedBytes,bytes,byteMismatches,status,elapsedMs,headerAttempts,payloadAttempts,recoveredHeaders,recoveredPayloads,sparseSearches,sparseHypotheses,recoveredSparsePayloads,error");
         summaries.Add("profile,variant,mode,frames,exact,crcValid,wrongAccepted,bytes,exactBytes,byteMismatches,bitMismatches");
         timingRows.Add("case,profile,file,baselineVariant,variant,mode,width,height,bytes,sample,radius,lut,batch,validPairs,status,baselineMeanUs,candidateMeanUs,baselineP50Us,candidateP50Us,baselineP95Us,candidateP95Us");
         rawTimingRows.Add("case,frame,order,validGpuPair,baselineGpuNs,candidateGpuNs,baselineBlocks,candidateBlocks");
         hashes.Add("path,sha256");
+        dumps.Add("profile,file,frame,variant,mode,input,header,reference,decoded,decodedSha256");
         details.Add("Unity=" + Application.unityVersion + "; GPU=" + SystemInfo.graphicsDeviceName + "; API=" + SystemInfo.graphicsDeviceType + "; ColorSpace=" + QualitySettings.activeColorSpace);
         details.Add("Raw shader probes use independent reference header geometry/options even after received-header CRC failure. They do not imply production frame acceptance.");
         details.Add("EXACT requires complete original bytes. CRC_ACCEPTED_WRONG is a validation failure. Rejected lossy inputs are measurements, not harness failures.");
@@ -142,7 +144,13 @@ public sealed class RefineRobustnessValidation : MonoBehaviour
     T Own<T>(T item) where T : Object { owned.Add(item); return item; }
     void Drop(Object item)
     {
-        owned.Remove(item); if (item is RenderTexture rt) rt.Release(); if (item != null) Object.DestroyImmediate(item);
+        owned.Remove(item);
+        if (item is RenderTexture rt)
+        {
+            if (RenderTexture.active == rt) RenderTexture.active = null;
+            rt.Release();
+        }
+        if (item != null) Object.DestroyImmediate(item);
     }
     static void Check(bool value, string error) { if (!value) throw new InvalidOperationException(error); }
     static string C(object value) => "\"" + (Convert.ToString(value, CultureInfo.InvariantCulture) ?? "").Replace("\"", "\"\"") + "\"";
@@ -189,6 +197,7 @@ public sealed class RefineRobustnessValidation : MonoBehaviour
         File.WriteAllLines(Path.Combine(Root, "timings.csv"), timingRows);
         File.WriteAllLines(Path.Combine(Root, "timing-pairs.csv"), rawTimingRows);
         File.WriteAllLines(Path.Combine(Root, "source-hashes.csv"), hashes);
+        File.WriteAllLines(Path.Combine(Root, "raw-dumps.csv"), dumps);
     }
     void Finish()
     {
@@ -325,6 +334,15 @@ public sealed class RefineRobustnessValidation : MonoBehaviour
     }
     void Record(Profile profile, Item item, Probe probe, Texture image, byte[] actual, byte[] expected, byte[] referenceHeader, string inputHash, string referenceHash)
     {
+        if (plan.dumpRawBytes)
+        {
+            string dumpDirectory = Path.Combine(Root, "bins", profile.name);
+            Directory.CreateDirectory(dumpDirectory);
+            string dump = Path.Combine(dumpDirectory, Path.GetFileNameWithoutExtension(item.file) + "." + probe.variant.name + ".bin");
+            File.WriteAllBytes(dump, actual);
+            dumps.Add(Row(profile.name, item.file, item.frame, probe.variant.name, probe.variant.mode,
+                item.input, item.header, probe.variant.mode == "Header" ? item.header : item.payload, dump, Sha(actual)));
+        }
         int mismatches = Differences(actual, expected, out int bitMismatches); bool exact = mismatches == 0;
         bool valid = Valid(actual, referenceHeader, probe.variant.mode == "Header");
         string status = exact ? "EXACT" : valid ? "CRC_ACCEPTED_WRONG" : "REJECTED";
@@ -419,6 +437,7 @@ public sealed class RefineRobustnessValidation : MonoBehaviour
                         Graphics.Blit(image, source); decoder.lastHeaderValid = false; decoder.lastFrameValid = false; decoder.lastPayloadCrcVerified = false;
                         int recoveredHeaderBefore = PublicInt(decoder, "recoveredHeaderCount"), recoveredPayloadBefore = PublicInt(decoder, "recoveredPayloadCount");
                         int headerAttemptsBefore = PublicInt(decoder, "headerRecoveryAttemptCount"), payloadAttemptsBefore = PublicInt(decoder, "payloadRecoveryAttemptCount");
+                        int sparseSearchesBefore = PublicInt(decoder, "sparseRecoverySearchCount"), sparseHypothesesBefore = PublicInt(decoder, "sparseRecoveryHypothesisCount"), recoveredSparseBefore = PublicInt(decoder, "recoveredSparsePayloadCount");
                         double start = EditorApplication.timeSinceStartup, deadline = start + 30; decoder.DecodeNow();
                         while (decoder.readbackInFlight && EditorApplication.timeSinceStartup < deadline) yield return null;
                         Check(!decoder.readbackInFlight, "Production readback timeout.");
@@ -435,7 +454,9 @@ public sealed class RefineRobustnessValidation : MonoBehaviour
                         production.Add(Row(profile.name, item.file, productionVariant.name, item.unknown ? "" : item.frame.ToString(CultureInfo.InvariantCulture), decoder.lastHeaderValid ? decoder.lastFrameIndex.ToString(CultureInfo.InvariantCulture) : "",
                             decoder.lastHeaderValid, decoder.lastPayloadCrcVerified, decoder.lastFrameValid, current, payload == null ? "" : payload.Length.ToString(CultureInfo.InvariantCulture), current ? length.ToString(CultureInfo.InvariantCulture) : "", mismatch < 0 ? "" : mismatch.ToString(CultureInfo.InvariantCulture), status,
                             ((EditorApplication.timeSinceStartup - start) * 1000).ToString("F6", CultureInfo.InvariantCulture), CounterDelta(headerAttemptsBefore, PublicInt(decoder, "headerRecoveryAttemptCount")), CounterDelta(payloadAttemptsBefore, PublicInt(decoder, "payloadRecoveryAttemptCount")),
-                            CounterDelta(recoveredHeaderBefore, PublicInt(decoder, "recoveredHeaderCount")), CounterDelta(recoveredPayloadBefore, PublicInt(decoder, "recoveredPayloadCount")), decoder.lastError));
+                            CounterDelta(recoveredHeaderBefore, PublicInt(decoder, "recoveredHeaderCount")), CounterDelta(recoveredPayloadBefore, PublicInt(decoder, "recoveredPayloadCount")),
+                            CounterDelta(sparseSearchesBefore, PublicInt(decoder, "sparseRecoverySearchCount")), CounterDelta(sparseHypothesesBefore, PublicInt(decoder, "sparseRecoveryHypothesisCount")),
+                            CounterDelta(recoveredSparseBefore, PublicInt(decoder, "recoveredSparsePayloadCount")), decoder.lastError));
                     }
                 }
                 Drop(image); if (++processedInputs % 32 == 0) Flush(); yield return null;

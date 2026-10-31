@@ -58,6 +58,7 @@ namespace K13A.TSMP.Udon
         public bool skipDuplicateFrames = true;
         public bool requirePayloadCrc32;
         [Range(0, 2)] public int maxCrcRecoveryAttempts = 2;
+        public bool recoverSparsePayload = true;
         public bool recoverHeaderCrc;
         [Min(1)] public int frameWindowSize = 256;
 
@@ -86,6 +87,9 @@ namespace K13A.TSMP.Udon
         [HideInInspector] public int payloadRecoveryAttemptCount;
         [HideInInspector] public int recoveredHeaderCount;
         [HideInInspector] public int recoveredPayloadCount;
+        [HideInInspector] public int sparseRecoverySearchCount;
+        [HideInInspector] public int sparseRecoveryHypothesisCount;
+        [HideInInspector] public int recoveredSparsePayloadCount;
 
         public bool debugLog = true;
         public int debugErrorLogBudget = 32;
@@ -147,6 +151,7 @@ namespace K13A.TSMP.Udon
         private int _requestSafetyMode;
         private int _requestRecoveryLimit;
         private bool _requestRecoverHeaderCrc;
+        private bool _requestRecoverSparsePayload;
         private int _headerRecoveryAttempt;
         private int _payloadRecoveryAttempt;
         private Texture[] _slotSources = new Texture[2];
@@ -200,6 +205,16 @@ namespace K13A.TSMP.Udon
         private int[] _slotSafetyModes = new int[2];
         private int[] _slotRecoveryLimits = new int[2];
         private bool[] _slotRecoverHeaderCrc = new bool[2];
+        private bool[] _slotRecoverSparsePayload = new bool[2];
+        private int[] _slotSparseCounts = new int[2];
+        private int[] _sparsePositions = new int[16];
+        private byte[] _sparseModeOne = new byte[16];
+        private uint[] _sparseCrcs = new uint[6];
+        private byte[] _sparseNormalZero;
+        private byte[] _sparseNormalOne;
+        private byte[] _sparseValues;
+        private uint[] _sparseEffects;
+        private byte[] _sparseWinner;
         private int[] _slotHeaderRecoveryAttempts = new int[2];
         private int[] _slotPayloadRecoveryAttempts = new int[2];
         private byte[] _headerBytes;
@@ -346,6 +361,9 @@ namespace K13A.TSMP.Udon
             payloadRecoveryAttemptCount = 0;
             recoveredHeaderCount = 0;
             recoveredPayloadCount = 0;
+            sparseRecoverySearchCount = 0;
+            sparseRecoveryHypothesisCount = 0;
+            recoveredSparsePayloadCount = 0;
             skippedBusyDecodeCount = 0;
         }
 
@@ -377,8 +395,10 @@ namespace K13A.TSMP.Udon
             _requestSafetyMode = decodeSafetyMode;
             _requestRecoveryLimit = Mathf.Clamp(maxCrcRecoveryAttempts, 0, 2);
             _requestRecoverHeaderCrc = recoverHeaderCrc;
+            _requestRecoverSparsePayload = recoverSparsePayload;
             _headerRecoveryAttempt = 0;
             _payloadRecoveryAttempt = 0;
+            _slotSparseCounts[_activeSlot] = -1;
             _requestByteTexture = _activeSlot == 0 ? payloadByteTexture :
                 DecoderPredictionRuntime.EnsureTexture(_slotByteTextures[_activeSlot], payloadByteTexture.width, payloadByteTexture.height);
             pendingDecodeCount++;
@@ -572,6 +592,7 @@ namespace K13A.TSMP.Udon
             _slotSafetyModes[slot] = _requestSafetyMode;
             _slotRecoveryLimits[slot] = _requestRecoveryLimit;
             _slotRecoverHeaderCrc[slot] = _requestRecoverHeaderCrc;
+            _slotRecoverSparsePayload[slot] = _requestRecoverSparsePayload;
             _slotHeaderRecoveryAttempts[slot] = _headerRecoveryAttempt;
             _slotPayloadRecoveryAttempts[slot] = _payloadRecoveryAttempt;
             if (_decodeStage == 3)
@@ -622,6 +643,7 @@ namespace K13A.TSMP.Udon
             _requestSafetyMode = _slotSafetyModes[slot];
             _requestRecoveryLimit = _slotRecoveryLimits[slot];
             _requestRecoverHeaderCrc = _slotRecoverHeaderCrc[slot];
+            _requestRecoverSparsePayload = _slotRecoverSparsePayload[slot];
             _headerRecoveryAttempt = _slotHeaderRecoveryAttempts[slot];
             _payloadRecoveryAttempt = _slotPayloadRecoveryAttempts[slot];
             lastPayloadCrcPresent = lastHeaderValid && _headerBytes != null && _headerBytes.Length >= FrameHeader.Size
@@ -718,10 +740,27 @@ namespace K13A.TSMP.Udon
                     _payloadDataBytes <= _payloadBytes.Length &&
                     _payloadDataBytes == Binary.ReadUInt16LE(_headerBytes, FrameHeader.PayloadSizeOffset) &&
                     _headerBytes[FrameHeader.VersionMinorOffset] >= ProtocolConstants.PayloadCrcVersionMinor &&
-                    expected != actual && TryRequestCrcRecovery(false))
+                    expected != actual)
+                {
+                    if (TryRequestCrcRecovery(false, actual))
+                        return;
+                    if (_payloadRecoveryAttempt == 2)
+                        RememberSparsePayload(actual);
+                    if (TryRecoverSparsePayload(expected, actual) &&
+                        FrameHeaderReader.TryValidatePayload(_headerBytes, 0, _payloadBytes, _payloadDataBytes,
+                            _requestRequirePayloadCrc32, _crc32Table, out present, out expected, out actual, out integrityError))
+                        recoveredSparsePayloadCount++;
+                    else
+                    {
+                        RejectPayloadIntegrity(integrityError);
+                        return;
+                    }
+                }
+                else
+                {
+                    RejectPayloadIntegrity(integrityError);
                     return;
-                RejectPayloadIntegrity(integrityError);
-                return;
+                }
             }
             lastPayloadCrcPresent = present;
             lastPayloadCrcVerified = present;
@@ -745,6 +784,53 @@ namespace K13A.TSMP.Udon
             lastFrameValid = true;
         }
 
+        private void RememberSparsePayload(uint actualCrc)
+        {
+            // These buffers and scans are reached only after protected CRC failure.
+            // Three existing modes are needed; budget zero/one retains its policy.
+            if (_activeSlot < 0 || !_requestRecoverSparsePayload || _requestRecoveryLimit != 2 ||
+                _payloadDataBytes <= 0 || _payloadDataBytes > SparsePayloadRecovery.MaximumPayloadBytes)
+                return;
+            int slot = _activeSlot;
+            byte[] normal = slot == 0 ? _sparseNormalZero : _sparseNormalOne;
+            if (_payloadRecoveryAttempt == 0)
+            {
+                normal = DecoderReadbackRuntime.EnsureByteBuffer(normal, _payloadDataBytes);
+                if (slot == 0) _sparseNormalZero = normal;
+                else _sparseNormalOne = normal;
+                System.Array.Copy(_payloadBytes, 0, normal, 0, _payloadDataBytes);
+                _slotSparseCounts[slot] = 0;
+            }
+            else if (_slotSparseCounts[slot] >= 0)
+                _slotSparseCounts[slot] = SparsePayloadRecovery.Collect(normal, _payloadBytes, _payloadDataBytes,
+                    _sparsePositions, _sparseModeOne, slot * SparsePayloadRecovery.MaximumPositions,
+                    _slotSparseCounts[slot], _payloadRecoveryAttempt == 1);
+            _sparseCrcs[slot * 3 + _payloadRecoveryAttempt] = actualCrc;
+        }
+
+        private bool TryRecoverSparsePayload(uint expectedCrc, uint currentCrc)
+        {
+            if (_activeSlot < 0 || !_requestRecoverSparsePayload || _requestRecoveryLimit != 2 ||
+                _payloadRecoveryAttempt != 2 || _slotSparseCounts[_activeSlot] <= 0)
+                return false;
+            if (_sparseValues == null)
+            {
+                _sparseValues = new byte[SparsePayloadRecovery.MaximumPositions * 3];
+                _sparseEffects = new uint[SparsePayloadRecovery.MaximumPositions * 3];
+                _sparseWinner = new byte[SparsePayloadRecovery.MaximumPositions];
+            }
+            int slot = _activeSlot;
+            int hypotheses;
+            sparseRecoverySearchCount++;
+            bool recovered = SparsePayloadRecovery.TryRecover(slot == 0 ? _sparseNormalZero : _sparseNormalOne,
+                _payloadBytes, _payloadDataBytes, _sparsePositions, _sparseModeOne,
+                slot * SparsePayloadRecovery.MaximumPositions, _slotSparseCounts[slot],
+                _sparseCrcs[slot * 3], _sparseCrcs[slot * 3 + 1], currentCrc, expectedCrc,
+                _crc32Table, _sparseValues, _sparseEffects, _sparseWinner, out hypotheses);
+            sparseRecoveryHypothesisCount += hypotheses;
+            return recovered;
+        }
+
         private bool RejectPayloadIntegrity(string error)
         {
             lastPayloadCrcVerified = false;
@@ -761,7 +847,7 @@ namespace K13A.TSMP.Udon
 
         // Recovery never reads a newer source or changes the protected wire layout.
         // Each slot owns its attempt counters and at most two extra readbacks per stage.
-        private bool TryRequestCrcRecovery(bool header)
+        private bool TryRequestCrcRecovery(bool header, uint failedPayloadCrc)
         {
             if (_activeSlot < 0 || _requestRecoveryLimit <= 0 || (header && !_requestRecoverHeaderCrc) || _decodeSuspended ||
                 _slotDiscarded[_activeSlot])
@@ -787,6 +873,7 @@ namespace K13A.TSMP.Udon
             }
             else
             {
+                RememberSparsePayload(failedPayloadCrc);
                 _payloadRecoveryAttempt++;
                 payloadRecoveryAttemptCount++;
                 RequestPayloadReadback();
@@ -1112,7 +1199,7 @@ namespace K13A.TSMP.Udon
                 {
                     lastHeaderValid = false;
                     lastFrameValid = false;
-                    if (TryRequestCrcRecovery(true))
+                    if (TryRequestCrcRecovery(true, 0u))
                         return false;
                     lastError = "Header CRC mismatch. expected=" + expectedCrc + " actual=" + actualCrc + " frame discarded.";
                     LogHeaderCrcWarning(lastError);
