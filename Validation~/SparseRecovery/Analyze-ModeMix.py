@@ -10,6 +10,7 @@ import hashlib
 import itertools
 import json
 from pathlib import Path
+import struct
 import zlib
 
 
@@ -58,10 +59,16 @@ def main():
         outputs = [Path(r["decoded"]).read_bytes() for r in rows]
         if any(len(o) != len(expected) for o in outputs):
             raise RuntimeError("Length mismatch")
-        crc = zlib.crc32(expected)
+        header = Path(rows[0]["header"]).read_bytes()
+        if len(header) != 56 or zlib.crc32(header[:52]) != struct.unpack_from("<I", header, 52)[0]:
+            raise RuntimeError("Independent protected header invalid")
+        crc = struct.unpack_from("<I", header, 44)[0]
+        if crc != zlib.crc32(expected):
+            raise RuntimeError("Independent header checksum differs from source payload")
         prior_exact = any(o == expected for o in outputs)
-        if prior_exact:
-            winner, attempts, positions, status = expected, 0, 0, "PRIOR_EXACT"
+        prior_valid = [o for o in outputs if zlib.crc32(o) == crc]
+        if prior_valid:
+            winner, attempts, positions, status = prior_valid[0], 0, 0, "PRIOR_CRC_VALID"
         else:
             winner, attempts, positions, status = search(outputs, crc, args.max_positions)
         wrong = winner is not None and winner != expected
@@ -81,6 +88,7 @@ def main():
                    maxCandidates=max(r["attempts"] for r in result),
                    maxPositions=args.max_positions,
                    generatorUsesReferenceBytes=False,
+                   expectedChecksumSource="independent protected header; raw diagnostic geometry",
                    codeSha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
     (args.results / "summary.json").write_text(json.dumps(summary, indent=2))
     print(json.dumps(summary, indent=2))

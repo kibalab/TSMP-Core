@@ -79,3 +79,12 @@ two disagreement scans, and finally include a full checksum on recovered bytes.
 Each case/path records five warm and thirty measured samples. Timings exclude
 buffer allocation, GPU work/readback and application logic, and do not represent
 actual VRChat frame time. Stop other owned benchmark loads before timing.
+
+`SparseRecoveryVmValidation.RunBudgetSuccessOnly` separately measures the
+saturated 384-hypothesis successful path, including the complete CRC, for
+5,375/8,192-byte inputs. It runs only these additional cases rather than repeating
+the previous timing matrix. `SparseRecoveryVmValidation.InspectDecoderHeap`
+loads the compiled Decoder program and checks defaults, captured-slot array sizes
+and the absence of baseline buffers before a failure. SDK `UpdateProgram()` is
+needed before querying its in-memory `GetRealProgram()` property in a fresh
+editor process.

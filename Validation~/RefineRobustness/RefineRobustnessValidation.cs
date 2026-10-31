@@ -369,7 +369,11 @@ public sealed class RefineRobustnessValidation : MonoBehaviour
         Check(plan.variants.Select(value => value.name).Distinct().Count() == plan.variants.Length, "Duplicate variant names.");
         Check(plan.variants.All(value => value.mode == "Header" || value.mode == "Payload"), "Variant mode must be Header or Payload.");
         foreach (string package in new[] { "com.kibalab.tsmp.core", "com.kibalab.tsmp.codec.luma4", "com.kibalab.tsmp.codec.color256", "com.kibalab.tsmp.codec.rgb16", "com.kibalab.tsmp.codec.rgb20" })
-            if (Directory.Exists("Packages/" + package + "/Runtime")) foreach (string file in Directory.GetFiles("Packages/" + package + "/Runtime", "*", SearchOption.AllDirectories).Where(path => path.EndsWith(".cs") || path.EndsWith(".shader") || path.EndsWith(".cginc"))) Hash(file);
+        {
+            var packageInfo = UnityEditor.PackageManager.PackageInfo.FindForAssetPath("Packages/" + package);
+            string runtime = Path.Combine(packageInfo != null ? packageInfo.resolvedPath : "Packages/" + package, "Runtime");
+            if (Directory.Exists(runtime)) foreach (string file in Directory.GetFiles(runtime, "*", SearchOption.AllDirectories).Where(path => path.EndsWith(".cs") || path.EndsWith(".shader") || path.EndsWith(".cginc"))) Hash(file);
+        }
         Hash("Assets/RefineRobustness/RefineRobustnessValidation.cs");
         string candidateDirectory = "Assets/RefineRobustness/Candidates";
         if (Directory.Exists(candidateDirectory))
