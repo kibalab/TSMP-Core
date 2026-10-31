@@ -2,7 +2,7 @@
 import json
 import random
 
-from fec_envelope import PREFIX_BYTES, split_words, unwrap, wrap
+from fec_envelope import METADATA_PARITY, PREFIX_BYTES, split_words, unwrap, wrap
 from fec_reference import CorrectionFailure
 
 
@@ -58,6 +58,31 @@ def main():
         except ValueError:
             pass
         checks += 1
+    for parity in (16, 32):
+        for length in (32, 2495, 5375):
+            original = rng.randbytes(length)
+            packet = wrap(original, parity, 1, True)
+            assert unwrap(packet, True) == (original, packet)
+            checks += 1
+            for position in range(PREFIX_BYTES + METADATA_PARITY):
+                damaged = bytearray(packet)
+                damaged[position] ^= 19
+                assert unwrap(damaged, True) == (original, packet)
+                checks += 1
+            damaged = bytearray(packet)
+            for position in rng.sample(range(PREFIX_BYTES + METADATA_PARITY), 8):
+                damaged[position] ^= rng.randint(1, 255)
+            # Include body corruption in the same packet, not just metadata.
+            damaged[PREFIX_BYTES + METADATA_PARITY] ^= 53
+            assert unwrap(damaged, True) == (original, packet)
+            checks += 1
+            for wrong_mode_packet, protected in [(packet, False), (wrap(original, parity), True)]:
+                try:
+                    unwrap(wrong_mode_packet, protected)
+                    raise AssertionError('Wrong envelope version accepted')
+                except CorrectionFailure:
+                    pass
+                checks += 1
     print(json.dumps(dict(status='PASS', assertions=checks,
                           note='Measurement envelope only; not TSMP runtime interoperability.'), indent=2))
 
