@@ -5,11 +5,15 @@ param(
     [Parameter(Mandatory=$true)][string]$Results,
     [ValidateRange(30,14400)][int]$TimeoutSeconds=3600,
     [switch]$CoreRecovery,
+    [switch]$ModeCoverage,
+    [switch]$Linear,
     [string]$SavedCases
 )
 $ErrorActionPreference='Stop'
+if($CoreRecovery -and $ModeCoverage){throw 'Choose either CoreRecovery or ModeCoverage'}
+if($Linear -and -not$ModeCoverage){throw 'Linear is supported with ModeCoverage'}
 $projectPath=(Resolve-Path -LiteralPath $Project).Path
-$planPath=if($CoreRecovery){''}else{if([string]::IsNullOrWhiteSpace($Plan)){throw 'Plan is required for shadow/production measurement'};(Resolve-Path -LiteralPath $Plan).Path}
+$planPath=if($CoreRecovery -or $ModeCoverage){''}else{if([string]::IsNullOrWhiteSpace($Plan)){throw 'Plan is required for shadow/production measurement'};(Resolve-Path -LiteralPath $Plan).Path}
 $savedCasesPath=if([string]::IsNullOrWhiteSpace($SavedCases)){''}else{(Resolve-Path -LiteralPath $SavedCases).Path}
 if(-not(Test-Path -LiteralPath (Join-Path $projectPath 'ProjectSettings/ProjectVersion.txt'))){throw 'Use a dedicated Unity validation project'}
 $manifest=Get-Content -LiteralPath (Join-Path $projectPath 'Packages/manifest.json') -Raw|ConvertFrom-Json
@@ -19,8 +23,9 @@ $assets=Join-Path $projectPath 'Assets/RefineRobustness'
 New-Item -ItemType Directory -Path $assets,$Results -Force|Out-Null
 $resultsPath=(Resolve-Path -LiteralPath $Results).Path
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'RefineRobustnessValidation.cs') -Destination $assets -Force
-if($CoreRecovery){
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'CoreRecoveryValidation.cs') -Destination $assets -Force
+if($CoreRecovery -or $ModeCoverage){
+    $validationSource=if($CoreRecovery){'CoreRecoveryValidation.cs'}else{'ModeCoverageValidation.cs'}
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot $validationSource) -Destination $assets -Force
     $existingHelpers=@(Get-ChildItem -LiteralPath (Join-Path $projectPath 'Assets') -Filter 'DecoderSnapshotValidation.cs' -Recurse -File)
     if($existingHelpers.Count -gt 1){throw 'Multiple Snapshot helper sources would define duplicate classes'}
     $helperTarget=if($existingHelpers.Count -eq 1){$existingHelpers[0].FullName}else{Join-Path $assets 'DecoderSnapshotValidation.cs'}
@@ -38,7 +43,7 @@ try{
     $env:TSMP_ROBUSTNESS_PLAN=$planPath
     $env:TSMP_RECOVERY_CASES=$savedCasesPath
     $log=Join-Path $resultsPath 'editor.log'
-    $method=if($CoreRecovery){'CoreRecoveryValidation.Run'}else{'RefineRobustnessValidation.Run'}
+    $method=if($CoreRecovery){'CoreRecoveryValidation.Run'}elseif($ModeCoverage -and $Linear){'ModeCoverageValidation.RunLinear'}elseif($ModeCoverage){'ModeCoverageValidation.Run'}else{'RefineRobustnessValidation.Run'}
     $arguments="-batchmode -force-d3d11 -projectPath `"$projectPath`" -executeMethod $method -logFile `"$log`""
     $process=Start-Process -FilePath $UnityEditor -ArgumentList $arguments -WindowStyle Hidden -PassThru
     Write-Output "PID=$($process.Id) Log=$log"

@@ -208,6 +208,22 @@ Shader "Hidden/TSMP/Validation/RGB16 Affine Variable Refine"
                 int bitShift = bitIndex - symbolIndex * totalBits;
                 int symbol = DecodeRgb16Symbol(symbolIndex);
 
+                // A byte spans up to four symbols when the combined RGB width is 3..7 bits.
+                if (totalBits < 8)
+                {
+                    uint packedByte = (uint)symbol >> bitShift;
+                    int availableBits = totalBits - bitShift;
+                    [loop]
+                    for (int extraSymbol = 1; extraSymbol < 4; extraSymbol++)
+                    {
+                        if (availableBits >= 8)
+                            break;
+                        packedByte |= (uint)DecodeRgb16Symbol(symbolIndex + extraSymbol) << availableBits;
+                        availableBits += totalBits;
+                    }
+                    return (int)(packedByte & 0xFFu);
+                }
+
                 if (bitShift + 8 <= totalBits)
                     return (symbol >> bitShift) & 0xFF;
 

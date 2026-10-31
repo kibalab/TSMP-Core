@@ -112,7 +112,7 @@ public sealed class RefineRobustnessValidation : MonoBehaviour
     IEnumerator Start()
     {
         Application.runInBackground = true; QualitySettings.vSyncCount = 0; Application.targetFrameRate = -1;
-        ProfilerDriver.SetAreaEnabled(ProfilerArea.GPU, true); Profiler.enabled = true;
+        Profiler.enabled = false;
         Own(new GameObject("Refine robustness frame pump")).AddComponent<Camera>().cullingMask = 0;
         crc = Crc32Runtime.EnsureFastTable(null);
         rows.Add("profile,file,frame,variant,mode,codecId,width,height,bytes,sample,radius,lut,byteMismatches,bitMismatches,exact,crcValid,status,actualCrc32,expectedCrc32,inputSha256,referenceSha256");
@@ -343,6 +343,8 @@ public sealed class RefineRobustnessValidation : MonoBehaviour
         string json = File.ReadAllText(PlanPath); File.WriteAllText(Path.Combine(Root, "plan-used.json"), json); Hash(PlanPath);
         plan = JsonUtility.FromJson<Plan>(json);
         Check(plan != null && plan.profiles != null && plan.profiles.Length > 0, "Profiles required.");
+        ProfilerDriver.SetAreaEnabled(ProfilerArea.GPU, plan.timing); Profiler.enabled = plan.timing;
+        details.Add("GPU timestamp profiling enabled=" + plan.timing + "; accuracy-only runs disable profiling.");
         Check((plan.variants != null && plan.variants.Length > 0) || plan.runProduction, "Variants or runProduction required.");
         Check(plan.profiles.Select(value => value.name).Distinct().Count() == plan.profiles.Length, "Duplicate profile names.");
         if (plan.variants == null) plan.variants = new Variant[0];
