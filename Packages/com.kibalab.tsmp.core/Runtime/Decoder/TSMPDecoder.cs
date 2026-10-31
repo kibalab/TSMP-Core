@@ -1240,25 +1240,16 @@ namespace K13A.TSMP.Udon
             skippedDuplicateRpcCount = 0;
             lastPayloadAvailableBytes = _payloadBytes != null ? Mathf.Clamp(_payloadDataBytes, 0, _payloadBytes.Length) : 0;
 
-            if (_payloadBytes == null || _payloadDataBytes < NetworkFrameProtocol.NetworkHeaderBytes)
-            {
-                lastFrameValid = false;
-                lastError = "Payload is too small for NetworkFrame.";
-                LogDecodeError(lastError);
-                return false;
-            }
-
-            if (_payloadDataBytes > _payloadBytes.Length)
-                return FailNetworkFrame("Payload length exceeds buffer capacity.");
-
-            int cursor;
             int messageCount;
-            if (!NetworkFrameReader.TryReadNetworkFrameHeader(_payloadBytes, out messageCount, out cursor))
-                return FailNetworkFrame("NetworkFrame header is malformed.");
+            string structureError;
+            if (!NetworkFrameReader.TryValidateNetworkFrame(_payloadBytes, _payloadDataBytes, out messageCount, out structureError))
+                return FailNetworkFrame(structureError);
 
             lastNetworkMessageCount = messageCount;
-            if (_requestSafetyMode != DecodeSafetyParseOnly)
-                EnsureBindingTargetCache(GetBindingTargetCount());
+            if (_requestSafetyMode == DecodeSafetyParseOnly)
+                return true;
+            EnsureBindingTargetCache(GetBindingTargetCount());
+            int cursor = NetworkFrameProtocol.NetworkHeaderBytes;
 
             for (int i = 0; i < messageCount; i++)
             {
