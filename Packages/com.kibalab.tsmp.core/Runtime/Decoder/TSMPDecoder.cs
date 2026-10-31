@@ -57,6 +57,7 @@ namespace K13A.TSMP.Udon
         public bool applyEveryFrame = true;
         public bool skipDuplicateFrames = true;
         public bool requirePayloadCrc32;
+        [Range(0, 2)] public int maxCrcRecoveryAttempts = 2;
         [Min(1)] public int frameWindowSize = 256;
 
         [HideInInspector]
@@ -80,6 +81,10 @@ namespace K13A.TSMP.Udon
         [HideInInspector] public int predictedReadbackCount;
         [HideInInspector] public int predictionFallbackCount;
         [HideInInspector] public int combinedByteOutputCount;
+        [HideInInspector] public int headerRecoveryAttemptCount;
+        [HideInInspector] public int payloadRecoveryAttemptCount;
+        [HideInInspector] public int recoveredHeaderCount;
+        [HideInInspector] public int recoveredPayloadCount;
 
         public bool debugLog = true;
         public int debugErrorLogBudget = 32;
@@ -139,6 +144,9 @@ namespace K13A.TSMP.Udon
         private bool _requestUseHeaderLayout;
         private bool _requestRequirePayloadCrc32;
         private int _requestSafetyMode;
+        private int _requestRecoveryLimit;
+        private int _headerRecoveryAttempt;
+        private int _payloadRecoveryAttempt;
         private Texture[] _slotSources = new Texture[2];
         private RenderTexture[] _slotSnapshots = new RenderTexture[2];
         private RenderTexture[] _slotHeaderTextures = new RenderTexture[2];
@@ -188,6 +196,9 @@ namespace K13A.TSMP.Udon
         private bool[] _slotHeaderLayouts = new bool[2];
         private bool[] _slotRequirePayloadCrc32 = new bool[2];
         private int[] _slotSafetyModes = new int[2];
+        private int[] _slotRecoveryLimits = new int[2];
+        private int[] _slotHeaderRecoveryAttempts = new int[2];
+        private int[] _slotPayloadRecoveryAttempts = new int[2];
         private byte[] _headerBytes;
         private byte[] _payloadBytes;
         private int _payloadDataBytes;
@@ -328,6 +339,10 @@ namespace K13A.TSMP.Udon
             predictedReadbackCount = 0;
             predictionFallbackCount = 0;
             combinedByteOutputCount = 0;
+            headerRecoveryAttemptCount = 0;
+            payloadRecoveryAttemptCount = 0;
+            recoveredHeaderCount = 0;
+            recoveredPayloadCount = 0;
             skippedBusyDecodeCount = 0;
         }
 
@@ -357,6 +372,9 @@ namespace K13A.TSMP.Udon
             lastPayloadCrcPresent = false;
             lastPayloadCrcVerified = false;
             _requestSafetyMode = decodeSafetyMode;
+            _requestRecoveryLimit = Mathf.Clamp(maxCrcRecoveryAttempts, 0, 2);
+            _headerRecoveryAttempt = 0;
+            _payloadRecoveryAttempt = 0;
             _requestByteTexture = _activeSlot == 0 ? payloadByteTexture :
                 DecoderPredictionRuntime.EnsureTexture(_slotByteTextures[_activeSlot], payloadByteTexture.width, payloadByteTexture.height);
             pendingDecodeCount++;
@@ -548,6 +566,9 @@ namespace K13A.TSMP.Udon
             _slotHeaderLayouts[slot] = _requestUseHeaderLayout;
             _slotRequirePayloadCrc32[slot] = _requestRequirePayloadCrc32;
             _slotSafetyModes[slot] = _requestSafetyMode;
+            _slotRecoveryLimits[slot] = _requestRecoveryLimit;
+            _slotHeaderRecoveryAttempts[slot] = _headerRecoveryAttempt;
+            _slotPayloadRecoveryAttempts[slot] = _payloadRecoveryAttempt;
             if (_decodeStage == 3)
             {
                 _slotPredictedHeaders[slot] = DecoderReadbackRuntime.EnsureByteBuffer(_slotPredictedHeaders[slot], FrameHeader.Size);
@@ -594,6 +615,9 @@ namespace K13A.TSMP.Udon
             _requestUseHeaderLayout = _slotHeaderLayouts[slot];
             _requestRequirePayloadCrc32 = _slotRequirePayloadCrc32[slot];
             _requestSafetyMode = _slotSafetyModes[slot];
+            _requestRecoveryLimit = _slotRecoveryLimits[slot];
+            _headerRecoveryAttempt = _slotHeaderRecoveryAttempts[slot];
+            _payloadRecoveryAttempt = _slotPayloadRecoveryAttempts[slot];
             lastPayloadCrcPresent = lastHeaderValid && _headerBytes != null && _headerBytes.Length >= FrameHeader.Size
                 && (Binary.ReadUInt16LE(_headerBytes, FrameHeader.FlagsOffset) & (int)FrameFlags.PayloadCrc32) != 0;
             lastPayloadCrcVerified = false;
@@ -684,11 +708,19 @@ namespace K13A.TSMP.Udon
                 _requestRequirePayloadCrc32, _crc32Table, out present, out expected, out actual, out integrityError))
             {
                 lastPayloadCrcPresent = present;
+                if (present && _payloadBytes != null && _payloadDataBytes >= 0 &&
+                    _payloadDataBytes <= _payloadBytes.Length &&
+                    _payloadDataBytes == Binary.ReadUInt16LE(_headerBytes, FrameHeader.PayloadSizeOffset) &&
+                    _headerBytes[FrameHeader.VersionMinorOffset] >= ProtocolConstants.PayloadCrcVersionMinor &&
+                    expected != actual && TryRequestCrcRecovery(false))
+                    return;
                 RejectPayloadIntegrity(integrityError);
                 return;
             }
             lastPayloadCrcPresent = present;
             lastPayloadCrcVerified = present;
+            if (_payloadRecoveryAttempt > 0)
+                recoveredPayloadCount++;
             CachePrediction();
 
             if (_requestSafetyMode == DecodeSafetyPayloadReadbackOnly)
@@ -719,6 +751,41 @@ namespace K13A.TSMP.Udon
             lastError = error;
             LogTSMPRateLimitedWarning(LogPrefix, lastError, 1f);
             return false;
+        }
+
+        // Recovery never reads a newer source or changes the protected wire layout.
+        // Each slot owns its attempt counters and at most two extra readbacks per stage.
+        private bool TryRequestCrcRecovery(bool header)
+        {
+            if (_activeSlot < 0 || _requestRecoveryLimit <= 0 || _decodeSuspended ||
+                _slotDiscarded[_activeSlot])
+                return false;
+            int attempt = header ? _headerRecoveryAttempt : _payloadRecoveryAttempt;
+            if (attempt >= _requestRecoveryLimit)
+                return false;
+            TSMPCodec handler = PrepareDecodeHandler(header ? 0 : _payloadCodecId,
+                header ? FrameHeader.Size : _payloadDataBytes);
+            Material material = handler != null ? handler.selectedDecodeMaterial : null;
+            if (material == null || !material.HasProperty("_RecoveryMode"))
+                return false;
+
+            _predictionValid = false;
+            lastFrameValid = false;
+            lastPayloadCrcVerified = false;
+            lastError = string.Empty;
+            if (header)
+            {
+                _headerRecoveryAttempt++;
+                headerRecoveryAttemptCount++;
+                RequestHeaderCopy();
+            }
+            else
+            {
+                _payloadRecoveryAttempt++;
+                payloadRecoveryAttemptCount++;
+                RequestPayloadReadback();
+            }
+            return _slotStates[_activeSlot] == 1;
         }
 
         private bool ValidateSetup()
@@ -858,6 +925,8 @@ namespace K13A.TSMP.Udon
             material.SetFloat(ShaderProperties.OutputWidth, destination.width);
             material.SetFloat(ShaderProperties.OutputHeight, destination.height);
             material.SetFloat(ShaderProperties.FlipY, _decodeFlipY ? 1f : 0f);
+            if (material.HasProperty("_RecoveryMode"))
+                material.SetFloat("_RecoveryMode", _decodeStage == 1 ? _headerRecoveryAttempt : _payloadRecoveryAttempt);
             if (material.HasProperty("_TSMPHeaderPixels"))
             {
                 material.SetFloat("_TSMPHeaderPixels", combined ? FrameHeader.Size / 4 : 0);
@@ -1037,6 +1106,8 @@ namespace K13A.TSMP.Udon
                 {
                     lastHeaderValid = false;
                     lastFrameValid = false;
+                    if (TryRequestCrcRecovery(true))
+                        return false;
                     lastError = "Header CRC mismatch. expected=" + expectedCrc + " actual=" + actualCrc + " frame discarded.";
                     LogHeaderCrcWarning(lastError);
                     return false;
@@ -1046,7 +1117,11 @@ namespace K13A.TSMP.Udon
             }
 
             lastHeaderValid = true;
+            if (_headerRecoveryAttempt > 0)
+                recoveredHeaderCount++;
             lastPayloadCrcPresent = (Binary.ReadUInt16LE(_headerBytes, FrameHeader.FlagsOffset) & (int)FrameFlags.PayloadCrc32) != 0;
+            if (_headerRecoveryAttempt > 0 && !lastPayloadCrcPresent)
+                return RejectPayloadIntegrity("Recovered header requires a protected payload; legacy frame discarded.");
             if (lastPayloadCrcPresent && _headerBytes[FrameHeader.VersionMinorOffset] < ProtocolConstants.PayloadCrcVersionMinor)
                 return RejectPayloadIntegrity("Payload CRC flag requires protocol minor 2 or newer.");
             if (_requestRequirePayloadCrc32 && !lastPayloadCrcPresent)

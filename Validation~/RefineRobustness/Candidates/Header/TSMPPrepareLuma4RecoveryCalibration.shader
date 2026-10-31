@@ -46,4 +46,3 @@ Shader "Hidden/TSMP/Validation/Prepare Luma4 Recovery Calibration"
 
     Fallback Off
 }
-

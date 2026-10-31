@@ -92,4 +92,3 @@ Shader "Hidden/TSMP/Validation/Decode Luma4 Recovery Bytes"
 
     Fallback Off
 }
-

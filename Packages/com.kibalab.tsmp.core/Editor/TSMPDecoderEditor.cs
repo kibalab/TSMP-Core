@@ -24,6 +24,7 @@ namespace K13A.TSMP.Editor
         private SerializedProperty _applyEveryFrame;
         private SerializedProperty _skipDuplicateFrames;
         private SerializedProperty _requirePayloadCrc32;
+        private SerializedProperty _maxCrcRecoveryAttempts;
         private SerializedProperty _frameWindowSize;
         private SerializedProperty _blockSize;
         private SerializedProperty _sampleSize;
@@ -49,6 +50,7 @@ namespace K13A.TSMP.Editor
             _applyEveryFrame = serializedObject.FindProperty("applyEveryFrame");
             _skipDuplicateFrames = serializedObject.FindProperty("skipDuplicateFrames");
             _requirePayloadCrc32 = serializedObject.FindProperty("requirePayloadCrc32");
+            _maxCrcRecoveryAttempts = serializedObject.FindProperty("maxCrcRecoveryAttempts");
             _frameWindowSize = serializedObject.FindProperty("frameWindowSize");
             _blockSize = serializedObject.FindProperty("blockSize");
             _sampleSize = serializedObject.FindProperty("sampleSize");
@@ -100,6 +102,7 @@ namespace K13A.TSMP.Editor
             InspectorUI.BeginSection("Decode");
             InspectorUI.Property(_applyEveryFrame);
             EditorGUILayout.PropertyField(_requirePayloadCrc32, new GUIContent("Require Payload Checksum", "Reject older senders without a payload checksum. Checksums present in a frame are always verified before applying data."));
+            EditorGUILayout.PropertyField(_maxCrcRecoveryAttempts, new GUIContent("CRC Recovery Attempts", "Maximum additional decode attempts per header or payload, using the same captured frame and supported codec recovery modes. Zero disables recovery. Extra attempts add latency when a frame fails."));
             EditorGUILayout.PropertyField(_skipDuplicateFrames, new GUIContent("Filter Frames", "Skip duplicate and older frames, with a frame-zero restart exception based on Window Size."));
             using (new EditorGUI.DisabledScope(!_skipDuplicateFrames.hasMultipleDifferentValues && !_skipDuplicateFrames.boolValue))
                 EditorGUILayout.PropertyField(_frameWindowSize, new GUIContent("Window Size", "Frame count used to recognize a restart at frame zero. Default: 256."));
@@ -173,6 +176,10 @@ namespace K13A.TSMP.Editor
             InspectorUI.ReadOnlyInt("Pending Frames", decoder.pendingDecodeCount);
             InspectorUI.ReadOnlyInt("Skipped Busy Captures", decoder.skippedBusyDecodeCount);
             InspectorUI.ReadOnlyInt("Prediction Fallbacks", decoder.predictionFallbackCount);
+            InspectorUI.ReadOnlyInt("Header Recovery Attempts", decoder.headerRecoveryAttemptCount);
+            InspectorUI.ReadOnlyInt("Payload Recovery Attempts", decoder.payloadRecoveryAttemptCount);
+            InspectorUI.ReadOnlyInt("Recovered Headers", decoder.recoveredHeaderCount);
+            InspectorUI.ReadOnlyInt("Recovered Payloads", decoder.recoveredPayloadCount);
             InspectorUI.ReadOnlyBool("Readback In Flight", decoder.readbackInFlight);
             InspectorUI.ReadOnlyInt("Payload Bytes", decoder.lastPayloadSizeFromHeader);
             InspectorUI.ReadOnlyInt("Available Payload Bytes", decoder.lastPayloadAvailableBytes);

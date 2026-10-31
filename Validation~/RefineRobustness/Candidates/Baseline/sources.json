@@ -1,0 +1,44 @@
+[
+  {
+    "shadowPath": "C:\\Users\\kjh03\\.codex\\worktrees\\tsmp-reliability\\TSMP\\Validation~\\RefineRobustness\\Candidates\\Baseline\\Color256.shader",
+    "shadowSha256": "19A113EA3E7C31542B75CDDC0D9DFB3D9E5696EC55FB2D30F121AAF954450050",
+    "originalSha256": "FE73475ED7F82E2BEFD9DF07E19ED2770377BBEF5D9DD22734D02803C7DB8AB4",
+    "originalPath": "F:\\Unity\\TSMP\\Validation-Results\\refine-robustness-20261031\\environment\\baseline-packages\\com.kibalab.tsmp.codec.color256\\Runtime\\Shaders\\TSMPDecodeColor256RobustRefineBytes.shader"
+  },
+  {
+    "shadowPath": "C:\\Users\\kjh03\\.codex\\worktrees\\tsmp-reliability\\TSMP\\Validation~\\RefineRobustness\\Candidates\\Baseline\\RGB16Fixed.shader",
+    "shadowSha256": "A964AFA98766E493FF2032C45F23A3B0F14A7D7B816BF3725CF1CBFC835B3C3C",
+    "originalSha256": "B660C18645E27CF387D8A0FA25A9FE655A25C1C784523A9D3DA7020AC0DF52E7",
+    "originalPath": "F:\\Unity\\TSMP\\Validation-Results\\refine-robustness-20261031\\environment\\baseline-packages\\com.kibalab.tsmp.codec.rgb16\\Runtime\\Shaders\\TSMPDecodeRgb16RefineBytes.shader"
+  },
+  {
+    "shadowPath": "C:\\Users\\kjh03\\.codex\\worktrees\\tsmp-reliability\\TSMP\\Validation~\\RefineRobustness\\Candidates\\Baseline\\RGB16Variable.shader",
+    "shadowSha256": "D30DA9CC54F89DE1171D83FD5BBAE0C90F79CC26111785BD75EBFC6ACE54B628",
+    "originalSha256": "E3445CA5CF31C09A7DD53D8B3341A5C7EE7613C18C265C4CC0EDDF18952657AE",
+    "originalPath": "F:\\Unity\\TSMP\\Validation-Results\\refine-robustness-20261031\\environment\\baseline-packages\\com.kibalab.tsmp.codec.rgb16\\Runtime\\Shaders\\TSMPDecodeRgb16VariableRefineBytes.shader"
+  },
+  {
+    "shadowPath": "C:\\Users\\kjh03\\.codex\\worktrees\\tsmp-reliability\\TSMP\\Validation~\\RefineRobustness\\Candidates\\Baseline\\Luma4.shader",
+    "shadowSha256": "D51A1799C58A8943F903E1D266810DC2E2763F09A7D866C39616AE3ED5987332",
+    "originalSha256": "1425E6C3D9BFC0F1D8AEF98B3C5F3FC9DBC22EA4A99F6763988AC8B39F201BC3",
+    "originalPath": "F:\\Unity\\TSMP\\Validation-Results\\refine-robustness-20261031\\environment\\baseline-packages\\com.kibalab.tsmp.codec.luma4\\Runtime\\Shaders\\TSMPDecodeLuma4Bytes.shader"
+  },
+  {
+    "shadowPath": "C:\\Users\\kjh03\\.codex\\worktrees\\tsmp-reliability\\TSMP\\Validation~\\RefineRobustness\\Candidates\\Baseline\\Luma4Prepare.shader",
+    "shadowSha256": "7E0611CD7B9A4FEFF7A4A130C0A15786F49941A76AF363E57CFCE0BBCE886171",
+    "originalSha256": "F2DB2C9531974AB4850E0D40245AF53D87B486D4E19D980971E50E6C97DED0B9",
+    "originalPath": "F:\\Unity\\TSMP\\Validation-Results\\refine-robustness-20261031\\environment\\baseline-packages\\com.kibalab.tsmp.codec.luma4\\Runtime\\Shaders\\TSMPPrepareLuma4Calibration.shader"
+  },
+  {
+    "shadowPath": "C:\\Users\\kjh03\\.codex\\worktrees\\tsmp-reliability\\TSMP\\Validation~\\RefineRobustness\\Candidates\\Baseline\\Luma4Calibration.cginc",
+    "shadowSha256": "EFC5E16D83D02DD8F6DF709258551451A6933301347EF36E1726843D8B64DFBA",
+    "originalSha256": "EFC5E16D83D02DD8F6DF709258551451A6933301347EF36E1726843D8B64DFBA",
+    "originalPath": "F:\\Unity\\TSMP\\Validation-Results\\refine-robustness-20261031\\environment\\baseline-packages\\com.kibalab.tsmp.codec.luma4\\Runtime\\Shaders\\Luma4Calibration.cginc"
+  },
+  {
+    "shadowPath": "C:\\Users\\kjh03\\.codex\\worktrees\\tsmp-reliability\\TSMP\\Validation~\\RefineRobustness\\Candidates\\Baseline\\Color256Calibration.cginc",
+    "shadowSha256": "78BDCB236A070BB6CEDA97155A664DEBDCB8A27E4E7897C12739BF35F7420B95",
+    "originalSha256": "78BDCB236A070BB6CEDA97155A664DEBDCB8A27E4E7897C12739BF35F7420B95",
+    "originalPath": "F:\\Unity\\TSMP\\Validation-Results\\refine-robustness-20261031\\environment\\baseline-packages\\com.kibalab.tsmp.codec.color256\\Runtime\\Shaders\\Color256Calibration.cginc"
+  }
+]

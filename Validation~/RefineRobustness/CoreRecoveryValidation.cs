@@ -123,7 +123,7 @@ public sealed class CoreRecoveryValidation : MonoBehaviour
         TSMPDecoder decoder = Own(new GameObject("Bounded recovery decoder")).AddComponent<TSMPDecoder>();
         decoder.applyEveryFrame = false; decoder.skipDuplicateFrames = true; decoder.requirePayloadCrc32 = true; decoder.decodeSafetyMode = 0;
         decoder.debugLog = false; decoder.overlapReadbacks = false; decoder.codecHandlers = codecs; decoder.flipY = true; decoder.blockSize = 8; decoder.sampleSize = 4;
-        decoder.payloadByteTexture = Own(DecoderSnapshotValidation.Target(512, 1));
+        decoder.payloadByteTexture = Own(DecoderSnapshotValidation.Target(2048, 1));
         RenderTexture source = Own(DecoderSnapshotValidation.Target(640, 360)); decoder.sourceTexture = source;
         Texture2D image = Own(new Texture2D(640, 360, TextureFormat.RGBA32, false, true)); image.filterMode = FilterMode.Point;
         GameObject toggleOwner = Own(new GameObject("Recovery RPC receiver")), target = Own(new GameObject("Recovery RPC target"));

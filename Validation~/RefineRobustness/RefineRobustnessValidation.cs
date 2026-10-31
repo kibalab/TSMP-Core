@@ -46,8 +46,9 @@ public sealed class RefineRobustnessValidation : MonoBehaviour
     }
     [Serializable] public sealed class Variant
     {
-        public string name, mode = "Payload", shaderAssetPath, materialField;
+        public string name, mode = "Payload", shaderAssetPath, materialField, timingGroup;
         public int codecId = -1, sampleSize = -1, radius = -1, lutWidth;
+        public int sourceCodecId = -1;
         public bool disableLut;
         public FloatProperty[] properties;
         public string calibrationShaderAssetPath, calibrationTextureProperty = "_CalibrationLut", calibrationKeyword;
@@ -360,7 +361,8 @@ public sealed class RefineRobustnessValidation : MonoBehaviour
             Check(!string.IsNullOrWhiteSpace(profile.name), "Profile name required.");
             string prefab = string.IsNullOrWhiteSpace(profile.codecPrefabPath) ? LumaPath : profile.codecPrefabPath;
             TSMPCodec payloadCodec = CreateCodec(prefab), lumaCodec = CreateCodec(LumaPath);
-            Probe[] probes = plan.variants.Where(value => value.codecId < 0 || value.mode == "Header" || value.codecId == payloadCodec.codecId).Select(value => MakeProbe(value, prefab)).ToArray();
+            Probe[] probes = plan.variants.Where(value => (value.sourceCodecId < 0 || value.sourceCodecId == payloadCodec.codecId) &&
+                (value.codecId < 0 || value.mode == "Header" || value.codecId == payloadCodec.codecId)).Select(value => MakeProbe(value, prefab)).ToArray();
             TSMPDecoder decoder = null; RenderTexture source = null;
             if (plan.runProduction)
             {
@@ -393,9 +395,9 @@ public sealed class RefineRobustnessValidation : MonoBehaviour
                     }
                     if (plan.timing && timed < plan.timingFramesPerProfile)
                     {
-                        foreach (string mode in new[] { "Header", "Payload" })
+                        foreach (var timingGroup in probes.GroupBy(value => value.variant.mode + "\t" + (string.IsNullOrWhiteSpace(value.variant.timingGroup) ? value.variant.mode : value.variant.timingGroup)))
                         {
-                            Probe[] group = probes.Where(value => value.variant.mode == mode).ToArray();
+                            Probe[] group = timingGroup.ToArray();
                             if (group.Length > 1) foreach (Probe candidate in group.Skip(1)) yield return Measure(profile, item, group[0], candidate, image, header);
                         }
                         timed++;
