@@ -44,3 +44,37 @@ duplicate suppression. Held-image application and `lastStreamId` exercise RPC
 deduplication, but do not establish end-to-end reconnect behavior, GPU costs,
 live VRChat FPS or OBS/CDN/RTMP/HLS service behavior. No state waiting age is
 inferred from the sender's last successful local output time.
+
+## Actual monotonic-clock complement
+
+```powershell
+./Validation~/BudgetRecovery/Run-Validation.ps1 -UnityEditor '<Unity.exe>' -Project '<dedicated Native project>' -Results '<fresh realtime evidence>' -Realtime
+python ./Validation~/BudgetRecovery/Analyze-Realtime.py --results '<completed realtime evidence>'
+```
+
+This separate eight-and-a-half-second PlayMode loop calls actual `EncodeNow` at
+shared30Hz deadline opportunities. Production `GetSendTime` reads
+`Time.realtimeSinceStartupAsDouble`; the harness does not inject clock values.
+Seven concurrent encoders use their normal persistent bindings/caches, default
+one-second refresh, four RPC copies and zero target budget. A no-loss restart
+control guarantees the old stream actually records event501 before the new
+stream reuses that ID. The short-loss boundary is judged by actual copy times,
+since real deadline jitter can change how many copies a0.1-second interval covers.
+
+Per-opportunity receipts include actual source-change, send, successful local
+output and apply times, deadline lateness/missed slots, field masks and remaining
+RPC copies. Every field's eligibility is checked against the Encoder's actual
+`_sendTime` and its preceding successful `Entry.LastSent`, with the real minimum
+interval and refresh rules. These stamps establish local scheduling; they are
+not remote waiting ages. Packet/header IO occurs after the clocked loop.
+
+The Python analyzer separately reparses raw protected packets/headers, rechecks
+CRC and full values, models field eligibility and finite RPC copies, and
+reconstructs receiver state from visible originals. GPU Luma4 submissions are
+recorded where the production path uses them, but Decoder completion still
+receives original byte buffers directly. This measures actual local scheduling
+and recovery opportunities without a network, GPU readback or service reconnect.
+
+Cases are created after Play entry, when Editor automatic scene binding rebuilds
+are inactive. This preserves each scenario's explicit source/receiver isolation;
+the harness does not disable or modify Editor preparation or production code.

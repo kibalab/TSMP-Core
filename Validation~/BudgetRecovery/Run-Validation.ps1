@@ -3,9 +3,11 @@ param(
     [Parameter(Mandatory=$true)][string]$Project,
     [Parameter(Mandatory=$true)][string]$Results,
     [switch]$Vm,
+    [switch]$Realtime,
     [ValidateRange(30,3600)][int]$TimeoutSeconds=900
 )
 $ErrorActionPreference='Stop'
+if($Vm -and $Realtime){throw 'Realtime uses the dedicated Native project; do not combine it with Vm'}
 $recoveryProject=(Resolve-Path -LiteralPath $Project).Path
 if(-not(Test-Path -LiteralPath (Join-Path $recoveryProject 'ProjectSettings/ProjectVersion.txt'))){throw 'Use a dedicated validation project'}
 if((Test-Path -LiteralPath $Results) -and @(Get-ChildItem -LiteralPath $Results -Force).Count -gt 0){throw 'Use fresh results'}
@@ -21,7 +23,7 @@ $recoveryConfig|ForEach-Object{Get-FileHash -LiteralPath (Join-Path $recoveryPro
 $recoveryPrevious=$env:TSMP_BUDGET_RECOVERY_RESULTS
 try{
     $env:TSMP_BUDGET_RECOVERY_RESULTS=$recoveryResults
-    $recoveryMethod=if($Vm){'BudgetRecoveryValidation.RunVm'}else{'BudgetRecoveryValidation.Run'}
+    $recoveryMethod=if($Realtime){'BudgetRecoveryRealtimeValidation.Run'}elseif($Vm){'BudgetRecoveryValidation.RunVm'}else{'BudgetRecoveryValidation.Run'}
     $recoveryLog=Join-Path $recoveryResults 'editor.log'
     $recoveryArguments="-batchmode -force-d3d11 -projectPath `"$recoveryProject`" -executeMethod $recoveryMethod -logFile `"$recoveryLog`""
     $recoveryProcess=Start-Process -FilePath $UnityEditor -ArgumentList $recoveryArguments -WindowStyle Hidden -PassThru

@@ -91,3 +91,62 @@ was only explicitly requested before Play entry. `vrc-client-final` repeats
 compilation after Play entry, reads the serialized client programs and preserves
 their source/bytecode hashes. The final product sources are the same across
 these SDK attempts.
+
+## Actual monotonic-clock Encoder follow-up
+
+`realtime-native-playmode` completes the actual-clock check, complementing the
+deterministic scheduler cases above. Seven Native Encoders call production
+`EncodeNow` for **8.50315 actual seconds**, sharing255 thirty-Hz deadline
+opportunities. Production `GetSendTime` uses
+`Time.realtimeSinceStartupAsDouble` in PlayMode; no clock or successful-send
+timestamp is injected. Defaults remain refresh1s, repeats4, target0.
+
+**19,721 assertions PASS**, with1,785 observations,115 original packets and
+protected headers, zero missed deadline slots and maximum tick-entry gap33.429ms.
+All115 emitted packets use the actual GPU Luma4 Encoder path. This is local
+scheduling validation; it does not measure GPU completion or receiver readback.
+
+Every actual opportunity checks field eligibility against the Encoder's own
+`_sendTime` and preceding successful `Entry.LastSent`, including send-on-change,
+minimum intervals and refresh. The separate Python audit reparses the protected
+packet/header bytes, CRCs, whole32-byte values, RPC method/event501 envelopes,
+queue repeats and visible originals, and reconstructs all1,785 receiver states.
+`realtime-audit.json` reports PASS. Source/configuration hashes match before/after.
+
+The first source change occurs near0.5s; times below are actual seconds from
+the shared clock origin and include the real scheduling phase.
+
+| Case | Actual loss ends | First high/medium application | First slow application | Events |
+| --- | ---: | ---: | ---: | ---: |
+| 0.1s loss | 0.6063 | 1.5344 | 1.5344 | 0 |
+| 0.4s loss | 0.9000 | 1.5346 | 1.5346 | 0 |
+| 1.5s loss | 2.0030 | 2.5673 | 3.0673 | 0 |
+| 0.4s held image | 0.9033 | 1.5350 | 1.5350 | 0 |
+| 1.5s hold + new stream near4s | 2.0035 | 2.5340 | 3.0677 | 1 in new stream |
+| 0.1s loss + new stream near4s | 0.6038 | 1.5340 | 1.5670 | 1 in new stream |
+| Intact restart control | no loss | 0.5058 | 1.5672 | 1 per stream,2 total |
+
+The real0.1-second loss covers **all four RPC copies** in both short-loss cases.
+For example, one stream sends copies at0.50628,0.53712,0.56766 and0.60083s;
+its loss window is0.50626–0.60626s. This preserves the observed missing event.
+The deterministic grid above leaves its fourth copy exactly on the recovery
+boundary; that grid result is not a guarantee that a100ms burst preserves an
+event under actual scheduling. The intact restart control confirms the old
+stream already executed event501 once, then the new stream executes the reused
+ID once despite four visible copies.
+
+All first recoveries obey their actual eligible refresh/minimum-interval
+opportunities. No corrupt or partial array, duplicate event execution or
+unexpected continuous unchanged-field emission occurs. These are **actual local
+clock times with an injected loss/hold policy**, not network latency measurements.
+Decoder completion receives the original protected packet bytes directly;
+header/readback duplicate checks, video compression and external services remain
+outside this experiment.
+
+`realtime-native-initial` and `realtime-native-debug` retain failed EditMode
+fixtures. Editor automatic scene binding rebuilds expanded the intended isolated
+source tables to scene-wide bindings, which the duplicate-field guard rejected.
+The final fixture creates cases **after Play entry**, where that automatic
+Editor rebuilding is inactive. It changes no production code, Editor defaults
+or event subscriptions to obtain stable bindings. The debug run preserves the
+offending original packet for review.
