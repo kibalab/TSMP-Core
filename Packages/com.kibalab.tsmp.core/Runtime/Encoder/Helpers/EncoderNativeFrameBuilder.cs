@@ -42,6 +42,9 @@ namespace K13A.TSMP
             payloadBytes = 0;
             error = string.Empty;
 
+            if (sendState != null)
+                sendState.ResetDiagnostics();
+
             if (payload == null || payload.Length < maxPayloadBytes)
                 payload = NetworkPayloadBuffer.EnsureCapacity(payload, maxPayloadBytes);
             NetworkPayloadBuffer.Clear(payload);
@@ -55,7 +58,7 @@ namespace K13A.TSMP
 
             ushort sequence = unchecked((ushort)frameIndex);
             WriteRpcMessages(queuedRpcs, payload, maxPayloadBytes, ref payloadOffset, sequence,
-                ref networkMessageCount, out rpcMessageCount, onRpcRejected, deferOverBudgetRpc);
+                ref networkMessageCount, out rpcMessageCount, onRpcRejected, deferOverBudgetRpc, sendState);
 
             if (!CaptureSources(behaviours, bindingCache, payload, sequence, ref payloadOffset,
                 ref currentMessageStartOffset, ref currentVariableCount, out int manualMessages, out error))
@@ -133,7 +136,7 @@ namespace K13A.TSMP
             buffer = NetworkPayloadBuffer.EnsureCapacity(buffer, NetworkFrameProtocol.MaximumPayloadBytes);
             int offset = NetworkFrameProtocol.NetworkHeaderBytes;
             bool overCapacity;
-            return WriteRpc(buffer, capacity, ref offset, rpc, 0, out error, out overCapacity);
+            return WriteRpc(buffer, capacity, ref offset, rpc, 0, out error, out overCapacity, out _);
         }
 
         private static void WriteRpcMessages(
@@ -145,7 +148,8 @@ namespace K13A.TSMP
             ref int networkMessageCount,
             out int rpcMessageCount,
             System.Action<string> onRpcRejected,
-            bool deferOverBudgetRpc)
+            bool deferOverBudgetRpc,
+            EncoderNativeSendState sendState)
         {
             rpcMessageCount = 0;
 
@@ -156,7 +160,7 @@ namespace K13A.TSMP
             {
                 QueuedRpc rpc = queuedRpcs[0];
                 bool overCapacity;
-                if (WriteRpc(payload, capacity, ref payloadOffset, rpc, sequence, out string error, out overCapacity))
+                if (WriteRpc(payload, capacity, ref payloadOffset, rpc, sequence, out string error, out overCapacity, out int requiredBytes))
                 {
                     networkMessageCount++;
                     rpcMessageCount++;
@@ -166,7 +170,11 @@ namespace K13A.TSMP
                 // A live target reduction must not consume an already queued event.
                 // Leave it pending while the state scheduler can still send smaller fields.
                 if (deferOverBudgetRpc && overCapacity)
+                {
+                    if (sendState != null)
+                        sendState.RecordBlockedRpc(rpc.NetworkId, rpc.RpcHash, requiredBytes);
                     return;
+                }
 
                 queuedRpcs.RemoveAt(0);
                 string diagnostic = "RPC discarded: networkId=" + rpc.NetworkId + ", hash=" + rpc.RpcHash + ". " + error;
@@ -195,9 +203,10 @@ namespace K13A.TSMP
             queuedRpcs.RemoveAt(0);
         }
 
-        private static bool WriteRpc(byte[] payload, int capacity, ref int payloadOffset, QueuedRpc rpc, ushort sequence, out string error, out bool overCapacity)
+        private static bool WriteRpc(byte[] payload, int capacity, ref int payloadOffset, QueuedRpc rpc, ushort sequence, out string error, out bool overCapacity, out int requiredBytes)
         {
             overCapacity = false;
+            requiredBytes = 0;
             int failedArgumentIndex;
             int writeError;
             int nextOffset = NetworkFrameWriter.WriteRpcCall(payload, payloadOffset, rpc.NetworkId, sequence, rpc.RpcHash, rpc.Arguments, out failedArgumentIndex, out writeError);
@@ -206,6 +215,8 @@ namespace K13A.TSMP
                 error = NetworkFrameWriter.GetRpcWriteError(failedArgumentIndex, writeError);
                 return false;
             }
+
+            requiredBytes = NetworkFrameProtocol.NetworkHeaderBytes + nextOffset - payloadOffset;
 
             if (nextOffset > capacity)
             {

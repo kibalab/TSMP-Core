@@ -39,6 +39,8 @@ Payload 감소는 encode work, transport bandwidth, decode work, apply work를 �
 
 설정을 바꿀 때 `effectivePayloadBudgetBytes`, `deferredVariableCount`, `deferredRpcCount`, `queuedRpcCount`를 확인하세요. 들어가지 않는 필드는 전송을 미룹니다. RPC를 큐에 넣은 뒤 제한을 줄이면 큰 RPC가 맨 앞에 남아 뒤 RPC도 지연시킬 수 있습니다. 제한을 늘리면 남은 반복 횟수를 보존한 채 다시 전송합니다.
 
+Encoder Inspector에는 마지막으로 미룬 필드와 막힌 맨 앞 RPC, 각 항목 하나만 담은 완전한 패킷에 필요한 바이트 수가 표시됩니다. 이 크기를 실제 예산과 비교하세요. 단독으로 들어가는 필드도 다른 데이터가 이번 프레임의 공간을 사용하면 기다릴 수 있습니다. `oversizedVariableCount`는 전송 대상 중 단독으로도 들어가지 않는 필드 수입니다. 이 진단은 마지막 인코딩 시도의 상태이며 수신 데이터의 경과 시간이나 수신 확인을 뜻하지 않습니다. 진단을 위한 추가 직렬화는 수행하지 않습니다.
+
 패킷 성공률과 함께 실제 적용된 갱신, 필드별 데이터 경과 시간, 이벤트 도달 여부를 비교하세요. 작은 패킷이 더 잘 통과해도 일부 데이터는 계속 도착하지 않을 수 있습니다. 자동 조절을 추가하기 전에 실제 부하로 고정 제한값을 선택하세요.
 
 ## 그 다음 frame rate 조정

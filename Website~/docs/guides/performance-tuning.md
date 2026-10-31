@@ -39,6 +39,8 @@ Payload reduction is usually the best first optimization because it reduces enco
 
 Check `effectivePayloadBudgetBytes`, `deferredVariableCount`, `deferredRpcCount` and `queuedRpcCount` while changing this setting. A field that cannot fit remains deferred. Reducing the target after enqueue can leave a large RPC at the head of the queue and delay later RPCs; increasing the target resumes it without consuming its pending repetitions.
 
+The Encoder Inspector identifies the most recently deferred field and blocked head RPC, with the bytes needed for a complete packet containing that item alone. Compare that size with the effective budget. A field that fits alone can still wait because other data used this frame's space; `oversizedVariableCount` counts eligible fields that cannot fit alone. These diagnostics describe the latest encode attempt, not receiver age or an acknowledgement. No extra serialization is performed for these values.
+
 Compare applied updates, the age of each field and event delivery as well as packet success. A smaller packet can pass more often while some application data never arrives. Select a fixed target with the actual workload before adding automatic adjustment.
 
 ## Then tune frame rate

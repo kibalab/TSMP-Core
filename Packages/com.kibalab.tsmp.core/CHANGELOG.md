@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Show the last deferred TransSync field and blocked head RPC with the bytes needed for a packet containing that item alone. Distinguish fields that cannot fit the effective budget from fields deferred by other data in the current frame, using existing serialization results. Reset these diagnostics for each encode attempt. Sending policy and defaults are unchanged.
+
 ## 1.0.0
 
 Stable promotion of all 0.3.0-beta.1 through 0.3.0-beta.3 changes since stable 0.2.0. Runtime, shaders and asset GUIDs are unchanged from beta.3.

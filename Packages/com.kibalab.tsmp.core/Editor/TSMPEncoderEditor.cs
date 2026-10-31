@@ -132,6 +132,23 @@ namespace K13A.TSMP.Editor
                 InspectorUI.ReadOnlyInt("Auto Variables", encoder.autoVariableCount);
                 InspectorUI.ReadOnlyInt("Deferred Variables", encoder.deferredVariableCount);
                 InspectorUI.ReadOnlyInt("Deferred RPCs", encoder.deferredRpcCount);
+                InspectorUI.ReadOnlyInt("Fields Too Large Alone", encoder.oversizedVariableCount);
+                if (encoder.deferredVariableCount > 0)
+                {
+                    InspectorUI.ReadOnlyText("Last Deferred Field", encoder.lastDeferredVariableNetworkId + ": " + encoder.lastDeferredVariableName);
+                    InspectorUI.ReadOnlyInt("Field Packet Bytes", encoder.lastDeferredVariableRequiredBytes);
+                    InspectorUI.ReadOnlyText("Field Budget Status", encoder.lastDeferredVariableFitsBudget
+                        ? "Fits alone; deferred by other data in this frame."
+                        : "Cannot fit alone; increase the budget/capacity or reduce the field.");
+                }
+                if (encoder.deferredRpcCount > 0)
+                {
+                    InspectorUI.ReadOnlyText("Blocked Head RPC", encoder.blockedRpcNetworkId + ": " + encoder.blockedRpcHash);
+                    InspectorUI.ReadOnlyInt("RPC Packet Bytes", encoder.blockedRpcRequiredBytes);
+                    InspectorUI.ReadOnlyText("RPC Budget Status", encoder.blockedRpcRequiredBytes <= encoder.effectivePayloadBudgetBytes
+                        ? "Fits alone; deferred by other data in this frame."
+                        : "Cannot fit alone; queued repeats are preserved until it fits.");
+                }
             }
             InspectorUI.EndSection();
         }

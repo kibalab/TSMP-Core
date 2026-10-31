@@ -101,6 +101,15 @@ namespace K13A.TSMP
         [HideInInspector] public float[] bindingMinSendIntervals;
         [HideInInspector] public string[] bindingSentEvents;
         [HideInInspector] public int deferredVariableCount;
+        // Current EncodeNow diagnostics. Required bytes include a complete minimal network packet.
+        [HideInInspector] public int oversizedVariableCount;
+        [HideInInspector] public int lastDeferredVariableNetworkId;
+        [HideInInspector] public string lastDeferredVariableName;
+        [HideInInspector] public int lastDeferredVariableRequiredBytes;
+        [HideInInspector] public bool lastDeferredVariableFitsBudget;
+        [HideInInspector] public int blockedRpcNetworkId;
+        [HideInInspector] public uint blockedRpcHash;
+        [HideInInspector] public int blockedRpcRequiredBytes;
         private bool _isEncoding;
         private bool _targetPayloadBudgetActive;
 
@@ -251,7 +260,7 @@ namespace K13A.TSMP
         private void EncodeFrame()
         {
             lastError = string.Empty;
-            deferredRpcCount = 0;
+            ResetBudgetDiagnostics();
 
             if (output == null)
             {
@@ -473,7 +482,16 @@ namespace K13A.TSMP
                 _targetPayloadBudgetActive);
 
             queuedRpcCount = _queuedRpcs.Count;
-            deferredRpcCount = _targetPayloadBudgetActive && queuedRpcCount > 0 && rpcMessageCount == 0 ? 1 : 0;
+            deferredRpcCount = _sendState.BlockedRpcRequiredBytes > 0 ? 1 : 0;
+            deferredVariableCount = _sendState.DeferredCount;
+            oversizedVariableCount = _sendState.OversizedCount;
+            lastDeferredVariableNetworkId = _sendState.LastDeferredNetworkId;
+            lastDeferredVariableName = _sendState.LastDeferredName;
+            lastDeferredVariableRequiredBytes = _sendState.LastDeferredRequiredBytes;
+            lastDeferredVariableFitsBudget = _sendState.LastDeferredFitsBudget;
+            blockedRpcNetworkId = _sendState.BlockedRpcNetworkId;
+            blockedRpcHash = _sendState.BlockedRpcHash;
+            blockedRpcRequiredBytes = _sendState.BlockedRpcRequiredBytes;
             if (!result)
                 lastError = error;
             return result;
@@ -915,8 +933,7 @@ namespace K13A.TSMP
             lastEncodeStage = 1;
             lastError = string.Empty;
             _sendTime = GetSendTime();
-            deferredVariableCount = 0;
-            deferredRpcCount = 0;
+            ResetBudgetDiagnostics();
             _codecQueryValid = false;
             EnsureResources();
 
@@ -1024,10 +1041,17 @@ namespace K13A.TSMP
             if (_pendingRpcCount <= 0)
                 return true;
 
-            if (_targetPayloadBudgetActive && GetTransRpcMessageBytes(_pendingRpcMethodNames[0]) > effectivePayloadBudgetBytes - _payloadOffset)
+            if (_targetPayloadBudgetActive)
             {
-                deferredRpcCount = 1;
-                return true;
+                int messageBytes = GetTransRpcMessageBytes(_pendingRpcMethodNames[0]);
+                if (messageBytes > effectivePayloadBudgetBytes - _payloadOffset)
+                {
+                    deferredRpcCount = 1;
+                    blockedRpcNetworkId = _pendingRpcNetworkIds[0];
+                    blockedRpcHash = _pendingRpcHashes[0];
+                    blockedRpcRequiredBytes = NetworkFrameProtocol.NetworkHeaderBytes + messageBytes;
+                    return true;
+                }
             }
             _pendingRpcWritten = WritePendingRpcCall(0);
             return _pendingRpcWritten;
@@ -1167,6 +1191,13 @@ namespace K13A.TSMP
                     if (length + overhead > limit - _payloadOffset)
                     {
                         deferredVariableCount++;
+                        lastDeferredVariableNetworkId = networkId;
+                        lastDeferredVariableName = bindingFieldNames[index];
+                        lastDeferredVariableRequiredBytes = NetworkFrameProtocol.NetworkHeaderBytes + NetworkFrameProtocol.MessageHeaderBytes
+                            + NetworkFrameProtocol.VariableStateBodyHeaderBytes + length;
+                        lastDeferredVariableFitsBudget = lastDeferredVariableRequiredBytes <= limit;
+                        if (!lastDeferredVariableFitsBudget)
+                            oversizedVariableCount++;
                         continue;
                     }
                     if (!EnsureBoundVariableMessage(networkId))
@@ -1653,6 +1684,20 @@ namespace K13A.TSMP
         }
 
 #endif
+
+        private void ResetBudgetDiagnostics()
+        {
+            deferredVariableCount = 0;
+            deferredRpcCount = 0;
+            oversizedVariableCount = 0;
+            lastDeferredVariableNetworkId = 0;
+            lastDeferredVariableName = string.Empty;
+            lastDeferredVariableRequiredBytes = 0;
+            lastDeferredVariableFitsBudget = false;
+            blockedRpcNetworkId = 0;
+            blockedRpcHash = 0;
+            blockedRpcRequiredBytes = 0;
+        }
 
         private int GetManualPayloadWriteLimit(int bufferLength)
         {

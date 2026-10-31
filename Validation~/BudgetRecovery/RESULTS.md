@@ -1,0 +1,93 @@
+# Payload diagnostics and default refresh, 2026-11-01
+
+The Encoder now exposes which field was most recently deferred, its network ID
+and minimum complete-packet size, whether it fits alone, and how many deferred
+fields cannot fit alone. A blocked FIFO RPC exposes its network ID/hash and
+minimum complete-packet size. The Inspector compares these with the existing
+captured effective budget.
+
+`deferredVariableCount > 0` and `deferredRpcCount > 0` establish whether their
+corresponding identities are valid. Diagnostics reset on each real encode
+attempt, including early failures. A field that fits alone is described as
+deferred by other data; it is not mislabeled permanently oversized. Required
+bytes include the eight-byte network header and each message/entry header.
+Dynamic fields can become sendable after shrinking or increasing the budget.
+
+The implementation reuses the existing serialized entry length and the RPC
+writer's existing ending offset. It adds no serialization pass, queue scan,
+per-frame log, automatic budget adjustment or timestamp arrays. Default-zero
+Udon RPC handling keeps its previous short-circuit and performs no added UTF-8
+size computation. Transmission scheduling, retry defaults and repeat consumption
+are unchanged.
+
+## Validation
+
+Evidence: `F:/Unity/TSMP/Validation-Results/next-improvements-20261101/budget-recovery`.
+
+- `native-final`: **12,419 assertions PASS**, including actual Native
+  `EncodeNow` diagnostics and six deterministic refresh/application scenarios.
+- `vrc-client-final`: **131 assertions PASS**, actual freshly compiled client
+  Encoder/source VMs, recompiled after Play entry. Sixteen product programs have
+  source and bytecode receipts in `client-programs.csv`.
+- `vrc-standard`: **16 product programs PASS, Bindings=True** using the existing
+  full compilation/setup check.
+
+The final Encoder bytecode is 139,520 bytes, SHA-256
+`90c142e388c90447ec92e9a670c11544034b78ab79a53bf5d13d90c1bf308b8c`.
+This size is not a runtime speed measurement. The three captured Native/SDK
+configuration files and four edited product sources match before/after each
+final targeted run.
+
+## Unchanged-state recovery
+
+All three fields change at simulated time 0.5 seconds and then remain unchanged.
+The loss begins at that change. High/medium/slow minimum send intervals are
+0.1/0.4/1.5 seconds, with the existing one-second refresh and priorities100/50/0.
+
+| Scenario | Loss ends | First high/medium recovery | First slow recovery | RPC executions |
+| --- | ---: | ---: | ---: | ---: |
+| 0.1 s loss | 0.6 s | 1.5 s | 1.5 s | 1 |
+| 0.4 s loss | 0.9 s | 1.5 s | 1.5 s | 0 |
+| 1.5 s loss | 2.0 s | 2.5 s | 3.0 s | 0 |
+| 0.4 s held image | 0.9 s | 1.5 s | 1.5 s | 0 |
+| 1.5 s held image + new stream at4s | 2.0 s | 2.5 s | 3.0 s | 1 in new stream |
+| 0.1 s loss + new stream at4s | 0.6 s | 1.5 s | 1.5 s | 1 per stream,2 total |
+
+Each scenario contains 241 simulated observations through eight seconds. The
+first four emit the three fields9/9/6 times, with227 empty output opportunities;
+this guards against accidentally treating unchanged fields as continuously due.
+The restarted cases emit10/10/6 times with223 empty opportunities. All complete
+received state bytes match the zero/42/77 schedule. The trace contains1,446
+rows, and nonempty packets plus protected headers are preserved for independent
+byte/CRC inspection.
+
+Four consecutive RPC copies span about0.1 seconds at30 Hz. A0.1-second burst
+leaves the last copy; a0.4/1.5-second burst covers all four. A later periodic
+state refresh restores state, but does not recreate a lost RPC event. In the
+short-loss restart case, event501 executes once in the old stream and once in
+the new stream despite repeats, demonstrating the application deduplication
+boundary with an explicitly supplied stream ID.
+
+No corrupt state, partial array application or duplicate RPC execution was
+observed. These are simulated monotonic source times, **not measured live
+network recovery latencies**. The refresh test invokes production scheduler/
+builder and protected Decoder completion; it bypasses GPU/readback/header
+duplicate checks. It does not certify a whole-client stream restart or an
+external service reconnect. The diagnostic tests separately use actual Native
+Encoder rendering and the compiled Udon Encoder path.
+
+## Preserved preliminary runs
+
+`native-initial` is **superseded and not accepted refresh evidence**: its harness
+created a new metadata cache each frame, invalidating field identity and making
+unchanged data eligible every frame. Self-review found this; `native-calibrated`
+used a persistent cache and explicit emission-cadence/first-recovery guards.
+`native-final` adds raw packets, source/send masks and the deduplication restart
+control. Product scheduling did not change to obtain the result.
+
+`vrc-initial` retains an Editor harness generic-type compilation error.
+`vrc-corrected` passes113 assertions but is provisional because client compilation
+was only explicitly requested before Play entry. `vrc-client-final` repeats
+compilation after Play entry, reads the serialized client programs and preserves
+their source/bytecode hashes. The final product sources are the same across
+these SDK attempts.

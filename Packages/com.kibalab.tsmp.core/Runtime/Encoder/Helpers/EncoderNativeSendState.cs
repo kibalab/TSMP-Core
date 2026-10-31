@@ -25,6 +25,34 @@ namespace K13A.TSMP
         private int _rotation;
         public int WrittenCount { get; private set; }
         public int DeferredCount { get; private set; }
+        public int OversizedCount { get; private set; }
+        public int LastDeferredNetworkId { get; private set; }
+        public string LastDeferredName { get; private set; }
+        public int LastDeferredRequiredBytes { get; private set; }
+        public bool LastDeferredFitsBudget { get; private set; }
+        public int BlockedRpcNetworkId { get; private set; }
+        public uint BlockedRpcHash { get; private set; }
+        public int BlockedRpcRequiredBytes { get; private set; }
+
+        public void ResetDiagnostics()
+        {
+            DeferredCount = 0;
+            OversizedCount = 0;
+            LastDeferredNetworkId = 0;
+            LastDeferredName = string.Empty;
+            LastDeferredRequiredBytes = 0;
+            LastDeferredFitsBudget = false;
+            BlockedRpcNetworkId = 0;
+            BlockedRpcHash = 0;
+            BlockedRpcRequiredBytes = 0;
+        }
+
+        public void RecordBlockedRpc(ushort networkId, uint hash, int requiredBytes)
+        {
+            BlockedRpcNetworkId = networkId;
+            BlockedRpcHash = hash;
+            BlockedRpcRequiredBytes = requiredBytes;
+        }
 
         public void Reset()
         {
@@ -86,6 +114,11 @@ namespace K13A.TSMP
         {
             WrittenCount = 0;
             DeferredCount = 0;
+            OversizedCount = 0;
+            LastDeferredNetworkId = 0;
+            LastDeferredName = string.Empty;
+            LastDeferredRequiredBytes = 0;
+            LastDeferredFitsBudget = false;
             messageCount = 0;
             error = string.Empty;
             Prepare(behaviours, cache, capture);
@@ -124,6 +157,13 @@ namespace K13A.TSMP
                     if (length + overhead > limit - offset)
                     {
                         DeferredCount++;
+                        LastDeferredNetworkId = entry.NetworkId;
+                        LastDeferredName = entry.Field.FieldInfo.Name;
+                        LastDeferredRequiredBytes = NetworkFrameProtocol.NetworkHeaderBytes + NetworkFrameProtocol.MessageHeaderBytes
+                            + NetworkFrameProtocol.VariableStateBodyHeaderBytes + length;
+                        LastDeferredFitsBudget = LastDeferredRequiredBytes <= limit;
+                        if (!LastDeferredFitsBudget)
+                            OversizedCount++;
                         continue;
                     }
                     if (newMessage)
