@@ -33,7 +33,8 @@ namespace K13A.TSMP
             EncoderNativeSendState sendState = null,
             double now = 0.0,
             float refreshInterval = 1f,
-            System.Action<string> onRpcRejected = null)
+            System.Action<string> onRpcRejected = null,
+            bool deferOverBudgetRpc = false)
         {
             networkMessageCount = 0;
             variableMessageCount = 0;
@@ -54,11 +55,16 @@ namespace K13A.TSMP
 
             ushort sequence = unchecked((ushort)frameIndex);
             WriteRpcMessages(queuedRpcs, payload, maxPayloadBytes, ref payloadOffset, sequence,
-                ref networkMessageCount, out rpcMessageCount, onRpcRejected);
+                ref networkMessageCount, out rpcMessageCount, onRpcRejected, deferOverBudgetRpc);
 
             if (!CaptureSources(behaviours, bindingCache, payload, sequence, ref payloadOffset,
                 ref currentMessageStartOffset, ref currentVariableCount, out int manualMessages, out error))
                 return false;
+            if (payloadOffset > maxPayloadBytes)
+            {
+                error = "Manually written payload exceeds the transmission budget.";
+                return false;
+            }
             if (sendState == null)
                 sendState = new EncoderNativeSendState();
             if (!sendState.Write(behaviours, bindingCache, payload, maxPayloadBytes, sequence, now, refreshInterval,
@@ -126,7 +132,8 @@ namespace K13A.TSMP
         {
             buffer = NetworkPayloadBuffer.EnsureCapacity(buffer, NetworkFrameProtocol.MaximumPayloadBytes);
             int offset = NetworkFrameProtocol.NetworkHeaderBytes;
-            return WriteRpc(buffer, capacity, ref offset, rpc, 0, out error);
+            bool overCapacity;
+            return WriteRpc(buffer, capacity, ref offset, rpc, 0, out error, out overCapacity);
         }
 
         private static void WriteRpcMessages(
@@ -137,7 +144,8 @@ namespace K13A.TSMP
             ushort sequence,
             ref int networkMessageCount,
             out int rpcMessageCount,
-            System.Action<string> onRpcRejected)
+            System.Action<string> onRpcRejected,
+            bool deferOverBudgetRpc)
         {
             rpcMessageCount = 0;
 
@@ -147,12 +155,18 @@ namespace K13A.TSMP
             while (queuedRpcs.Count > 0)
             {
                 QueuedRpc rpc = queuedRpcs[0];
-                if (WriteRpc(payload, capacity, ref payloadOffset, rpc, sequence, out string error))
+                bool overCapacity;
+                if (WriteRpc(payload, capacity, ref payloadOffset, rpc, sequence, out string error, out overCapacity))
                 {
                     networkMessageCount++;
                     rpcMessageCount++;
                     return;
                 }
+
+                // A live target reduction must not consume an already queued event.
+                // Leave it pending while the state scheduler can still send smaller fields.
+                if (deferOverBudgetRpc && overCapacity)
+                    return;
 
                 queuedRpcs.RemoveAt(0);
                 string diagnostic = "RPC discarded: networkId=" + rpc.NetworkId + ", hash=" + rpc.RpcHash + ". " + error;
@@ -181,8 +195,9 @@ namespace K13A.TSMP
             queuedRpcs.RemoveAt(0);
         }
 
-        private static bool WriteRpc(byte[] payload, int capacity, ref int payloadOffset, QueuedRpc rpc, ushort sequence, out string error)
+        private static bool WriteRpc(byte[] payload, int capacity, ref int payloadOffset, QueuedRpc rpc, ushort sequence, out string error, out bool overCapacity)
         {
+            overCapacity = false;
             int failedArgumentIndex;
             int writeError;
             int nextOffset = NetworkFrameWriter.WriteRpcCall(payload, payloadOffset, rpc.NetworkId, sequence, rpc.RpcHash, rpc.Arguments, out failedArgumentIndex, out writeError);
@@ -194,6 +209,7 @@ namespace K13A.TSMP
 
             if (nextOffset > capacity)
             {
+                overCapacity = true;
                 error = "RPC does not fit. requiredPayloadBytes=" + nextOffset + ", capacity=" + capacity + ".";
                 return false;
             }

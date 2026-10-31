@@ -32,6 +32,7 @@ namespace K13A.TSMP
         public const string PayloadBytesMemberName = "PayloadBytes";
         public const string PayloadBytesFieldName = nameof(payloadBytes);
         public const string MaxPayloadBytesFieldName = nameof(maxPayloadBytes);
+        public const string TargetPayloadBytesFieldName = nameof(targetPayloadBytes);
         public const string EncodeNowMethodName = nameof(EncodeNow);
         public const string BindingTargetsFieldName = nameof(bindingTargets);
         public const string BindingUdonTargetsFieldName = "bindingUdonTargets";
@@ -78,7 +79,10 @@ namespace K13A.TSMP
 #endif
         [HideInInspector] public int payloadSymbolMode;
         public int codecId;
+        [Tooltip("Backing payload buffer capacity. This can grow to the raster capacity; use Target Payload Bytes to limit transmitted data.")]
         public int maxPayloadBytes = 4096;
+        [Min(0), Tooltip("Maximum network payload bytes per output frame, including its 8-byte network header. Zero uses the available raster capacity. Oversized fields wait; they are not fragmented.")]
+        public int targetPayloadBytes;
         public uint streamId = 1;
         public ushort layoutId;
 
@@ -98,6 +102,7 @@ namespace K13A.TSMP
         [HideInInspector] public string[] bindingSentEvents;
         [HideInInspector] public int deferredVariableCount;
         private bool _isEncoding;
+        private bool _targetPayloadBudgetActive;
 
         [HideInInspector] public int encodedObjectCount;
         [HideInInspector] public int queuedRpcCount;
@@ -106,6 +111,8 @@ namespace K13A.TSMP
         [HideInInspector] public int rpcMessageCount;
         [HideInInspector] public int payloadBytes;
         [HideInInspector] public int usablePayloadBytes;
+        [HideInInspector] public int effectivePayloadBudgetBytes;
+        [HideInInspector] public int deferredRpcCount;
         [HideInInspector] public int bindingCount;
         [HideInInspector] public int autoVariableCount;
         [HideInInspector] public int lastEncodeStage;
@@ -191,6 +198,7 @@ namespace K13A.TSMP
             blockSize = Mathf.Max(1, blockSize);
             sampleSize = FrameHeader.ClampDecodeSampleSize(sampleSize, blockSize);
             maxPayloadBytes = NetworkPayloadBuffer.ClampCapacity(maxPayloadBytes);
+            targetPayloadBytes = Mathf.Clamp(targetPayloadBytes, 0, NetworkFrameProtocol.MaximumPayloadBytes);
             transRpcRepeatFrames = Mathf.Clamp(transRpcRepeatFrames, 1, 16);
         }
 
@@ -243,6 +251,7 @@ namespace K13A.TSMP
         private void EncodeFrame()
         {
             lastError = string.Empty;
+            deferredRpcCount = 0;
 
             if (output == null)
             {
@@ -272,6 +281,9 @@ namespace K13A.TSMP
 
             usablePayloadBytes = codec.GetPayloadCapacityBytes(width, height, blockSize);
             EnsurePayloadBufferCapacity(usablePayloadBytes);
+            _targetPayloadBudgetActive = targetPayloadBytes > 0;
+            effectivePayloadBudgetBytes = NetworkPayloadBuffer.ResolveWriteLimit(targetPayloadBytes,
+                Mathf.Min(maxPayloadBytes, usablePayloadBytes));
 
             if (!BuildNetworkPayload())
             {
@@ -291,6 +303,11 @@ namespace K13A.TSMP
             if (payloadBytes > usablePayloadBytes)
             {
                 SetLastError($"Payload does not fit. payload={payloadBytes}, usable={usablePayloadBytes}.");
+                return;
+            }
+            if (payloadBytes > effectivePayloadBudgetBytes)
+            {
+                SetLastError("Payload exceeds the transmission budget.");
                 return;
             }
 
@@ -392,6 +409,7 @@ namespace K13A.TSMP
                 if (configuredCapacity >= NetworkFrameProtocol.NetworkHeaderBytes)
                     capacity = Mathf.Min(capacity, configuredCapacity);
             }
+            capacity = NetworkPayloadBuffer.ResolveWriteLimit(targetPayloadBytes, capacity);
 
             if (!EncoderNativeFrameBuilder.ValidateRpc(rpc, ref _rpcValidationBuffer, capacity, out string error))
             {
@@ -442,7 +460,7 @@ namespace K13A.TSMP
                 ref _currentMessageStartOffset,
                 ref _currentVariableCount,
                 frameIndex,
-                Mathf.Min(maxPayloadBytes, usablePayloadBytes),
+                effectivePayloadBudgetBytes,
                 out messageCount,
                 out variableMessageCount,
                 out rpcMessageCount,
@@ -451,9 +469,11 @@ namespace K13A.TSMP
                 _sendState,
                 _sendTime,
                 transSyncRefreshInterval,
-                SetLastError);
+                SetLastError,
+                _targetPayloadBudgetActive);
 
             queuedRpcCount = _queuedRpcs.Count;
+            deferredRpcCount = _targetPayloadBudgetActive && queuedRpcCount > 0 && rpcMessageCount == 0 ? 1 : 0;
             if (!result)
                 lastError = error;
             return result;
@@ -548,6 +568,11 @@ namespace K13A.TSMP
                 _payloadOffset = valueStartOffset;
                 return false;
             }
+            if (nextOffset > GetManualPayloadWriteLimit(_payload.Length))
+            {
+                lastError = "Manually written field exceeds the transmission budget.";
+                return false;
+            }
 
             _payloadOffset = nextOffset;
             _currentVariableCount++;
@@ -571,6 +596,7 @@ namespace K13A.TSMP
         private Color32[] _luma4Colors;
         private bool _usingBlockTexture;
         private bool _frameOpen;
+        private bool _pendingRpcWritten;
         private int _payloadOffset;
         private int _messageCount;
         private int _currentMessageStartOffset = -1;
@@ -731,6 +757,8 @@ namespace K13A.TSMP
             int nextMessageType;
             if (!EncoderUdonFrameWriter.BeginVariableState(_payloadBytes, _payloadOffset, _currentMessageStartOffset, frameIndex, networkId, out nextPayloadOffset, out nextMessageStartOffset, out nextVariableCount, out nextRpcArgumentCount, out nextMessageType, out error))
                 return Fail(error);
+            if (nextPayloadOffset > GetManualPayloadWriteLimit(_payloadBytes.Length))
+                return Fail("VariableState header exceeds the transmission budget.");
 
             _payloadOffset = nextPayloadOffset;
             _currentMessageStartOffset = nextMessageStartOffset;
@@ -777,6 +805,8 @@ namespace K13A.TSMP
             int nextMessageType;
             if (!EncoderUdonFrameWriter.BeginRpcCall(_payloadBytes, _payloadOffset, _currentMessageStartOffset, frameIndex, networkId, rpcHash, out nextPayloadOffset, out nextMessageStartOffset, out nextVariableCount, out nextRpcArgumentCount, out nextMessageType, out error))
                 return Fail(error);
+            if (nextPayloadOffset > GetManualPayloadWriteLimit(_payloadBytes.Length))
+                return Fail("RpcCall header exceeds the transmission budget.");
 
             _payloadOffset = nextPayloadOffset;
             _currentMessageStartOffset = nextMessageStartOffset;
@@ -827,6 +857,19 @@ namespace K13A.TSMP
             if (string.IsNullOrEmpty(methodName))
                 return false;
 
+            if (targetPayloadBytes > 0)
+            {
+                int capacity = NetworkFrameProtocol.MaximumPayloadBytes;
+                if (output != null && (selectedCodec != null || selectedCodecUdonTarget != null))
+                {
+                    _codecQueryValid = false;
+                    capacity = GetPayloadCapacityBytes();
+                }
+                int limit = NetworkPayloadBuffer.ResolveWriteLimit(targetPayloadBytes, capacity);
+                if (GetTransRpcMessageBytes(methodName) > limit - NetworkFrameProtocol.NetworkHeaderBytes)
+                    return Fail("TransRPC does not fit the transmission budget.");
+            }
+
             EnsurePendingRpcQueue();
             if (_pendingRpcCount >= MaxPendingTransRpcs)
                 return Fail("TransRPC queue is full.");
@@ -873,6 +916,7 @@ namespace K13A.TSMP
             lastError = string.Empty;
             _sendTime = GetSendTime();
             deferredVariableCount = 0;
+            deferredRpcCount = 0;
             _codecQueryValid = false;
             EnsureResources();
 
@@ -890,13 +934,15 @@ namespace K13A.TSMP
 
             usablePayloadBytes = GetPayloadCapacityBytes();
             EnsurePayloadBufferCapacity(usablePayloadBytes);
+            _targetPayloadBudgetActive = targetPayloadBytes > 0;
+            effectivePayloadBudgetBytes = NetworkPayloadBuffer.ResolveWriteLimit(targetPayloadBytes,
+                Mathf.Min(usablePayloadBytes, _payloadBytes.Length));
 
             if (!_frameOpen)
                 BeginFrameInternal();
             if (!_frameOpen)
                 return;
 
-            bool wrotePendingRpc = _pendingRpcCount > 0;
             if (!WritePendingRpcCalls())
             {
                 AbortEncode(lastError);
@@ -937,6 +983,11 @@ namespace K13A.TSMP
                 AbortEncode("Payload does not fit. payload=" + payloadBytes + ", usable=" + usablePayloadBytes + ".");
                 return;
             }
+            if (payloadBytes > effectivePayloadBudgetBytes)
+            {
+                AbortEncode("Payload exceeds the transmission budget.");
+                return;
+            }
 
             BuildHeader();
 
@@ -959,7 +1010,7 @@ namespace K13A.TSMP
 
             lastEncodeStage = 6;
             frameIndex++;
-            if (wrotePendingRpc)
+            if (_pendingRpcWritten)
                 AdvancePendingRpcQueue();
 
             if (clearAfterEncode)
@@ -969,10 +1020,17 @@ namespace K13A.TSMP
         private bool WritePendingRpcCalls()
         {
             queuedRpcCount = _pendingRpcCount;
+            _pendingRpcWritten = false;
             if (_pendingRpcCount <= 0)
                 return true;
 
-            return WritePendingRpcCall(0);
+            if (_targetPayloadBudgetActive && GetTransRpcMessageBytes(_pendingRpcMethodNames[0]) > effectivePayloadBudgetBytes - _payloadOffset)
+            {
+                deferredRpcCount = 1;
+                return true;
+            }
+            _pendingRpcWritten = WritePendingRpcCall(0);
+            return _pendingRpcWritten;
         }
 
         private bool WritePendingRpcCall(int index)
@@ -1073,7 +1131,7 @@ namespace K13A.TSMP
             EnsureBeforeEncodeTargetCache(count);
             _beforeEncodeTargetCount = 0;
             BeginBoundVariableWrite();
-            int limit = Mathf.Min(usablePayloadBytes, _payloadBytes.Length);
+            int limit = effectivePayloadBudgetBytes;
             for (int i = 0; i < count; i++)
                 _sendPendingLengths[i] = 0;
 
@@ -1274,6 +1332,8 @@ namespace K13A.TSMP
             int nextVariableCount;
             if (!EncoderUdonFrameWriter.WriteVariableValue(_payloadBytes, _payloadOffset, _currentMessageStartOffset, _currentMessageType, _currentVariableCount, variableHash, valueType, value, out nextPayloadOffset, out nextVariableCount, out error))
                 return Fail(error);
+            if (nextPayloadOffset > GetManualPayloadWriteLimit(_payloadBytes.Length))
+                return Fail("Manually written field exceeds the transmission budget.");
 
             _payloadOffset = nextPayloadOffset;
             _currentVariableCount = nextVariableCount;
@@ -1287,6 +1347,8 @@ namespace K13A.TSMP
             int nextRpcArgumentCount;
             if (!EncoderUdonFrameWriter.WriteRpcArgument(_payloadBytes, _payloadOffset, _currentMessageStartOffset, _currentMessageType, _currentRpcArgumentCount, valueType, value, out nextPayloadOffset, out nextRpcArgumentCount, out error))
                 return Fail(error);
+            if (nextPayloadOffset > GetManualPayloadWriteLimit(_payloadBytes.Length))
+                return Fail("RPC argument exceeds the transmission budget.");
 
             _payloadOffset = nextPayloadOffset;
             _currentRpcArgumentCount = nextRpcArgumentCount;
@@ -1592,6 +1654,20 @@ namespace K13A.TSMP
 
 #endif
 
+        private int GetManualPayloadWriteLimit(int bufferLength)
+        {
+            if (_isEncoding)
+                return effectivePayloadBudgetBytes;
+            return NetworkPayloadBuffer.ResolveWriteLimit(targetPayloadBytes, bufferLength);
+        }
+
+        private int GetTransRpcMessageBytes(string methodName)
+        {
+            return NetworkFrameProtocol.MessageHeaderBytes + NetworkFrameProtocol.RpcCallBodyHeaderBytes
+                + 2 * NetworkFrameProtocol.RpcArgumentHeaderBytes + NetworkFrameProtocol.Int32Bytes
+                + Utf8.GetByteCount(methodName, NetworkFrameProtocol.MaximumPayloadBytes + 1);
+        }
+
         private bool TryWriteGpuLuma4(byte[] header, byte[] payload, int count, int startRow, float background)
         {
             if (!useGpuLuma4 || !useBlockSymbolTexture)
@@ -1650,7 +1726,7 @@ namespace K13A.TSMP
         private void ReportDeferredVariables()
         {
             if (deferredVariableCount > 0)
-                LogTSMPWarning(LogPrefix, "Payload capacity deferred " + deferredVariableCount + " TransSync field(s). Increase output capacity or reduce field size/send frequency.", debugLog, 1f);
+                LogTSMPWarning(LogPrefix, "Payload limit deferred " + deferredVariableCount + " TransSync field(s). Increase the target budget/output capacity or reduce field size/send frequency.", debugLog, 1f);
         }
 
         private void SetLastError(string error)
