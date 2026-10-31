@@ -8,6 +8,8 @@ See [CODEC-OPTIMIZATION-REVIEW.md](CODEC-OPTIMIZATION-REVIEW.md) for the subsequ
 
 The [implemented performance results](../ColorRaster/RESULTS.md) record Native raster reuse and RGB16 refinement improvements, production-path verification and measured limitations.
 
+The subsequent [receiver robustness results](../RefineRobustness/RESULTS.md) measure CRC-gated RGB16/Color256 recovery on the same videos and a new seeded input, correct low-bit RGB16 byte assembly, and record GPU costs and the decision to leave header recovery off by default.
+
 ## Measuring other codecs
 
 `Run-CodecTransportFixture.ps1 -UnityEditor <exe> -Project <Native-project> -Plan <json> -Results <new-directory>` calls each production prefab's `TryWriteFrame`. Its plan contains `fixtures`, each with a unique `name`, `codecPrefabPath` and `sourceFixtureDirectory`. The source is a completed fixture from `Generate-Transport-Fixture.py`. Payload bins are reused unchanged; codec ID, symbol mode and actual prefab options are stamped into the header with valid CRC. This preserves equal byte loads across codecs. Generated PNG/header/payload hashes and package source hashes are recorded. Generation completion does not certify raster or transport accuracy.

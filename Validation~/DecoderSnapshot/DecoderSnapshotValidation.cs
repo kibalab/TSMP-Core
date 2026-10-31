@@ -202,7 +202,9 @@ public sealed class DecoderSnapshotValidation : MonoBehaviour
 
     static IEnumerator Drain(TSMPDecoder decoder)
     {
-        float deadline = Time.realtimeSinceStartup + 60;
+        // First use can synchronously compile a recovery shader variant in the
+        // Editor. Keep the correctness deadline separate from performance data.
+        float deadline = Time.realtimeSinceStartup + 180;
         while (decoder.readbackInFlight && Time.realtimeSinceStartup < deadline) yield return null;
         Check(!decoder.readbackInFlight, "Readback timeout: stage=" + Field<int>(decoder, "_decodeStage") +
             "; frame=" + decoder.lastFrameIndex + "; error=" + decoder.lastError);
