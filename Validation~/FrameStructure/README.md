@@ -23,6 +23,7 @@ projects, then run:
 ```powershell
 ./Validation~/FrameStructure/Run-Validation.ps1 -UnityEditor '<Unity.exe>' -Project '<Native>' -Results '<fresh Native results>'
 ./Validation~/FrameStructure/Run-Validation.ps1 -UnityEditor '<Unity.exe>' -Project '<VRC>' -Results '<fresh VM results>' -Vm
+./Validation~/FrameStructure/Run-Validation.ps1 -UnityEditor '<Unity.exe>' -Project '<Native>' -Results '<fresh allocation-only results>' -AllocationOnly
 ```
 
 Native invokes the actual private protected-payload completion path. Udon freshly
@@ -34,7 +35,11 @@ tests, not GPU/raster/video/VRChat-client measurements.
 
 The helper is also compared with an independently framed parser on 1,012 inputs,
 including seeded mutations and zero-message/max-count/zero-argument controls.
-Warmed Native allocation checks cover 1,000 helper calls. VM timings include event
+Warmed Native allocation checks cover 1,000 helper calls after an 8,192-byte
+positive allocation control kept alive across the counter read. A failed control
+reports `VerifiedAllocatedBytes=-1` (unavailable), never a verified zero.
+`-AllocationOnly` repeats this probe without rerunning the structural corpus or
+completion regressions. VM timings include event
 dispatch and isolate the new structural pass; they exclude input setup, CRC,
 payload copying and application. The raw CSV column named `messages` records
 **variable-entry count**, including the final RawBytes field; every timed fixture

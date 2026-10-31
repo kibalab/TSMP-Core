@@ -3,9 +3,11 @@ param(
     [Parameter(Mandatory=$true)][string]$Project,
     [Parameter(Mandatory=$true)][string]$Results,
     [switch]$Vm,
+    [switch]$AllocationOnly,
     [ValidateRange(30,3600)][int]$TimeoutSeconds=900
 )
 $ErrorActionPreference='Stop'
+if($Vm -and $AllocationOnly){throw 'AllocationOnly is a Native counter probe'}
 $structureProject=(Resolve-Path -LiteralPath $Project).Path
 if(-not(Test-Path -LiteralPath (Join-Path $structureProject 'ProjectSettings/ProjectVersion.txt'))){throw 'Use a dedicated validation project'}
 if((Test-Path -LiteralPath $Results) -and @(Get-ChildItem -LiteralPath $Results -Force).Count -gt 0){throw 'Use fresh results'}
@@ -20,7 +22,7 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Runtime'),(Join-Path $PSScriptR
 $structurePrevious=$env:TSMP_STRUCTURE_RESULTS
 try{
     $env:TSMP_STRUCTURE_RESULTS=$structureResults
-    $structureMethod=if($Vm){'FrameStructureValidation.RunVm'}else{'FrameStructureValidation.Run'}
+    $structureMethod=if($Vm){'FrameStructureValidation.RunVm'}elseif($AllocationOnly){'FrameStructureValidation.RunAllocation'}else{'FrameStructureValidation.Run'}
     $structureLog=Join-Path $structureResults 'editor.log'
     $structureArguments="-batchmode -nographics -projectPath `"$structureProject`" -executeMethod $structureMethod -logFile `"$structureLog`""
     $structureProcess=Start-Process -FilePath $UnityEditor -ArgumentList $structureArguments -WindowStyle Hidden -PassThru

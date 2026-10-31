@@ -30,7 +30,13 @@ are retained; arbitrary callback side effects are not transactional.
 Native 1,257 assertions, existing Core recovery 910 assertions, actual Decoder
 Udon VM 3,858 assertions and sixteen client program compilations/bindings pass.
 Corrected retransmissions execute their RPC once after malformed predecessors
-are rejected. Warmed Native structural checks allocate 0 B in 1,000 calls.
+are rejected. The original warmed Native structural check recorded a raw 0 B
+delta in 1,000 calls, without calibrating its allocation counter. A follow-up
+8,192-byte positive control also returned zero, so this environment's counter
+is unavailable: **the previous result does not verify zero allocation**. The
+corrected probe reports verified allocation as -1 when calibration fails. This
+does not invalidate the separate correctness or timing results. Follow-up
+evidence: `F:/Unity/TSMP/Validation-Results/next-improvements-20261101/allocation/native`.
 
 The additional structural pass costs about **0.020 ms** for one RawBytes field
 in the SDK Editor VM, including event dispatch. At the same 5,375-byte payload,
@@ -66,8 +72,11 @@ choose a different budget only against an application's delivery/latency needs.
 
 These are repeated fixed-input invocations, not sustained two-slot delivery Hz.
 The first broad RGB16 graphics preparation took 96.272 seconds outside the timed
-samples; later preparations took about 9–11 ms. Its cause is unisolated and cold
-client behavior remains unverified. See [RefineCost](../RefineCost/RESULTS.md).
+samples; later preparations took about 9–11 ms. That warmup draws four material
+variants at each of three modes, while the default 4/4/4 receiver selects one
+fixed material. The broad warmup is not a measured default receiver startup
+time. Its original cause and cold client behavior remain unverified.
+See [RefineCost](../RefineCost/RESULTS.md).
 
 ## Fixed payload budgets: packet success and useful state differ
 

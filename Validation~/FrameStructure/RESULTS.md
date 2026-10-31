@@ -25,8 +25,10 @@ Evidence: `F:/Unity/TSMP/Validation-Results/followup-performance-20261031/frame-
   bindings, using the existing full-client compilation validation.
 - The 1,012-input reference corpus includes seeded framing mutations, logical
   length/dirty capacity tails, zero messages, maximum declared count and zero RPC
-  arguments. Warmed Native preflight allocation is **0 B in 1,000 calls**; this
-  does not establish Udon allocation behavior.
+  arguments. The original run recorded a raw allocation-counter delta of zero
+  over 1,000 warmed helper calls. **That is not a verified zero-allocation
+  result:** its counter lacked a positive control. The follow-up below shows
+  that this Unity Mono counter is unavailable on the measured installation.
 
 Decoder client bytecode is **138,380 B**, versus 135,744 B at the Sparse-only
 rollback, an increase of 2,636 B. Application mode traverses message/entry headers
@@ -60,3 +62,17 @@ which is unsupported. It remains under `vrc/`. The harness was corrected to ente
 Play Mode and recompile for the client before VM construction; production sources
 were unchanged between attempts. Final harness sources and hashes are preserved
 with the final runs. No compiler errors were suppressed.
+
+## Allocation-counter correction, 2026-11-01
+
+`F:/Unity/TSMP/Validation-Results/next-improvements-20261101/allocation/native`
+reruns only the warmed Native allocation probe, with an observable 8,192-byte
+array allocation and `GC.KeepAlive` before the 1,000 preflight calls. Unity
+2022.3.22f1 reports **0 B even for the known allocation**. The calibrated counter
+is therefore invalid; `VerifiedAllocatedBytes=-1` means unavailable, while both
+raw deltas remain preserved as zero. Four harness assertions pass. This does not
+establish an allocation defect or alter earlier correctness/timing results.
+
+The harness now gates its zero-allocation assertion on a successful positive
+control, emits `allocation-counter.txt`, and reports unavailable instead of a
+false zero when the counter fails. Earlier immutable evidence is retained.

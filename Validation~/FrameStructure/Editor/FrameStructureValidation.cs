@@ -174,12 +174,36 @@ public static class FrameStructureValidation
         Check(!NetworkFrameReader.TryValidateNetworkFrame(null, 8, out _, out _), "Null accepted");
         Check(!NetworkFrameReader.TryValidateNetworkFrame(clean, -1, out _, out _), "Negative length accepted");
         Check(!NetworkFrameReader.TryValidateNetworkFrame(clean, int.MaxValue, out _, out _), "Overflow length accepted");
+        AllocationCheck(clean);
+        Results.Add("PASS independent framing corpus=1012 including zero-message/max-count/zero-argument RPC, logical lengths/dirty tails.");
+    }
+    static void AllocationCheck(byte[] clean)
+    {
         for (int i = 0; i < 10; i++) NetworkFrameReader.TryValidateNetworkFrame(clean, clean.Length, out _, out _);
-        long allocated = GC.GetAllocatedBytesForCurrentThread();
+        long controlBefore = GC.GetAllocatedBytesForCurrentThread();
+        var control = new byte[8192];
+        long controlDelta = GC.GetAllocatedBytesForCurrentThread() - controlBefore;
+        GC.KeepAlive(control);
+        bool valid = controlDelta >= 8192;
+        long before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 1000; i++) NetworkFrameReader.TryValidateNetworkFrame(clean, clean.Length, out _, out _);
-        allocated = GC.GetAllocatedBytesForCurrentThread() - allocated;
-        Check(allocated == 0, "Preflight allocated warmed managed bytes: " + allocated);
-        Results.Add("PASS independent framing corpus=1012 including zero-message/max-count/zero-argument RPC, logical lengths/dirty tails, warmed Native preflight allocations=0 B/1000 calls.");
+        long rawDelta = GC.GetAllocatedBytesForCurrentThread() - before;
+        // Some Unity Mono versions expose the API but always return zero. A zero
+        // is evidence of no allocation only after an observable positive control.
+        if (valid) Check(rawDelta == 0, "Preflight allocated warmed managed bytes: " + rawDelta);
+        string allocation = "PositiveControlBytes=8192\nPositiveControlDelta=" + controlDelta +
+            "\nCounterValid=" + valid + "\nCalls=1000\nRawDelta=" + rawDelta +
+            "\nVerifiedAllocatedBytes=" + (valid ? rawDelta : -1) + "\n";
+        File.WriteAllText(Path.Combine(Root, "allocation-counter.txt"), allocation);
+        Results.Add(valid ? "PASS calibrated warmed Native preflight allocations=" + rawDelta + " B/1000 calls."
+            : "UNAVAILABLE Native allocation counter failed 8192-byte positive control; raw helper delta=" + rawDelta + "; verified allocations=-1 (not zero).");
+    }
+    public static void RunAllocation()
+    {
+        Exception failure = null;
+        try { Begin("Native allocation-only positive-control validation"); AllocationCheck(Packet(0)); }
+        catch (Exception error) { failure = error; }
+        Finish(failure);
     }
 #if !UDONSHARP
     static void Set(TSMPDecoder decoder, string name, object value) => typeof(TSMPDecoder).GetField(name, Private).SetValue(decoder, value);
