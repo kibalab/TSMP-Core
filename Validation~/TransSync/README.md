@@ -41,6 +41,18 @@ $vrc = 'F:/Unity/TSMP/Validation-VRC'
 
 Both suites also check component send mode overrides, live switching, refresh and minimum interval preservation. Native tests cover independent instances sharing metadata, serialized multi-edit and undo. Run `TransSync` in the SDK project as well to check editor proxy mode reads. `EditorEncoding` checks stationary Transform output across all three modes in both editor paths. Recorded results for that addition are in [Component Send Mode](./COMPONENT-SEND-MODE.md).
 
+The variable snapshot regression executes grow/shrink/empty transitions with a
+shared byte prefix, reference-equivalent unchanged values and a valid-byte
+mutation. Failed output and capacity deferral must preserve the last successful
+snapshot; retry sends the latest value, and reset starts fresh. Public generic
+helpers must still detect an opaque same-prefix length change and return an
+independent exact-size snapshot. If an experimental private snapshot retains
+excess capacity, the suite mutates its unused tail and verifies it cannot cause
+a false send. A final exact-length product reports zero such tail checks rather
+than pretending that optional branch executed. Native/current/minimum-SDK
+results for the guarded experiment are recorded in
+[Binding cost and tail follow-up](../BindingCost/RESULTS.md).
+
 ## Recorded Results: 2026-09-12
 
 Core worktree: `F:/Unity/TSMP/TSMP-Core-main`, branch `fix/runtime-bugs`, based on `6695f2d` plus this uncommitted feature. Unity 2022.3.22f1; Worlds SDK 3.10.4-beta.2 with bundled UdonSharp; Luma4 0.0.3; NVIDIA GeForce RTX 4090; Direct3D11.

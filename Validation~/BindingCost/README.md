@@ -54,14 +54,47 @@ refresh to zero so unchanged serialization cost can be compared without an
 elapsed-time-dependent periodic transmission. Garbage collection is requested
 between cases outside measured calls; no zero-allocation claim is made.
 
-The [tail review](RESULTS.md#current-tail-review-frequency-and-measurement-limits)
-also identifies significant out-of-timer verification allocations: single-target
-identity searches evaluate N squared name/hash predicates per full packet, and
-packet/slot arrays and file writes occur between calls. They can affect later
-heap state. No per-sample GC trace establishes their cause. Keep cold paths and
-per-process clusters separate; N=96 nearest-rank p99 equals the maximum and does
-not establish real-world incidence. The proposed lower-overhead harness has not
-been implemented or remeasured in this review.
+The historical [tail review](RESULTS.md#current-tail-review-frequency-and-measurement-limits)
+identified out-of-timer verification allocations and quadratic identity searches.
+The current harness builds a collision-checked identity index once per case,
+reuses callback/injection arrays and buffers bounded packet/header snapshots and
+timing structs. Raw files and CSV formatting happen after the case. Every packet,
+CRC, float and callback check remains; failed calls retain a partial row and any
+captured bytes. This reduces observer interference without changing product
+Runtime. Source setup, reflection/boxing and decoding still consume host work.
+Keep cold paths and per-process clusters separate; N=96 nearest-rank p99 equals
+the maximum and does not establish real-world incidence.
+
+Add `-Telemetry` for a separate diagnostic run. The default starts no profiler
+recorders and performs no telemetry controls or extra waits. Opt-in telemetry
+enumerates available metrics, checks known allocation and forced-GC positive
+controls, then resets **and restarts** frame recorders before warmup. Running
+flags and sample counts accompany every observation. Unsupported scoped Mono
+allocation values are `-1`, not zero. Profiler values are the latest available
+samples, with no exact frame ID or individual VM-call attribution. Global
+collection-count deltas can locate collection activity within an observation
+window, but cannot explain every spike or establish a product allocation rate.
+Use a separately frozen off/on/on/off comparison; instrumentation is not free.
+
+`Run-VariableLength.ps1` exercises the actual compiled Encoder and Decoder with
+RawBytes, a GPU Luma4 publication and independently owned duplicate receive
+bindings. Freeze a JSON plan containing `cases` with `name`, `warm`, `samples`,
+`lengths`, `sourceMode` (`reuse`, `fresh` or `pooled`) and `unchanged`. For example,
+compare fixed 1024 bytes with alternating `[1024,1041]`, using fresh and pooled
+producer arrays separately. The 17-byte difference matches a root pose record's
+width; this remains synthetic RawBytes, not a real avatar or transport trace.
+
+```powershell
+./Validation~/BindingCost/Run-VariableLength.ps1 -UnityEditor '<Unity.exe>' -Project '<dedicated SDK project>' -Plan '<frozen variable plan.json>' -Results '<fresh results>'
+```
+
+The variable fixture records producer allocations, private snapshot identity,
+capacity and header-derived valid length, exact receiver lengths/ownership,
+phase timings and protected packet/header bytes. Receiver mutation must not alter
+the other receiver or sender snapshot. Unchanged and warm calls remain in the
+evidence. The injected Decoder path excludes receiver GPU/transport work, just
+as in the scalar fixture. Snapshot reuse alone does not prove a maximum-latency
+or global-GC improvement.
 
 Use an exclusive lease on the dedicated project and GPU. Preserve failed runs,
 source receipts and configuration receipts. Results on this host do not establish

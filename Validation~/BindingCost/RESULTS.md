@@ -1,8 +1,201 @@
-# Indexed BeforeEncode target cache, 2026-11-01
+# Binding cost and tail follow-up, 2026-11-01
+
+## Private variable snapshot experiment: not adopted
+
+A three-file prototype lets only the two private complete-entry callers retain
+snapshot capacity. The complete seven-byte entry header includes the valid body
+length, so full-prefix comparison still detects shortening and same-prefix
+length changes. Public generic ShouldSend/Snapshot remain strict and unchanged;
+there are no new fields, settings, length metadata or second buffers. Native,
+current SDK and minimum SDK 3.9.0 pass the candidate contracts, including real
+dirty-capacity-tail checks, failed/deferred-send preservation, retry/reset and
+exact independently owned public arrays. The proposed retained-memory cost is
+the largest successfully sent entry per binding until reset/rebuild.
+
+Before the variable pilot or formal product timings, freeze ABBA order, both
+plans and all adoption guards. Four source-variant runs each use separate fresh
+variable and scalar processes, for eight processes total; telemetry is off and
+the validated lower-interference harness is identical. Variable cases have
+2,048 measured calls per variant; four focused scalar cases have 1,024, and
+the other eight have 64. Smaller-case nearest-rank p99 equals the maximum.
+No initial failure, sample or outlier is discarded or used for a repeat-to-pass.
+
+Both alternating variable cases eliminate **2,048 -> 0** measured private
+snapshot replacements after warmup. Producer byte-array creation and both receiver
+replacement counts remain identical across source variants. In the pooled
+case, producer byte-array creation is zero, but each exact-length receiver still
+replaces its array 2,048 times. Fixed-length snapshots never reallocate in
+either variant. Capacity observations top out at 1,048 bytes (seven-byte header
+plus 1,041-byte body); this is not a global allocation or GC reduction claim.
+
+| Variable workload | Original/candidate Encode mean ms | p99 ms | Maximum ms |
+| --- | ---: | ---: | ---: |
+| Alternating, fresh producer | 0.6389 / 0.6327 | 0.8041 / 0.7960 | 1.7634 / 1.6079 |
+| Alternating, pooled producer | 0.6358 / 0.6294 | 0.8177 / 0.8043 | **1.4947 / 1.8614** |
+| Fixed length, changing | **0.6285 / 0.6643** | 0.7810 / 0.8121 | **1.3922 / 2.3227** |
+| Fixed length, unchanged | 0.4234 / 0.4137 | 0.5449 / 0.5233 | 1.3143 / 1.0861 |
+
+The pooled case's combined Encode+Decode maximum rises 2.4958 -> 3.1925 ms
+(27.91%); the fixed-changing mean rises 5.69%. Some other results improve:
+fresh-producer combined maximum falls 3.2399 -> 2.1819 ms, and fixed-changing
+combined maximum falls 8.1184 -> 2.9766 ms. All results count; selecting only
+the allocation or favorable combined maximum would misstate the experiment.
+
+The pooled producer's worst Encode and combined values occur on the same one
+of 2,048 candidate observations; the other candidate process peaks at 1.4596 ms.
+By contrast, fixed-changing mean rises in both matched pairs (about 8.06% and
+3.37%), and median rises 0.61245 -> 0.6550 ms. Its observations above the
+original p95 rise 102 -> 229 of 2,048. That mean failure cannot be explained
+solely by its one 2.3227 ms maximum. These are process-correlated synthetic
+observations, not real-world probabilities or proof of product causation.
+
+Scalar controls also fail upper-tail guards: 32 fields/one target/changing
+Encode maximum is 2.1266 -> 8.3516 ms, 128 fields/one target 11.5324 ->
+13.7603 ms, and 128 distinct changing targets 16.8927 -> 26.7521 ms. The
+last case's p99 is almost unchanged at 12.7758/12.7781 ms. These observations
+do not establish that the source change caused the spikes. They do establish
+that this trial cannot support adopting it to reduce maximum latency.
+
+The frozen limits require every case's Encode mean <=102%, Encode p99/maximum
+and combined p99/maximum <=105%, plus correctness, warm allocation and bytecode
+guards. **Fifteen metric guards fail**, including duplicate p99/maximum checks
+on small cases. Correctness and allocation checks pass, and Encoder bytecode
+remains 137,576 bytes. The three Runtime files are restored byte for byte in
+the repository, Native project, current SDK project and minimum SDK project.
+No additional timing attempt is made. This round retains validation improvements
+and regression coverage, with **no new product Runtime optimization**.
+
+Frozen policy is `plans/product-and-telemetry-policy.json` (SHA256
+`8210ef983b89f25d19a1ee76e15173cc653ceed4bf998322b74f1ee6fb18be00`).
+`product-ab` retains the manifest, all eight raw outputs, independent audits,
+complete per-case distributions, adoption calculation and selected-source copy
+receipts. These data are separate from the old/new measurement-method and GC
+instrumentation comparisons below.
+
+Independent product audits pass all 16,640 variable calls, 12,484 protected
+pairs and 12,854,336 field bytes, with 6,242 byte-identical paired payloads.
+Scalar audits pass 9,600 calls, 7,056 protected pairs, 619,200 floats and 3,528
+paired payloads. Independent exact-rational gate arithmetic agrees with all
+fifteen failures. Audit integrity PASS remains separate from adoption FAIL.
+The final restored product passes fresh Native/current/minimum-SDK scheduling,
+Native GPU loopback (11 frames), current-SDK client compilation (16 programs)
+and minimum-SDK compilation (13 programs), both with generated bindings.
+
+The practical next priority is representative packed-pose/field and binding
+change measurements, then repeated Decoder batch cost and actual per-frame
+completion counts. Existing MinSendInterval skips before serialization; due
+OnChange fields still serialize. Packed fields already exist in shipped pose
+components. A payload-byte limit is not a CPU budget, and lower call rate does
+not bound one call. New queues, CPU budgets or reduced recovery are not justified
+by this experiment. Real VRChat, production refresh/rate, receiver GPU waits,
+OBS/CDN loss and binding-change frequency remain unmeasured here.
+
+## Lower-interference measurement implementation
+
+The current harness removes repeated identity/name/hash searches, reuses callback
+and Decoder injection arrays, and buffers bounded packet/header snapshots and
+timing structs until each case ends. All packet/CRC/value/callback checks remain.
+An intentional packet corruption fails on the first measured call and preserves
+nine partial observations and raw bytes. This improves validation; it is **not a
+shipped Runtime optimization or proof that product maximum latency fell**.
+
+Six fresh SDK Editor processes compare old/new harnesses in AB/BA/AB order on
+identical product sources, programs and configurations. Four focused conditions
+have 1,024 measured calls/process, and eight other cases keep 32. The table pools
+3,072 focused calls per harness, uses nearest-rank percentiles and retains every
+outlier. These are actual compiled Udon custom-event timings with GPU Luma4
+submission; Decode receives injected completed packet bytes and excludes receiver
+capture/GPU/transport work.
+
+| Fields / targets / changes | Old/new Encode p99 ms | Old/new Encode maximum ms |
+| --- | ---: | ---: |
+| 32 / 1 / all | 1.9625 / 1.9038 | 6.2915 / 3.9861 |
+| 128 / 1 / all | 10.6724 / 9.7874 | 17.2543 / 10.7576 |
+| 128 / 128 / all | 13.6058 / 12.7594 | 23.0927 / 15.6050 |
+| 128 / 128 / none | 9.4948 / 9.5198 | 15.3919 / 10.1774 |
+
+The 128-field/one-target median gap between Encode end and Decode start falls
+from 2.8427 to 0.0470 ms. Observer work demonstrably mattered. However, that
+condition's Decode p99 is 28.1226/25.8435 ms while maximum is 40.0211/**45.7173**
+ms, with 3/4 of 3,072 observations above 33.33 ms. Distinct-target Decode has
+p99 29.9968/28.2659 ms, maximum 41.9948/38.5757 ms and four exceedances in each
+version. Both full 128-field Decode cases exceed 16.67 ms in **3,072/3,072**
+observations per harness. This exposes repeated batch work as well as occasional
+spikes; it does not establish real VRChat FPS or occurrences per second.
+
+Independent raw audit passes 26,688 Encode calls, 19,800 protected packet/header
+pairs, 1,813,536 Float32 values and 9,900 byte-identical paired payloads. Headers
+match except timestamps and their dependent header CRC. All 392 product source
+receipts, five loaded programs and 23 configurations are identical. Warm/cold
+observations and process clusters remain separate; these figures do not improve
+production startup, rebuilds or binding-churn behavior.
+
+### Calibrated GC diagnostics
+
+Telemetry is opt-in and observed outside VM timers. The known-allocation control
+shows the scoped Mono allocation counter is unusable here; it is recorded as
+unavailable (`-1`). Available frame allocation/used-memory/collection-marker
+recorders and global collection counts have positive controls. Generation counts
+advance together on this Boehm runtime and must not be summed.
+
+The initial c184 telemetry experiment is retained with its limitation: calling
+ProfilerRecorder.Reset stops collection. Frame counters were stopped during the
+timed workload, so those values are unavailable; direct global collection counts
+remain valid. A separate v2 source resets **and restarts** recorders, verifies
+7 -> 0 -> 7 running flags with live allocation/forced-GC/frame controls, and
+performs a newly frozen off/on/on/off experiment. No v1/v2 samples are pooled.
+See [Unity's Reset documentation](https://docs.unity3d.com/2022.3/Documentation/ScriptReference/Unity.Profiling.ProfilerRecorder.Reset.html).
+
+The v2 independent audit passes 9,600 Encode calls, 7,056 protected pairs,
+619,200 floats and 16,656 live recorder observations. All sources, five programs
+and configurations remain identical. Four focused conditions have 1,024 measured
+calls per mode. Encoder off/on means are 1.7225/1.7177, 9.2509/9.3527,
+11.9921/11.8785 and 9.0084/8.9856 ms. The second condition's p99 increases
+9.8178 -> 11.0811 ms; diagnostics are not a free or normalized timing baseline.
+Snapshot collection itself has median 1.2 microseconds and p99 3.8-3.9
+microseconds, excluding broader recorder/host overhead.
+
+All v2 measured on-mode Encode/Decode observation windows have zero direct
+collection-count delta, but a latest-available collection marker reports
+3.127 ms once. The initial v1 epoch has one 37.3745 ms Decode window with a
+collection-count increment, while its 37.5148 ms maximum has none. These are
+observations, not proof of cause: zero completed collections does not mean no GC
+work, profiler samples lack exact frame attribution, and collection work cannot
+explain every tail. Producer, host reflection, GPU submission and receiver work
+still exist. No zero-allocation claim is made.
+
+### Variable-length ownership and allocation fixture
+
+A separate fixture sends synthetic RawBytes of 1,024 bytes or alternating
+1,024/1,041 bytes through the actual compiled Encoder, GPU publication, protected
+packet and injected completed Decoder. The 17-byte delta matches a root pose
+record width, but this is not an actual avatar/API/OBS/CDN trace. Two receive
+bindings share a field identity and must own independent exact-length arrays;
+mutating one cannot modify the other or the sender snapshot.
+
+The corrected four-case pilot passes 832,524 assertions over 320 calls and 241
+protected pairs (248,144 independently checked field bytes). Alternating lengths
+replace the private sender snapshot on all 80 calls, even with a pooled producer
+that allocates no new source array. Both receivers also replace their exact-size
+arrays. Fixed-length and unchanged controls distinguish identity changes from
+content changes. Source generation is timed separately. The initial jagged-heap
+cast failure and partial bytes remain; the corrected fixture uses the actual
+Udon object-array representation rather than relabeling the failed run.
+
+Evidence root:
+`F:/Unity/TSMP/Validation-Results/tail-latency-implementation-20261101`.
+Formal harness evidence is under `harness-paired`, calibrated telemetry v2 under
+`telemetry-restart-followup`, and the corrected variable pilot under
+`pilot-variable-fixed`. Independent audit scripts/results and pinned executed
+sources are retained. The earlier missing-helper import failure, preliminary
+legacy run and c184 stopped-recorder epoch are preserved and excluded from
+unrelated comparisons. The original VM snapshot preflight also preserves an
+obsolete-private-cache assertion failure; its separately labeled follow-up
+checks observable once-per-source callback behavior and passes.
 
 ## Current tail review: frequency and measurement limits
 
-This read-only review uses the retained Float32 experiment at Core d88a3c8.
+This historical read-only review uses the retained Float32 experiment at Core d88a3c8.
 No product/fixture changes or new Unity timing runs are made. Earlier rejected
 Encoder/Decoder candidates and Color256 calibration copying remain withdrawn;
 their historical maxima are not current-product measurements.

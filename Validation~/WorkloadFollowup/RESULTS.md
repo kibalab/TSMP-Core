@@ -1,8 +1,64 @@
 # Workload follow-up, 2026-11-01
 
+## Maximum-latency implementation and guarded decision
+
+This round retains a lower-interference validation harness, calibrated opt-in
+GC diagnostics and variable-length/ownership regressions. It ships **no new
+Runtime optimization**: a small private snapshot-capacity prototype passes
+correctness but fails the frozen mean/upper-tail guards and is restored byte
+for byte in all four source locations. No retry selects away unfavorable data.
+CRC, recovery, two slots, scheduling defaults and the Float32/Timeline fixes
+remain intact. All work stays on codex/tsmp-optimization, without main merge,
+push, release or actual VRChat validation.
+
+The measurement-method comparison runs six fresh processes on identical
+Runtime. Four focused cases now have 3,072 measured calls per harness. Removing
+quadratic packet identity verification and temporary injection/file work reduces
+the 128-field/one-target median post-Encode verification gap from 2.8427 to
+0.0470 ms. Encode maxima fall 17.2543 -> 10.7576 ms for one target and
+23.0927 -> 15.6050 ms for 128 changing targets. These are observer effects,
+**not shipped Runtime speedups**. The one-target Decode maximum instead rises
+40.0211 -> 45.7173 ms; only four of 3,072 calls exceed 33.33 ms, but all
+3,072 full 128-field applications exceed 16.67 ms. Repeated batch work and
+occasional spikes need different treatment.
+
+Calibrated off/on/on/off telemetry cannot attribute all spikes to GC. Scoped
+Mono allocation remains unavailable. The initial stopped-recorder experiment
+is preserved; the separate corrected version restarts and positively verifies
+live counters, with all 16,656 observations passing validity/running checks.
+Profiler samples lack exact VM-call/frame attribution, and instrumentation has
+measurable overhead. No zero-allocation or real-world incidence claim follows.
+
+Eight separately frozen product processes compare four synthetic variable
+conditions and twelve scalar controls. Alternating 1,024/1,041-byte data shows
+2,048 -> 0 measured sender snapshot replacements per case, while exact-length
+receivers and producer byte-array creation remain unchanged. However, pooled-producer
+Encode maximum rises 1.4947 -> 1.8614 ms and combined maximum 2.4958 ->
+3.1925 ms; fixed-changing Encode mean rises 5.69%, and scalar controls also
+fail upper-tail guards. Fifteen metric guards fail overall. This does not prove
+the candidate caused every spike, but allocation removal alone does not justify
+its retained peak capacity or adoption for maximum-latency improvement.
+
+The final restored product passes fresh Native/current/minimum-SDK scheduling,
+Native GPU loopback (11 frames), 16 current-SDK and 13 minimum-SDK client program
+compilations, with automatic bindings. Prior candidate contracts also pass real
+capacity-tail checks; those are distinguished from final exact-length results.
+
+Next priority is measuring an actual representative packed-pose/field mix and
+binding changes with this harness, then profiling repeated Decoder batch work
+and real per-frame completion counts. Existing MinSendInterval and packed
+fields can reduce due work; OnChange still serializes due fields, payload bytes
+are not a CPU budget, and lowering call rate does not bound one call. Do not
+add an automatic CPU budget, new queue/mode or recovery compromise without
+evidence that its tradeoff improves the relevant workload.
+
+See [complete experiments, limitations and decisions](../BindingCost/RESULTS.md).
+Raw evidence and independent audits:
+`F:/Unity/TSMP/Validation-Results/tail-latency-implementation-20261101`.
+
 ## Current maximum-latency review
 
-The latest Float32 matrix does not show every maximum increasing. Across its
+This historical read-only Float32 review does not show every maximum increasing. Across its
 equally sampled 12 conditions, measured Encode maximum is 17.5793 ms original
 versus 15.5909 ms current; including warm calls it is 51.8879/53.3732 ms. These
 are different scopes and neither establishes a real VRChat maximum or frequency.
