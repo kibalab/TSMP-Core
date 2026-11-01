@@ -1,5 +1,124 @@
 # Indexed BeforeEncode target cache, 2026-11-01
 
+## Current tail review: frequency and measurement limits
+
+This read-only review uses the retained Float32 experiment at Core d88a3c8.
+No product/fixture changes or new Unity timing runs are made. Earlier rejected
+Encoder/Decoder candidates and Color256 calibration copying remain withdrawn;
+their historical maxima are not current-product measurements.
+
+Each of six frozen AB/BA/AB processes retains 480 Encode calls. After warmup,
+each variant has 1,152 Encode and 768 nonzero Decode observations. Each condition
+has 96 measured Encode calls/variant: nearest-rank p99 is its maximum, not a
+stable estimate of population p99. All original samples remain included.
+
+| Scope | Original | Retained Float32 writer |
+| --- | ---: | ---: |
+| All 12 measured Encode conditions, p99 | 15.4009 ms | 12.6028 ms |
+| All 12 measured Encode conditions, maximum | 17.5793 ms | 15.5909 ms |
+| Measured Decode, maximum | 36.0833 ms | 29.8741 ms |
+| Encode maximum including warm calls | 51.8879 ms | 53.3732 ms |
+
+Whole-matrix figures describe an equally sampled synthetic mixture, not real
+workload prevalence or a universal speedup. A per-condition maximum increase
+does not mean all maxima worsen. Decoder bytecode is identical across variants;
+its timing variation also prevents assigning product causation from maxima alone.
+
+| Condition | Original/current p95 | Original/current maximum | Observed frequency/context |
+| --- | ---: | ---: | --- |
+| 32 fields, one target, changing | 1.9730 / 1.9823 ms | 1.9943 / 6.4337 ms | One of 96 current calls exceeds 1.5x original median; one of three current processes |
+| 128 fields, one target, changing | 10.0108 / 10.9111 ms | 10.5286 / 15.5909 ms | One large spike above 1.5x original median, but nine of 96 exceed the old maximum, including a separate milder slowdown |
+| 128 fields, 128 targets, unchanged | 10.2345 / 11.0063 ms | 10.6092 / 12.0459 ms | Third current process has 19/32 calls above original pooled maximum; not an isolated spike |
+| 32 fields, one target, quarter changing | 1.8748 / 1.7460 ms | 1.9319 / 2.1949 ms | Maximum once at first measured sample 8; p95 improves |
+
+The 6.4337 ms call is surrounded by 1.9768/1.9700 ms calls; the 15.5909 ms call
+by 9.1216/9.1982 ms. Identical input/sample positions in the other five processes
+are ordinary. Inputs are nonzero finite integers, not rare NaNs/boundaries. The
+corrected writer uses one bitcast and four masked writes without an additional
+input-dependent retry/search/allocation. Current 128-target unchanged process
+medians are 8.8917, 8.9997 and 10.7655 ms: its slower period must not be dismissed.
+These fractions cannot establish occurrences per real-world second.
+
+Repeated batch cost also matters: applying all 128 independent fields has
+current Decode medians 24.881 ms (one target) and 27.275 ms (128 targets), with
+96/96 calls above 16.67 ms in each. These SDK Editor measurements are not actual
+VRChat FPS, but expose a substantial batch cost. The shipped Transform, Timeline,
+Humanoid and VRChat avatar components already pack data into byte arrays;
+128 independent TransSync fields do not mean 128 bones/components.
+
+Cold paths are separate. Every fresh process has its first Encode near 50-53 ms
+in both variants; new 128-target instances/bindings have first calls around
+25-30 ms. The fixture marks Start already done and invokes OnEnable manually;
+production Start already calls EnsureResources. Neither the startup sequence
+nor these values establish actual client startup cost. Rebind/resize/reenable
+need separate tests; a warm filter cannot establish a hard maximum.
+
+### Measurement limits
+
+Encode timing surrounds the real custom event, including callbacks and CPU
+graphics submission; it does not wait for GPU completion/video delivery. Decode
+uses injected completed bytes, excluding receiver capture/GPU waiting. Outside
+the timers, but in the same Unity frame:
+
+- VerifyPacket searches all N names/hashes per single-target field via
+  Enumerable.Range(...).Single(...). A full 128-field output evaluates 16,384
+  predicates, repeatedly formatting strings and hashing names.
+- Header/payload clones, two file writes, CSV strings and callback arrays are
+  created. Deliver creates 14 new injection/slot arrays per emitted packet.
+- This can affect later calls despite direct execution being outside timing.
+  Per-sample GC activity/allocation, phase times, CPU-vs-wall time and GPU waits
+  are not recorded. Neither GC nor scheduling is an established spike cause.
+
+Unity describes temporary allocations and repeated strings as GC pressure;
+this supports a plausible confound, not attribution of these samples.
+See [Unity 2022.3 GC guidance](https://docs.unity3d.com/2022.3/Documentation/Manual/performance-garbage-collection-best-practices.html).
+Observed 128-field Encode intervals are about 37.85/41.79 ms for one/many targets
+because Decode/host work shares the frame. A 90 Hz target is not 90 Hz incidence.
+The unchanged case emits no fields and returns before CRC/upload/Blit, so its
+slowdown cannot be blamed solely on those stages. Static warm scalar cases do
+not demonstrate a cache-rebuild or variable-length-buffer-growth cause either.
+
+### Proposed maximum-latency work
+
+1. Lower measurement overhead first, keeping all checks and old evidence.
+   Precompute independent identity indexes, reuse injection/scratch arrays and
+   buffer bounded snapshots/timing structs. Write files/CSV after a measured
+   case. Record narrow phases, per-frame completion counts and available GC/
+   allocation metrics. Verify counters with positive controls: the earlier
+   scoped counter failed to detect a known 8,192-byte allocation. Use supported
+   [ProfilerRecorder metrics](https://docs.unity3d.com/2022.3/Documentation/ScriptReference/Unity.Profiling.ProfilerRecorder.html)
+   only after availability/validity checks, with instrumentation overhead controls.
+2. Repeat problematic changing/unchanged controls over thousands of calls and
+   several fresh processes. Report p95/p99, explicit budget-exceedance counts,
+   worst values and clusters per process. Keep cold/rebind/resize separate.
+   Do not remove spikes, relax old frozen gates or retry until a favored result.
+3. Test realistic variable-length pose payloads. Root delta/keepalive/player
+   inclusion changes avatarPoseBytes length; pose output, private sender snapshot
+   and receiver RawBytes storage allocate on length changes. This can repeat in
+   normal use. If correlated with tails, private sender capacity plus valid-length
+   reuse is a candidate, with retained-memory/state costs and exact change
+   detection. Public RawBytes must stay exact-length and independently owned.
+4. Reduce demonstrated batch work with existing controls: MinSendInterval on
+   lower-priority fields skips before serialization; coherent custom data can
+   use existing arrays/packed values. Shipped poses already do so. OnChange still
+   reads/serializes due fields. targetPayloadBytes is checked afterward and is
+   not a CPU budget; lower frameRate reduces calls/second, not the worst call.
+5. After relevant profiling, consider same-size private array reuse during real
+   send-state rebuilds, or removing repeated per-element checks after a complete
+   fixed-stride array range check. These are bounded candidates, not proven
+   spike remedies. New automatic CPU budgets, queues and modes are lower priority.
+
+Decoder can drain two ready captures in one frame; measure completion counts
+before capping them. A cap can increase source age/full-slot capture skips.
+Keep the two slots, CRC and recovery guarantees. Refine wall p95 near 43 ms spans
+multiple GPU waits/callbacks (maximum measured single callback 5.154 ms), unlike
+one EncodeNow call. Clean input does not retry; lower retry limits sacrifice
+recorded recoveries. No Float32 correctness rollback or reinstatement of rejected
+duplicate-check candidates is justified from this review alone.
+
+Derived evidence and read-only scripts:
+`F:/Unity/TSMP/Validation-Results/tail-latency-review-20261101/{frequency,harness}`.
+
 ## Receive-target experiment: not adopted
 
 A separate two-helper candidate retained the eligibility check before decoding

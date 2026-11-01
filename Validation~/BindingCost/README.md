@@ -54,6 +54,15 @@ refresh to zero so unchanged serialization cost can be compared without an
 elapsed-time-dependent periodic transmission. Garbage collection is requested
 between cases outside measured calls; no zero-allocation claim is made.
 
+The [tail review](RESULTS.md#current-tail-review-frequency-and-measurement-limits)
+also identifies significant out-of-timer verification allocations: single-target
+identity searches evaluate N squared name/hash predicates per full packet, and
+packet/slot arrays and file writes occur between calls. They can affect later
+heap state. No per-sample GC trace establishes their cause. Keep cold paths and
+per-process clusters separate; N=96 nearest-rank p99 equals the maximum and does
+not establish real-world incidence. The proposed lower-overhead harness has not
+been implemented or remeasured in this review.
+
 Use an exclusive lease on the dedicated project and GPU. Preserve failed runs,
 source receipts and configuration receipts. Results on this host do not establish
 actual VRChat, Quest or populated-world performance.

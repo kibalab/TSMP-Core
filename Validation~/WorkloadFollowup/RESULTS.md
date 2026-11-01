@@ -1,5 +1,31 @@
 # Workload follow-up, 2026-11-01
 
+## Current maximum-latency review
+
+The latest Float32 matrix does not show every maximum increasing. Across its
+equally sampled 12 conditions, measured Encode maximum is 17.5793 ms original
+versus 15.5909 ms current; including warm calls it is 51.8879/53.3732 ms. These
+are different scopes and neither establishes a real VRChat maximum or frequency.
+Earlier rejected duplicate-check/Color256 row-copy trials remain withdrawn.
+
+The 6.4337/15.5909 ms spikes each occur once in 96 measured opportunities above
+1.5x the original same-case median. However, the 128-target unchanged condition
+has 19/32 calls above the old maximum in one process; that slower period must
+not be dismissed. Applying 128 independent fields costs current SDK Decoder
+medians 24.881/27.275 ms for one/many targets, above 16.67 ms in all 96/96 samples
+of each. Shipped poses already pack data; 128 bones are not 128 scalar bindings.
+
+The harness performs an O(N squared) identity search, temporary allocations and
+file writes between timed calls. At 128 fields/one target, a complete packet
+causes 16,384 search predicates. No per-sample GC/phase trace proves the spike
+cause. Next priority is lower-overhead measurement with valid counters, then
+realistic length-changing pose payloads and per-frame completion counts. Private
+buffer reuse and fewer due field checks are conditional candidates; smaller
+payload/rate settings alone do not bound one call. Keep CRC, recovery and slots.
+
+Reports only this round: no product/fixture edits, new timing runs, merge or push.
+See [frequency, limits and ranked proposals](../BindingCost/RESULTS.md#current-tail-review-frequency-and-measurement-limits).
+
 ## Current Float32 correctness and minimum-SDK follow-up
 
 Udon Float32 writing now uses the input IEEE bits, replacing arithmetic
