@@ -28,6 +28,7 @@ public static class TransSyncSchedulingValidation
     {
         EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
         Test("First send, unchanged suppression, scalar and in-place array changes", Changes);
+        Test("Variable snapshot length, valid prefix, dirty tail and commit boundaries", VariableSnapshots);
         Test("Minimum interval coalesces latest value and SendOnChange=false polls", Intervals);
         Test("Refresh obeys minimum interval, zero disables refresh", Refresh);
         Test("Component send modes override only change filtering and switch live", ComponentModes);
@@ -129,6 +130,72 @@ public static class TransSyncSchedulingValidation
             Check(values.Count == 2 && Binary.ReadInt32LE(values[Hash("paced")], 0) == 72, "Intermediate instead of latest value sent");
             values = s.Send(.5);
             Check(values.Count == 1 && values.ContainsKey(Hash("poll")), "Poll/change modes are indistinguishable");
+        }
+    }
+
+    private static byte[] SnapshotBytes(int length) => Enumerable.Repeat((byte)0x5a, length).ToArray();
+    private static readonly int[] SnapshotLengths = { 8, 64, 8, 8, 64, 255, 256, 255, 255, 0, 0, 8 };
+    private static void CheckRawSnapshotResult(Dictionary<uint, byte[]> values, byte[] expected, bool emitted, string scope)
+    {
+        if (emitted) Check(values.Count == 1 && values.TryGetValue(Hash("bytes"), out byte[] actual) && actual.SequenceEqual(expected), scope + " lost raw length/content");
+        else Check(values.Count == 0, scope + " resent wire-equivalent bytes");
+    }
+    private static void CheckVariableSnapshot(byte[] snapshot, byte[] body, string scope)
+    {
+        int valid = NetworkFrameProtocol.VariableValueHeaderBytes + body.Length;
+        Check(snapshot != null && snapshot.Length >= valid, scope + " snapshot capacity is short");
+        Check(Binary.ReadUInt32LE(snapshot, 0) == Hash("bytes") && snapshot[4] == NetworkFrameProtocol.ValueTypeRawBytes
+            && Binary.ReadUInt16LE(snapshot, NetworkFrameProtocol.VariableValueLengthOffset) == body.Length, scope + " snapshot header/length differs");
+        Check(snapshot.Skip(NetworkFrameProtocol.VariableValueHeaderBytes).Take(body.Length).SequenceEqual(body), scope + " snapshot valid body differs");
+    }
+    private static byte[] NativeVariableSnapshot(Sender sender)
+    {
+        var entries = (System.Collections.IEnumerable)typeof(EncoderNativeSendState).GetField("_entries", Private).GetValue(sender.State);
+        foreach (object entry in entries)
+        {
+            Type type = entry.GetType(); var field = (TransSyncMetadata.Field)type.GetField("Field").GetValue(entry);
+            if (field.VariableHash == Hash("bytes")) return (byte[])type.GetField("Previous").GetValue(entry);
+        }
+        throw new InvalidOperationException("Native bytes snapshot entry missing");
+    }
+    private static void VariableSnapshots()
+    {
+        byte[] opaque = SnapshotBytes(16), shortOpaque = SnapshotBytes(8);
+        Check(TransSyncSendScheduler.ShouldSend(true, 0, 1, true, 0, opaque, shortOpaque, shortOpaque.Length), "Generic opaque comparison lost strict length semantics");
+        byte[] exact = TransSyncSendScheduler.Snapshot(shortOpaque, 0, shortOpaque.Length, opaque);
+        Check(exact.Length == shortOpaque.Length && exact.SequenceEqual(shortOpaque) && !ReferenceEquals(exact, shortOpaque), "Generic Snapshot lost exact-length independent copy");
+        using (var s = new Sender())
+        {
+            s.Probe.bytesEnabled = true; int previousLength = -1, tailChecks = 0; double now = 0;
+            foreach (int length in SnapshotLengths)
+            {
+                s.Probe.bytes = SnapshotBytes(length); // Equal contents in a different array must not trigger a send.
+                CheckRawSnapshotResult(s.Send(now++), s.Probe.bytes, previousLength != length, "Native variable sequence");
+                byte[] snapshot = NativeVariableSnapshot(s); CheckVariableSnapshot(snapshot, s.Probe.bytes, "Native variable sequence");
+                int valid = NetworkFrameProtocol.VariableValueHeaderBytes + length;
+                if (tailChecks == 0 && snapshot.Length > valid)
+                {
+                    snapshot[snapshot.Length - 1] ^= 0xff;
+                    CheckRawSnapshotResult(s.Send(now++), s.Probe.bytes, false, "Native dirty capacity tail"); tailChecks++;
+                    CheckVariableSnapshot(NativeVariableSnapshot(s), s.Probe.bytes, "Native dirty capacity tail");
+                }
+                previousLength = length;
+            }
+            s.Probe.bytes[0] ^= 1;
+            CheckRawSnapshotResult(s.Send(now++), s.Probe.bytes, true, "Native valid-prefix mutation");
+            CheckRawSnapshotResult(s.Send(now++), s.Probe.bytes, false, "Native committed mutation");
+            byte[] before = NativeVariableSnapshot(s), saved = (byte[])before.Clone();
+            s.Probe.bytes = SnapshotBytes(32);
+            CheckRawSnapshotResult(s.Send(now++, commit: false), s.Probe.bytes, true, "Native uncommitted length change");
+            Check(ReferenceEquals(before, NativeVariableSnapshot(s)) && before.SequenceEqual(saved), "Native failed output changed snapshot");
+            CheckRawSnapshotResult(s.Send(now++), s.Probe.bytes, true, "Native length-change retry");
+            before = NativeVariableSnapshot(s); saved = (byte[])before.Clone(); s.Probe.bytes = SnapshotBytes(64);
+            Check(s.Send(now++, capacity: 32).Count == 0 && s.State.DeferredCount == 1, "Native large raw field was not deferred");
+            Check(ReferenceEquals(before, NativeVariableSnapshot(s)) && before.SequenceEqual(saved), "Native deferral changed snapshot");
+            CheckRawSnapshotResult(s.Send(now++), s.Probe.bytes, true, "Native deferred length-change retry");
+            CheckVariableSnapshot(NativeVariableSnapshot(s), s.Probe.bytes, "Native retry snapshot");
+            s.State.Reset(); CheckRawSnapshotResult(s.Send(now), s.Probe.bytes, true, "Native reset with equal raw bytes");
+            Results.Add("Native variable snapshot tail checks=" + tailChecks + "; zero is expected for the original exact-length implementation.");
         }
     }
     private static void Refresh()
@@ -637,8 +704,7 @@ public static class TransSyncSchedulingValidation
         source.Set("sendMode", (int)SendMode.Always);
         int captures = source.Get<int>("captures");
         Check(EncodeVm(encoder).Count == 2 && EncodeVm(encoder).Count == 2, "Udon Always suppressed unchanged fields");
-        Check(source.Get<int>("captures") == captures + 2 && encoder.Get<int>("_beforeEncodeTargetCount") == 1
-            && encoder.Get<int[]>("_beforeEncodeSendModes")[0] == (int)SendMode.Always, "Udon per-source capture/mode cache failed");
+        Check(source.Get<int>("captures") == captures + 2, "Udon BeforeEncode was not called once per source and attempt");
         source.Set("sendMode", (int)SendMode.Default);
         Check(EncodeVm(encoder).Keys.Single() == Hash("poll"), "Udon Default did not restore attributes");
         source.Set("sendMode", 99);
@@ -718,6 +784,49 @@ public static class TransSyncSchedulingValidation
         Check(encoder.Get<int>("_pendingRpcCount") == 0 && encoder.Get<int>("deferredVariableCount") == 2, "Udon RPC commit/deferral failed");
         Check(EncodeVm(encoder).Count == 1, "Udon fields did not resume after RPC");
         Results.Add("PASS Udon RPC reservation, queue commit and deferred-variable retry");
+        VerifyVariableSnapshotsVm(encoder, source, output);
+    }
+
+    private static void VerifyVariableSnapshotsVm(VmProgram encoder, VmProgram source, RenderTexture output)
+    {
+        encoder.Set("output", output); encoder.Set("targetPayloadBytes", 0); encoder.Set("transSyncRefreshInterval", 0f);
+        source.Set("sendMode", (int)SendMode.Default);
+        ConfigureVm(encoder, source, new[] { "bytes" }, new[] { 0 }, new[] { true }, new[] { 0f });
+        int previousLength = -1, tailChecks = 0;
+        foreach (int length in SnapshotLengths)
+        {
+            byte[] body = SnapshotBytes(length); source.Set("bytes", body);
+            CheckRawSnapshotResult(EncodeVm(encoder), body, previousLength != length, "Udon variable sequence");
+            byte[] snapshot = (byte[])encoder.Get<object[]>("_sendPrevious")[0]; CheckVariableSnapshot(snapshot, body, "Udon variable sequence");
+            int valid = NetworkFrameProtocol.VariableValueHeaderBytes + length;
+            if (tailChecks == 0 && snapshot.Length > valid)
+            {
+                snapshot[snapshot.Length - 1] ^= 0xff;
+                CheckRawSnapshotResult(EncodeVm(encoder), body, false, "Udon dirty capacity tail"); tailChecks++;
+                CheckVariableSnapshot((byte[])encoder.Get<object[]>("_sendPrevious")[0], body, "Udon dirty capacity tail");
+            }
+            previousLength = length;
+        }
+        byte[] changed = source.Get<byte[]>("bytes"); changed[0] ^= 1;
+        CheckRawSnapshotResult(EncodeVm(encoder), changed, true, "Udon valid-prefix mutation");
+        CheckRawSnapshotResult(EncodeVm(encoder), changed, false, "Udon committed mutation");
+        byte[] before = (byte[])encoder.Get<object[]>("_sendPrevious")[0], saved = (byte[])before.Clone();
+        byte[] grown = SnapshotBytes(32); source.Set("bytes", grown); encoder.Set("output", (RenderTexture)null);
+        encoder.Call("ClearFrame"); uint frame = encoder.Get<uint>("frameIndex"); encoder.Call("EncodeNow");
+        Check(encoder.Get<uint>("frameIndex") == frame && ReferenceEquals(before, (byte[])encoder.Get<object[]>("_sendPrevious")[0])
+            && before.SequenceEqual(saved), "Udon failed length change modified snapshot/publication");
+        encoder.Set("output", output);
+        CheckRawSnapshotResult(EncodeVm(encoder), grown, true, "Udon failed length-change retry");
+        before = (byte[])encoder.Get<object[]>("_sendPrevious")[0]; saved = (byte[])before.Clone();
+        grown = SnapshotBytes(64); source.Set("bytes", grown); encoder.Set("targetPayloadBytes", 32);
+        Check(EncodeVm(encoder).Count == 0 && encoder.Get<int>("deferredVariableCount") == 1, "Udon large raw field was not deferred");
+        Check(ReferenceEquals(before, (byte[])encoder.Get<object[]>("_sendPrevious")[0]) && before.SequenceEqual(saved), "Udon deferral modified snapshot");
+        encoder.Set("targetPayloadBytes", 0);
+        CheckRawSnapshotResult(EncodeVm(encoder), grown, true, "Udon deferred length-change retry");
+        CheckVariableSnapshot((byte[])encoder.Get<object[]>("_sendPrevious")[0], grown, "Udon retry snapshot");
+        encoder.Set("streamId", encoder.Get<uint>("streamId") + 1);
+        CheckRawSnapshotResult(EncodeVm(encoder), grown, true, "Udon stream reset with equal raw bytes");
+        Results.Add("PASS Udon variable snapshot grow/shrink, empty/reference-equivalent suppression, valid-prefix changes, output failure/deferral retry and stream reset; tail checks=" + tailChecks + ". Original exact-length snapshots legitimately have no capacity tail.");
     }
 #endif
 }

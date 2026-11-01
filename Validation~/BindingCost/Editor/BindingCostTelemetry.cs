@@ -9,18 +9,18 @@ using Unity.Profiling;
 using Unity.Profiling.LowLevel.Unsafe;
 using UnityEngine;
 
-// Validation only. Frame counters are observations of the last completed profiler
-// frame, not measurements of work occurring inside an individual VM invocation.
+// Validation only. Counters/markers expose their latest available profiler sample,
+// without an exact Unity-frame ID or attribution to an individual VM invocation.
 public sealed class BindingCostTelemetry : IDisposable
 {
     public readonly struct Snapshot
     {
-        public readonly int frame, gc0, gc1, gc2, validMask, allocatedCount, usedCount, collectCount;
+        public readonly int frame, gc0, gc1, gc2, validMask, runningMask, allocatedCount, usedCount, collectCount;
         public readonly long ticks, takeTicks, allocatedThread, allocatedFrame, usedBytes, collectNanoseconds;
-        internal Snapshot(int frame, int gc0, int gc1, int gc2, int validMask, int allocatedCount, int usedCount, int collectCount,
+        internal Snapshot(int frame, int gc0, int gc1, int gc2, int validMask, int runningMask, int allocatedCount, int usedCount, int collectCount,
             long ticks, long takeTicks, long allocatedThread, long allocatedFrame, long usedBytes, long collectNanoseconds)
         {
-            this.frame = frame; this.gc0 = gc0; this.gc1 = gc1; this.gc2 = gc2; this.validMask = validMask;
+            this.frame = frame; this.gc0 = gc0; this.gc1 = gc1; this.gc2 = gc2; this.validMask = validMask; this.runningMask = runningMask;
             this.allocatedCount = allocatedCount; this.usedCount = usedCount; this.collectCount = collectCount;
             this.ticks = ticks; this.takeTicks = takeTicks; this.allocatedThread = allocatedThread;
             this.allocatedFrame = allocatedFrame; this.usedBytes = usedBytes; this.collectNanoseconds = collectNanoseconds;
@@ -66,7 +66,7 @@ public sealed class BindingCostTelemetry : IDisposable
         File.WriteAllLines(Path.Combine(root, "telemetry-inventory.csv"), inventory);
         notes.Add("TailTelemetry=on; initialization and positive controls run before case warmup. StopwatchFrequency=" + Stopwatch.Frequency);
         notes.Add("Telemetry boundaries: 0 before Encode, 1 after Encode, 2 before Decode, 3 after Decode; string boundaries are caller-defined. Take/Record are outside VM timers.");
-        notes.Add("ProfilerRecorder values are last completed profiler-frame observations. No exact Unity frame mapping or per-VM attribution is claimed; validMask records recorder validity independently of positive controls. Unsupported/unverified values are -1.");
+        notes.Add("ProfilerRecorder values are latest available counter/marker samples, not necessarily the current Unity frame; sparse marker samples may be older. No exact frame mapping or per-VM attribution is claimed. Validity, running state and positive controls are separate. Unsupported/unverified values are -1.");
         yield return null;
 
         int allocationFrame = Time.frameCount;
@@ -102,9 +102,40 @@ public sealed class BindingCostTelemetry : IDisposable
         notes.Add("TelemetryPositiveControl=65536 retained touched bytes; scopedDelta=" + scopedDelta + "; scopedVerified=" + scopedVerified +
             "; frameAllocationVerified=" + allocatedVerified + "; usedMemoryVerified=" + usedVerified + "; collectionCountVerifiedMask=" + countVerifiedMask + "; collectMarkerVerified=" + collectVerified);
         notes.Add("Frame-allocation/used-memory control checks observe the known allocation amid background Editor activity; they do not isolate its exact byte contribution. Raw control values are retained. Unchanged collection counts or a zero GC.Collect marker do not exclude incremental GC work.");
+        // Unity 2022.3 Reset stops collection as well as clearing samples.
+        // Keep the stopped-state evidence, restart explicitly, then prove live sampling.
+        var restart = new List<string> { "phase,observedUnityFrame,validMask,runningMask,allocatedCount,usedCount,collectCount,frameAllocatedRaw,usedMemoryRaw,collectNanosecondsRaw", StateRow("beforeReset") };
+        int expectedMask = ValidMask();
         if (allocated.Valid) allocated.Reset();
         if (used.Valid) used.Reset();
         if (collect.Valid) collect.Reset();
+        int stoppedMask = RunningMask(); restart.Add(StateRow("afterReset"));
+        if (allocated.Valid) allocated.Start();
+        if (used.Valid) used.Start();
+        if (collect.Valid) collect.Start();
+        int startedMask = RunningMask(); restart.Add(StateRow("afterStart"));
+        allocationControl = new byte[65536];
+        for (int i = 0; i < allocationControl.Length; i += 4096) allocationControl[i] = 1;
+        yield return null;
+
+        long liveAllocation = Read(allocated, out bool liveAllocationValid, out int liveAllocationCount);
+        long liveUsed = Read(used, out bool liveUsedValid, out int liveUsedCount);
+        bool liveMemory = (!allocated.Valid || liveAllocationValid && liveAllocationCount > 0 && liveAllocation >= allocationControl.Length)
+            && (!used.Valid || liveUsedValid && liveUsedCount > 0 && liveUsed > 0);
+        restart.Add(StateRow("liveAllocationFrame"));
+        GC.KeepAlive(allocationControl); allocationControl = null;
+        GC.Collect();
+        yield return null;
+
+        long liveCollect = Read(collect, out bool liveCollectValid, out int liveCollectCount);
+        bool liveCollection = !collect.Valid || liveCollectValid && liveCollectCount > 0 && liveCollect > 0;
+        int finalRunningMask = RunningMask(); restart.Add(StateRow("liveCollectionFrame"));
+        File.WriteAllLines(Path.Combine(root, "telemetry-restart.csv"), restart);
+        notes.Add("TelemetryRestartControl=expectedMask:" + expectedMask + "; afterReset:" + stoppedMask + "; afterStart:" + startedMask +
+            "; finalRunning:" + finalRunningMask + "; liveMemory:" + liveMemory + "; liveCollection:" + liveCollection + ". Controls precede warmup; no final Reset stops the live recorders.");
+        notes.Add("Collection-count boundary deltas also include small host reflection/telemetry work outside the VM event timer; they establish a boundary-window correlation, not pure Udon allocation or a GC-caused duration.");
+        if (stoppedMask != 0 || startedMask != expectedMask || finalRunningMask != expectedMask || !liveMemory || !liveCollection)
+            throw new InvalidOperationException("ProfilerRecorder restart/live positive control failed; preserve telemetry-restart.csv.");
         initialized = true;
     }
 
@@ -125,6 +156,14 @@ public sealed class BindingCostTelemetry : IDisposable
         return valid && count > 0 ? recorder.LastValue : -1;
     }
 
+    private int ValidMask() => (allocated.Valid ? 1 : 0) | (used.Valid ? 2 : 0) | (collect.Valid ? 4 : 0);
+    private int RunningMask() => (allocated.Valid && allocated.IsRunning ? 1 : 0) | (used.Valid && used.IsRunning ? 2 : 0) | (collect.Valid && collect.IsRunning ? 4 : 0);
+    private string StateRow(string phase)
+    {
+        long a = Read(allocated, out _, out int ac), u = Read(used, out _, out int uc), c = Read(collect, out _, out int cc);
+        return Row(phase, Time.frameCount, ValidMask(), RunningMask(), ac, uc, cc, a, u, c);
+    }
+
     public Snapshot Take()
     {
         if (!initialized) throw new InvalidOperationException("Initialize telemetry before warmup.");
@@ -133,8 +172,9 @@ public sealed class BindingCostTelemetry : IDisposable
         int g1 = (countVerifiedMask & 2) != 0 ? GC.CollectionCount(1) : -1;
         int g2 = (countVerifiedMask & 4) != 0 ? GC.CollectionCount(2) : -1;
         long a = Read(allocated, out bool av, out int ac), u = Read(used, out bool uv, out int uc), c = Read(collect, out bool cv, out int cc);
+        int running = (av && allocated.IsRunning ? 1 : 0) | (uv && used.IsRunning ? 2 : 0) | (cv && collect.IsRunning ? 4 : 0);
         long s = scopedVerified ? ScopedRaw() : -1, end = Stopwatch.GetTimestamp();
-        return new Snapshot(frame, g0, g1, g2, (av ? 1 : 0) | (uv ? 2 : 0) | (cv ? 4 : 0), ac, uc, cc,
+        return new Snapshot(frame, g0, g1, g2, (av ? 1 : 0) | (uv ? 2 : 0) | (cv ? 4 : 0), running, ac, uc, cc,
             start, end - start, s, allocatedVerified ? a : -1, usedVerified ? u : -1, collectVerified ? c : -1);
     }
 
@@ -155,12 +195,12 @@ public sealed class BindingCostTelemetry : IDisposable
     {
         using (var writer = new StreamWriter(Path.Combine(root, "telemetry.csv"), false))
         {
-            writer.WriteLine("case,sample,measured,boundary,observedUnityFrame,observationTicks,takeTicks,gc0,gc1,gc2,allocatedThreadBytes,frameAllocatedBytes,usedMemoryBytes,collectNanoseconds,recorderValidMask,allocatedRecorderCount,usedRecorderCount,collectRecorderCount");
+            writer.WriteLine("case,sample,measured,boundary,observedUnityFrame,observationTicks,takeTicks,gc0,gc1,gc2,allocatedThreadBytes,frameAllocatedBytes,usedMemoryBytes,collectNanoseconds,recorderValidMask,allocatedRecorderCount,usedRecorderCount,collectRecorderCount,recorderRunningMask");
             for (int i = 0; i < next; i++)
             {
                 Entry e = entries[i]; Snapshot s = e.value;
                 writer.WriteLine(Row(e.name, e.sample, e.measured, e.boundary, s.frame, s.ticks, s.takeTicks, s.gc0, s.gc1, s.gc2,
-                    s.allocatedThread, s.allocatedFrame, s.usedBytes, s.collectNanoseconds, s.validMask, s.allocatedCount, s.usedCount, s.collectCount));
+                    s.allocatedThread, s.allocatedFrame, s.usedBytes, s.collectNanoseconds, s.validMask, s.allocatedCount, s.usedCount, s.collectCount, s.runningMask));
             }
         }
     }
