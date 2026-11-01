@@ -1,5 +1,47 @@
 # Indexed BeforeEncode target cache, 2026-11-01
 
+## Later target-validation experiment: not adopted
+
+A separate optimization-branch experiment reused the existing resolved-target
+cache validation result to avoid comparing the same target again in send-state
+validation. It changed one Encoder file by 6 added/5 removed lines, with no new
+arrays or policy changes. Rotation arithmetic was deliberately left unchanged.
+
+The 373-assertion semantic preflight and all six fresh-process matrices pass.
+Each formal run passes **126,583 assertions**. Independent raw audits verify
+**2,880 EncodeNow calls, 1,944 protected packet/header pairs, 99,360 Float32
+values and 972 byte-identical corresponding payload pairs**. Callback-time
+replacement, direction/sendMode changes and once/order behavior are preserved.
+Only Encoder source/program changes; 391 other sources, four other loaded
+programs and 23 configuration files remain identical.
+
+| 128 fields / distinct targets | Original mean | Candidate mean | Reduction |
+| --- | ---: | ---: | ---: |
+| 128 / changing | 12.177042 ms | 12.036496 ms | 1.154% |
+| 128 / unchanged | 9.078913 ms | 8.997911 ms | 0.892% |
+
+Both primary reductions miss the **2%** acceptance threshold frozen before
+timing. The 128-field single-target changing control also has a pooled p99
+increase **10.1829 to 13.0678 ms**, exceeding the frozen 5% tail allowance.
+There are 96 measured calls per variant/case, so this p99 is the observed maximum.
+The candidate program shrinks **138,368 to 138,324 B** (-44 B), but the source
+is **not adopted**. The original Encoder is restored byte for byte, retaining
+the earlier indexed callback-group cache and automatic-clear diagnostic fix.
+
+Evidence: `F:/Unity/TSMP/Validation-Results/optimization-implementation-20261101/`
+`encoder-cache`, including frozen sources/plan/guards, all six complete runs,
+`ab-analysis.json` and `independent-cache-audit.json`. Measurement-valid PASS
+is distinct from adoption FAIL. No failed case or timing outlier was removed.
+
+The existing driver now additionally records protected Decoder completion
+ticks in `samples.csv`. Only `decoder._update` is timed, including extraction,
+CRC, structural preflight, application and receiver callbacks. Heap/input setup,
+file output and value verification are outside that interval. Rows without an
+emitted packet have zero ticks and are excluded from Decoder statistics. This
+addition is separate from Encoder timing and does not measure receiver GPU work.
+
+## Earlier indexed target-group implementation
+
 The Udon Encoder previously searched the targets already visited on every due
 field. With many distinct targets, those comparisons repeat quadratically on
 every encode attempt, including attempts where no field value changes. The
