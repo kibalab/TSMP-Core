@@ -165,6 +165,21 @@ Supported value types:
 - `RawBytes`
 - common arrays of the above numeric/string types
 
+`Float32` occupies four little-endian IEEE 754 binary32 bytes. Vector2,
+Vector3 and Quaternion use consecutive components in x, y, z, w order, as
+applicable; arrays use the same scalar representation for each element.
+The writer preserves finite nonzero input bits, including subnormal values.
+The Native writer preserves signed zero; the Udon writer retains its existing
+normalization of either zero to positive zero. Infinity and NaN inputs are
+written from their runtime bits; a signaling NaN may already have been quieted
+by the host or VM, so its original signaling payload is not guaranteed.
+
+The reader retains its existing application policy: either zero becomes
+positive zero, and any exponent-255 value (Infinity or NaN) becomes
+`float.MaxValue` or `-float.MaxValue` according to its wire sign bit. These
+special values therefore do not round-trip as IEEE Infinity or NaN. The
+Float32 field width, type identifiers and enclosing packet format are unchanged.
+
 ## RpcCall Body
 
 ```text

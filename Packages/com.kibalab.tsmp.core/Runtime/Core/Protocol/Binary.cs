@@ -33,52 +33,13 @@ namespace K13A.TSMP
             WriteUInt32LE(buffer, offset, unchecked((uint)System.BitConverter.SingleToInt32Bits(value)));
             return offset + NetworkFrameProtocol.Float32Bytes;
 #else
-            uint bits;
-            if (value == 0f)
-            {
-                bits = 0u;
-            }
-            else
-            {
-                uint sign = value < 0f ? 0x80000000u : 0u;
-                float abs = Mathf.Abs(value);
-                int exponent = Mathf.FloorToInt(Mathf.Log(abs) * 1.4426950408f);
-
-                if (exponent < -126)
-                {
-                    float scaled = abs / Mathf.Pow(2f, -126f) * 8388608f;
-                    uint mantissa = (uint)Mathf.RoundToInt(scaled);
-                    bits = sign | (mantissa & 0x7FFFFFu);
-                }
-                else
-                {
-                    int biased = exponent + 127;
-                    if (biased >= 255)
-                    {
-                        bits = sign | 0x7F800000u;
-                    }
-                    else
-                    {
-                        float normalized = abs / Mathf.Pow(2f, exponent) - 1f;
-                        uint mantissa = (uint)Mathf.RoundToInt(normalized * 8388608f);
-                        if (mantissa >= 0x800000u)
-                        {
-                            mantissa = 0u;
-                            biased++;
-                            if (biased >= 255)
-                                bits = sign | 0x7F800000u;
-                            else
-                                bits = sign | (((uint)biased & 0xFFu) << 23);
-                        }
-                        else
-                        {
-                            bits = sign | (((uint)biased & 0xFFu) << 23) | (mantissa & 0x7FFFFFu);
-                        }
-                    }
-                }
-            }
-
-            WriteUInt32LE(buffer, offset, bits);
+            // Preserve Udon's zero normalization without reconstructing IEEE bits.
+            int bits = value == 0f ? 0 : System.BitConverter.SingleToInt32Bits(value);
+            // Mask before conversion; negative int-to-uint casts can overflow in Udon.
+            buffer[offset] = (byte)(bits & 0xFF);
+            buffer[offset + 1] = (byte)((bits >> 8) & 0xFF);
+            buffer[offset + 2] = (byte)((bits >> 16) & 0xFF);
+            buffer[offset + 3] = (byte)((bits >> 24) & 0xFF);
             return offset + NetworkFrameProtocol.Float32Bytes;
 #endif
         }
