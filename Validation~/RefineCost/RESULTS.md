@@ -106,6 +106,13 @@ the steady-state quantiles. Its exact shader/driver/preparation cause was not
 isolated. The benchmark therefore does not certify cold-start behavior in a real
 client or claim that a live VM would tolerate that preparation delay.
 
+The [2026-11-01 preparation follow-up](../Rgb16Preparation/RESULTS.md) separates
+this twelve-draw/four-material warmup from the default fixed 4/4/4 material.
+Two fresh processes with existing caches do not reproduce the 96-second delay.
+The first fixed ordinary draw plus synchronous flush/comparison takes 8.296 ms;
+this is a different scope and cache state, not a measured product speedup or a
+resolution of the historical delay.
+
 No GPU timestamp is measured here. CPU/latency must not be re-labelled GPU time
 or added to previous GPU pass timings as though they were disjoint frame costs.
 The harness serializes requests, deliberately repeats fixed inputs with duplicate
