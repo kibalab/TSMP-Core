@@ -35,6 +35,8 @@ public static class BindingCostValidation
     static readonly List<string> semantics = new List<string> { "case,round,startTicks,endTicks,encodeMs,expectedOrder,actualOrder,expectedFields,encodedFields,actualCallbacks" };
     static readonly List<string> hashes = new List<string> { "kind,path,bytes,sha256" };
     static Dictionary<string, string> before;
+    static CaseBuffer activeCase;
+    static BindingCostTelemetry telemetry;
     static IEnumerator work;
     static int checks, lastFrame = -1;
     [Serializable] public sealed class Plan { public Case[] cases; }
@@ -110,6 +112,14 @@ public static class BindingCostValidation
     static void Finish(Exception error)
     {
         EditorApplication.update -= Tick;
+        try { FlushCase(); }
+        catch (Exception flushError) { notes.Add("CaseFlushError=" + flushError); error = error ?? flushError; }
+        if (telemetry != null)
+        {
+            try { telemetry.Write(); }
+            catch (Exception telemetryError) { notes.Add("TelemetryWriteError=" + telemetryError); error = error ?? telemetryError; }
+            finally { telemetry.Dispose(); telemetry = null; }
+        }
         foreach (var p in programs.ToArray()) p.Dispose(); programs.Clear(); RenderTexture.active = null;
         foreach (Object item in owned.AsEnumerable().Reverse()) { if (item is RenderTexture texture) texture.Release(); if (item != null) Object.DestroyImmediate(item); } owned.Clear();
         if (before != null)
@@ -124,6 +134,7 @@ public static class BindingCostValidation
     {
         public readonly IUdonProgram Code;
         public readonly UdonBehaviour Backing;
+        static readonly FieldInfo HasError = typeof(UdonBehaviour).GetField("_hasError", Private);
         public Program(string path, TSMPCodec codec = null)
         {
             var asset = AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(path); Check(asset != null, "Missing program " + path);
@@ -143,8 +154,9 @@ public static class BindingCostValidation
         }
         public void Set<T>(string name, T value) => Code.Heap.SetHeapVariable(Code.SymbolTable.GetAddressFromSymbol(name), value, typeof(T));
         public T Get<T>(string name) => (T)Code.Heap.GetHeapVariable(Code.SymbolTable.GetAddressFromSymbol(name));
-        public void Call(string name) { Backing.SendCustomEvent(name); Check(!(bool)typeof(UdonBehaviour).GetField("_hasError", Private).GetValue(Backing), "VM failed " + name); }
-        public void Timed(string name, out long start, out long stop) { start = Stopwatch.GetTimestamp(); Backing.SendCustomEvent(name); stop = Stopwatch.GetTimestamp(); Check(!(bool)typeof(UdonBehaviour).GetField("_hasError", Private).GetValue(Backing), "VM failed " + name); }
+        void CheckVm(string name) { checks++; if ((bool)HasError.GetValue(Backing)) throw new InvalidOperationException("VM failed " + name); }
+        public void Call(string name) { Backing.SendCustomEvent(name); CheckVm(name); }
+        public void Timed(string name, out long start, out long stop) { start = Stopwatch.GetTimestamp(); Backing.SendCustomEvent(name); stop = Stopwatch.GetTimestamp(); CheckVm(name); }
         public void Dispose() { programs.Remove(this); if (Backing != null) Object.DestroyImmediate(Backing.gameObject); }
     }
     static Program Codec()
@@ -188,45 +200,151 @@ public static class BindingCostValidation
             owner.Set("bindingSendOnChange", Enumerable.Repeat(true, count).ToArray()); owner.Set("bindingMinSendIntervals", new float[count]);
         }
     }
-    static int VerifyPacket(byte[] packet, float[] expected, int targetCount, int expectedCount)
+    struct Sample
     {
-        Func<int, int> u16 = at => packet[at] | packet[at + 1] << 8;
-        Check(packet.Length >= 8, "Short packet"); int messages = u16(2), cursor = 8, found = 0; var seen = new HashSet<string>();
+        public int iteration, frame, encodedFields, payloadCount, callbacks;
+        public double clock;
+        public long start, stop, decodeStart, decodeStop;
+        public bool gpu;
+    }
+    struct HelperSample { public int sample; public string method; public long start, stop; }
+    sealed class CaseBuffer
+    {
+        public readonly Case item;
+        public readonly int packetStride;
+        public readonly Sample[] rows;
+        public readonly HelperSample[] helperRows = new HelperSample[64];
+        public readonly byte[] packets, headers, header = new byte[FrameHeader.Size];
+        public readonly string[] names;
+        public readonly uint[] fieldHashes;
+        public readonly bool[] seen;
+        public readonly Dictionary<ulong, int> indexes = new Dictionary<ulong, int>();
+        public int captured, helperCaptured, flushed, helperFlushed;
+        public CaseBuffer(Case item)
+        {
+            this.item = item;
+            int count = checked(item.warm + item.samples);
+            Check(count > 0 && item.fields > 0 && item.targets > 0, "Invalid bounded case dimensions");
+            // At most one message per field; storage is bounded by the frozen case.
+            packetStride = checked(NetworkFrameProtocol.NetworkHeaderBytes + item.fields *
+                (NetworkFrameProtocol.MessageHeaderBytes + NetworkFrameProtocol.VariableStateBodyHeaderBytes + 11));
+            int captures = item.regime == "unchanged" ? 1 : count;
+            rows = new Sample[count]; packets = new byte[checked(captures * packetStride)];
+            headers = new byte[checked(captures * FrameHeader.Size)];
+            names = new string[item.fields]; fieldHashes = new uint[item.fields]; seen = new bool[item.fields];
+            for (int i = 0; i < item.fields; i++)
+            {
+                names[i] = Field(i, item.targets); fieldHashes[i] = StableHash.Fnv1A32(names[i]);
+                ulong key = ((ulong)(uint)(i % item.targets + 1) << 32) | fieldHashes[i];
+                Check(!indexes.ContainsKey(key), "Expected field identities collide"); indexes.Add(key, i);
+            }
+        }
+        public int Capture(Program encoder, int iteration)
+        {
+            byte[] sourceHeader = encoder.Get<byte[]>("_headerBytes");
+            Check(sourceHeader.Length == FrameHeader.Size, "Unexpected header size");
+            int length = sourceHeader[42] | sourceHeader[43] << 8;
+            byte[] sourcePayload = encoder.Get<byte[]>("_payloadBytes");
+            Check(length >= NetworkFrameProtocol.NetworkHeaderBytes && length <= packetStride && length <= sourcePayload.Length, "Payload exceeds bounded trace storage");
+            Array.Copy(sourceHeader, 0, header, 0, FrameHeader.Size);
+            Array.Copy(sourceHeader, 0, headers, iteration * FrameHeader.Size, FrameHeader.Size);
+            Array.Copy(sourcePayload, 0, packets, iteration * packetStride, length);
+            return length;
+        }
+    }
+    static int UInt16(byte[] bytes, int offset) => bytes[offset] | bytes[offset + 1] << 8;
+    static int VerifyPacket(CaseBuffer trace, int iteration, int length, float[] expected, int expectedCount)
+    {
+        byte[] packet = trace.packets; int begin = iteration * trace.packetStride;
+        Check(length >= 8, "Short packet"); int messages = UInt16(packet, begin + 2), cursor = 8, found = 0;
+        Array.Clear(trace.seen, 0, trace.seen.Length);
         for (int message = 0; message < messages; message++)
         {
-            Check(cursor + 10 <= packet.Length, "Message bounds"); int network = u16(cursor), bodyEnd = cursor + 8 + u16(cursor + 6);
-            Check(packet[cursor + 2] == NetworkFrameProtocol.MessageTypeVariableState && bodyEnd <= packet.Length, "Message contract");
-            int count = u16(cursor + 8); cursor += 10;
+            Check(cursor + 10 <= length, "Message bounds"); int network = UInt16(packet, begin + cursor), bodyEnd = cursor + 8 + UInt16(packet, begin + cursor + 6);
+            Check(packet[begin + cursor + 2] == NetworkFrameProtocol.MessageTypeVariableState && bodyEnd <= length, "Message contract");
+            int count = UInt16(packet, begin + cursor + 8); cursor += 10;
             for (int field = 0; field < count; field++)
             {
-                Check(cursor + 11 <= bodyEnd && packet[cursor + 4] == NetworkFrameProtocol.ValueTypeFloat32 && u16(cursor + 5) == 4, "Float entry contract");
-                uint hash = BitConverter.ToUInt32(packet, cursor); int index = targetCount == 1 ? Enumerable.Range(0, expected.Length).Single(i => StableHash.Fnv1A32(Field(i, targetCount)) == hash) : network - 1;
-                Check(index >= 0 && index < expected.Length && network == index % targetCount + 1 && hash == StableHash.Fnv1A32(Field(index, targetCount)), "Unexpected entry identity");
-                Check(seen.Add(network + ":" + hash), "Duplicate entry"); Check(BitConverter.ToSingle(packet, cursor + 7) == expected[index], "Entry value mismatch"); cursor += 11; found++;
+                Check(cursor + 11 <= bodyEnd && packet[begin + cursor + 4] == NetworkFrameProtocol.ValueTypeFloat32 && UInt16(packet, begin + cursor + 5) == 4, "Float entry contract");
+                uint hash = BitConverter.ToUInt32(packet, begin + cursor);
+                Check(trace.indexes.TryGetValue(((ulong)(uint)network << 32) | hash, out int index), "Unexpected entry identity");
+                Check(network == index % trace.item.targets + 1 && hash == trace.fieldHashes[index], "Unexpected field identity");
+                Check(!trace.seen[index], "Duplicate entry"); trace.seen[index] = true;
+                Check(BitConverter.ToSingle(packet, begin + cursor + 7) == expected[index], "Entry value mismatch"); cursor += 11; found++;
             }
             Check(cursor == bodyEnd, "Message trailing bytes");
         }
-        Check(cursor == packet.Length && found == expectedCount, "Packet field count/tail"); return found;
+        Check(cursor == length && found == expectedCount, "Packet field count/tail"); return found;
     }
-    static void Deliver(Program decoder, byte[] packet, byte[] header, uint frame, out long decodeStart, out long decodeStop)
+    sealed class DeliveryBuffers
     {
-        int padded = (packet.Length + 3) / 4 * 4; var raw = new byte[padded]; Array.Copy(packet, raw, packet.Length);
-        decoder.Set("_slotHead", 0); decoder.Set("pendingDecodeCount", 1); decoder.Set("_slotStates", new[] { 2, 0 }); decoder.Set("_slotStages", new[] { 2, 0 });
-        decoder.Set("_slotReadbackBytes", new[] { raw, (byte[])null }); decoder.Set("_slotHeaders", new[] { header, (byte[])null });
-        decoder.Set("_slotPayloads", new[] { new byte[packet.Length], (byte[])null }); decoder.Set("_slotPayloadCounts", new[] { packet.Length, 0 }); decoder.Set("_slotReadCounts", new[] { padded / 4, 0 });
-        decoder.Set("_slotRequirePayloadCrc32", new[] { true, false }); decoder.Set("_slotSafetyModes", new[] { 0, 0 }); decoder.Set("_slotHeaderValid", new[] { true, false });
-        decoder.Set("_slotStreamIds", new uint[] { 1, 0 }); decoder.Set("_slotFrameIndices", new[] { frame, 0u }); decoder.Set("lastFrameValid", false);
-        decoder.Timed("_update", out decodeStart, out decodeStop);
-        Check(decoder.Get<bool>("lastFrameValid") && decoder.Get<bool>("lastPayloadCrcVerified"), "Protected Decoder completion failed: " + decoder.Get<string>("lastError"));
+        readonly int[] states = new int[2], stages = new int[2], counts = new int[2], reads = new int[2], safety = new int[2];
+        readonly byte[][] readbacks = new byte[2][], headers = new byte[2][], payloads = new byte[2][];
+        readonly bool[] require = new bool[2], headerValid = new bool[2];
+        readonly uint[] streams = new uint[2], frames = new uint[2];
+        public void Prepare(Program decoder, byte[] packet, int offset, int length, byte[] header, uint frame)
+        {
+            int padded = (length + 3) / 4 * 4;
+            if (readbacks[0] == null || readbacks[0].Length != padded) readbacks[0] = new byte[padded];
+            if (payloads[0] == null || payloads[0].Length != length) payloads[0] = new byte[length];
+            Array.Copy(packet, offset, readbacks[0], 0, length); Array.Clear(readbacks[0], length, padded - length);
+            Array.Clear(payloads[0], 0, length); headers[0] = header;
+            states[0] = 2; states[1] = 0; stages[0] = 2; stages[1] = 0;
+            counts[0] = length; counts[1] = 0; reads[0] = padded / 4; reads[1] = 0;
+            require[0] = true; require[1] = false; headerValid[0] = true; headerValid[1] = false;
+            safety[0] = safety[1] = 0; streams[0] = 1; streams[1] = 0; frames[0] = frame; frames[1] = 0;
+            readbacks[1] = headers[1] = payloads[1] = null;
+            decoder.Set("_slotHead", 0); decoder.Set("pendingDecodeCount", 1); decoder.Set("_slotStates", states); decoder.Set("_slotStages", stages);
+            decoder.Set("_slotReadbackBytes", readbacks); decoder.Set("_slotHeaders", headers); decoder.Set("_slotPayloads", payloads);
+            decoder.Set("_slotPayloadCounts", counts); decoder.Set("_slotReadCounts", reads); decoder.Set("_slotRequirePayloadCrc32", require);
+            decoder.Set("_slotSafetyModes", safety); decoder.Set("_slotHeaderValid", headerValid); decoder.Set("_slotStreamIds", streams); decoder.Set("_slotFrameIndices", frames);
+            decoder.Set("lastFrameValid", false);
+        }
+    }
+    static void WriteRange(string path, byte[] bytes, int offset, int count)
+    {
+        using (var file = new FileStream(path, FileMode.Create, FileAccess.Write)) file.Write(bytes, offset, count);
+    }
+    static void FlushCase()
+    {
+        var trace = activeCase; if (trace == null) return;
+        string relative = "packets/" + trace.item.name + "/";
+        Directory.CreateDirectory(Path.Combine(Root, "packets", trace.item.name));
+        for (int i = trace.flushed; i < trace.captured; i++)
+        {
+            var row = trace.rows[i]; string packetPath = "", headerPath = "";
+            if (row.payloadCount > 0)
+            {
+                packetPath = relative + row.iteration.ToString("D3") + ".bin"; headerPath = packetPath + ".header";
+                WriteRange(Path.Combine(Root, packetPath), trace.packets, row.iteration * trace.packetStride, row.payloadCount);
+                WriteRange(Path.Combine(Root, headerPath), trace.headers, row.iteration * FrameHeader.Size, FrameHeader.Size);
+            }
+            int expectedFields = row.iteration == 0 || trace.item.regime == "changing" ? trace.item.fields : trace.item.regime == "unchanged" ? 0 : trace.item.fields / 4;
+            samples.Add(Row(trace.item.name, row.iteration, row.iteration >= trace.item.warm, row.frame, row.clock, row.start, row.stop, Ms(row.stop - row.start), trace.item.fields, trace.item.targets, expectedFields, row.encodedFields, row.payloadCount, row.callbacks, row.gpu, packetPath, headerPath, row.decodeStart, row.decodeStop, Ms(row.decodeStop - row.decodeStart)));
+            trace.flushed++;
+        }
+        for (int i = trace.helperFlushed; i < trace.helperCaptured; i++)
+        {
+            var row = trace.helperRows[i]; helper.Add(Row(trace.item.targets, row.sample, row.method, row.start, row.stop, Ms(row.stop - row.start)));
+            trace.helperFlushed++;
+        }
+        activeCase = null;
+    }
+    static void RecordBoundary(Case item, int iteration, int boundary)
+    {
+        if (telemetry != null) telemetry.Record(item.name, iteration, iteration >= item.warm, boundary, telemetry.Take());
     }
     static IEnumerator Validate()
     {
         Compile(); Application.runInBackground = true; Application.targetFrameRate = 90; QualitySettings.vSyncCount = 0;
         notes.Add("Unity=" + Application.unityVersion + "; CPU=" + SystemInfo.processorType + "; GPU=" + SystemInfo.graphicsDeviceName + "; API=" + SystemInfo.graphicsDeviceType + "; Color=" + QualitySettings.activeColorSpace + "; StopwatchFrequency=" + Stopwatch.Frequency);
         notes.Add("Post-Play client compilation; full actual EncodeNow elapsed, nested VM work included once, one opportunity per observed Unity frame. GPU Encoder output; protected byte injection for Decoder application, not receiver GPU timing, source Hz or live VRChat FPS.");
+        notes.Add("Harness=Bounded per-case packet/header snapshots and sample structs; files/CSV flush after case. Precomputed identity indexes and reused callback/injection storage. This reduces host allocations, not a zero-allocation claim.");
         before = Sources(); File.WriteAllLines(Path.Combine(Root, "source-before.csv"), new[] { "path,sha256" }.Concat(before.Select(pair => Row(pair.Key, pair.Value))));
         byte[] plan = File.ReadAllBytes(Environment.GetEnvironmentVariable("TSMP_BINDING_COST_PLAN")); File.WriteAllBytes(Path.Combine(Root, "plan-used.json"), plan); hashes.Add(Row("plan", "plan-used.json", plan.Length, Hash(plan)));
         var parsed = JsonUtility.FromJson<Plan>(System.Text.Encoding.UTF8.GetString(plan).TrimStart('\uFEFF')); Check(parsed.cases != null && parsed.cases.Length == 12, "Frozen matrix expected");
+        telemetry = BindingCostTelemetry.Create(Root, notes, checked(4 * parsed.cases.Sum(item => checked(item.warm + item.samples))));
+        if (telemetry != null) { var initialize = telemetry.Initialize(); while (initialize.MoveNext()) yield return initialize.Current; }
         if (Environment.GetEnvironmentVariable("TSMP_BINDING_COST_SEMANTICS_ONLY") != "1")
             foreach (Case item in parsed.cases) { var run = Measure(item); while (run.MoveNext()) yield return run.Current; Dump(); GC.Collect(); yield return null; }
         else notes.Add("Scope=SemanticsOnly; no performance matrix sampled");
@@ -240,34 +358,43 @@ public static class BindingCostValidation
         var receivers = Enumerable.Range(0, item.targets).Select(i => new Program(ProbePath)).ToArray();
         Bind(e, senders, item.fields); var decoder = new Program("Packages/com.kibalab.tsmp.core/Runtime/Decoder/TSMPDecoder.asset");
         decoder.Set("applyEveryFrame", false); decoder.Set("debugLog", false); decoder.Set("_crc32Table", Crc32Runtime.EnsureFastTable(null)); Bind(decoder, receivers, item.fields, false);
-        float[] expected = new float[item.fields]; int count = item.warm + item.samples; string directory = Path.Combine(Root, "packets", item.name); Directory.CreateDirectory(directory);
-        for (int iteration = 0; iteration < count; iteration++)
+        var trace = activeCase = new CaseBuffer(item); var delivery = new DeliveryBuffers();
+        float[] expected = new float[item.fields]; int[] previous = new int[item.targets];
+        for (int iteration = 0; iteration < trace.rows.Length; iteration++)
         {
             for (int i = 0; i < item.fields; i++)
                 if (iteration == 0 || item.regime == "changing" || item.regime == "quarter-changing" && i % 4 == iteration % 4)
-                { expected[i] = iteration * 1024 + i + 1; senders[i % item.targets].Set(Field(i, item.targets), expected[i]); }
-            int[] previous = senders.Select(s => s.Get<int>("beforeCount")).ToArray(); uint sequence = e.Get<uint>("frameIndex");
-            double clock = Time.realtimeSinceStartupAsDouble; e.Timed("EncodeNow", out long start, out long stop);
-            Check(string.IsNullOrEmpty(e.Get<string>("lastError")), "Encode failed " + item.name + ": " + e.Get<string>("lastError"));
+                { expected[i] = iteration * 1024 + i + 1; senders[i % item.targets].Set(trace.names[i], expected[i]); }
+            for (int i = 0; i < senders.Length; i++) previous[i] = senders[i].Get<int>("beforeCount");
+            uint sequence = e.Get<uint>("frameIndex"); double clock = Time.realtimeSinceStartupAsDouble;
+            trace.rows[iteration] = new Sample { iteration = iteration, frame = Time.frameCount, clock = clock };
+            trace.captured = iteration + 1; // Finish preserves partial rows/raw packets when a later assertion fails.
+            long start = 0, stop = 0;
+            RecordBoundary(item, iteration, 0);
+            try { e.Timed("EncodeNow", out start, out stop); }
+            finally { trace.rows[iteration].start = start; trace.rows[iteration].stop = stop; RecordBoundary(item, iteration, 1); }
+            string error = e.Get<string>("lastError"); checks++; if (!string.IsNullOrEmpty(error)) throw new InvalidOperationException("Encode failed " + item.name + ": " + error);
             int emitted = iteration == 0 || item.regime == "changing" ? item.fields : item.regime == "unchanged" ? 0 : item.fields / 4;
             Check(e.Get<uint>("frameIndex") == sequence + (emitted > 0 ? 1u : 0u), "Unexpected publication");
-            Check(e.Get<int>("autoVariableCount") == emitted, "Encoder field diagnostic mismatch");
-            int[] callbackDeltas = senders.Select((s, i) => s.Get<int>("beforeCount") - previous[i]).ToArray();
-            Check(callbackDeltas.All(n => n == 1), "BeforeEncode not exactly once per target");
-            string packetPath = "", headerPath = ""; bool gpu = false; int payloadCount = 0; long decodeStart = 0, decodeStop = 0;
+            int encoded = e.Get<int>("autoVariableCount"); trace.rows[iteration].encodedFields = encoded; Check(encoded == emitted, "Encoder field diagnostic mismatch");
+            int callbacks = 0;
+            for (int i = 0; i < senders.Length; i++) { previous[i] = senders[i].Get<int>("beforeCount") - previous[i]; callbacks += previous[i]; }
+            trace.rows[iteration].callbacks = callbacks;
+            for (int i = 0; i < senders.Length; i++) Check(previous[i] == 1, "BeforeEncode not exactly once per target");
+            bool gpu = false; int payloadCount = 0; long decodeStart = 0, decodeStop = 0;
             if (emitted > 0)
             {
-                byte[] header = e.Get<byte[]>("_headerBytes").ToArray();
-                payloadCount = header[42] | header[43] << 8; // Use the protected packet length for the capture.
-                byte[] packet = e.Get<byte[]>("_payloadBytes").Take(payloadCount).ToArray();
-                VerifyPacket(packet, expected, item.targets, emitted); gpu = e.Get<bool>("lastFrameUsedGpuLuma4"); Check(gpu, "GPU Luma4 path not used");
-                packetPath = "packets/" + item.name + "/" + iteration.ToString("D3") + ".bin"; headerPath = packetPath + ".header";
-                File.WriteAllBytes(Path.Combine(Root, packetPath), packet); File.WriteAllBytes(Path.Combine(Root, headerPath), header);
-                Deliver(decoder, packet, header, sequence, out decodeStart, out decodeStop);
+                payloadCount = trace.Capture(e, iteration); trace.rows[iteration].payloadCount = payloadCount;
+                VerifyPacket(trace, iteration, payloadCount, expected, emitted);
+                gpu = e.Get<bool>("lastFrameUsedGpuLuma4"); trace.rows[iteration].gpu = gpu; Check(gpu, "GPU Luma4 path not used");
+                delivery.Prepare(decoder, trace.packets, iteration * trace.packetStride, payloadCount, trace.header, sequence);
+                RecordBoundary(item, iteration, 2);
+                try { decoder.Timed("_update", out decodeStart, out decodeStop); }
+                finally { trace.rows[iteration].decodeStart = decodeStart; trace.rows[iteration].decodeStop = decodeStop; RecordBoundary(item, iteration, 3); }
+                Check(decoder.Get<bool>("lastFrameValid") && decoder.Get<bool>("lastPayloadCrcVerified"), "Protected Decoder completion failed");
                 Check(decoder.Get<int>("lastAppliedVariableCount") == emitted, "Decoder count mismatch");
-                for (int i = 0; i < item.fields; i++) Check(receivers[i % item.targets].Get<float>(Field(i, item.targets)) == expected[i], "Receiver value mismatch " + i);
+                for (int i = 0; i < item.fields; i++) { checks++; if (receivers[i % item.targets].Get<float>(trace.names[i]) != expected[i]) throw new InvalidOperationException("Receiver value mismatch " + i); }
             }
-            samples.Add(Row(item.name, iteration, iteration >= item.warm, Time.frameCount, clock, start, stop, Ms(stop - start), item.fields, item.targets, emitted, e.Get<int>("autoVariableCount"), payloadCount, callbackDeltas.Sum(), gpu, packetPath, headerPath, decodeStart, decodeStop, Ms(decodeStop - decodeStart)));
             yield return null;
         }
         if (item.regime == "changing")
@@ -280,12 +407,14 @@ public static class BindingCostValidation
                     for (int i = 0; i < 5; i++) scan.Call(method);
                     for (int i = 0; i < 32; i++)
                     {
-                        scan.Timed(method, out long start, out long stop); helper.Add(Row(item.targets, i, method, start, stop, Ms(stop - start))); yield return null;
+                        scan.Timed(method, out long start, out long stop); trace.helperRows[trace.helperCaptured++] = new HelperSample { sample = i, method = method, start = start, stop = stop }; yield return null;
                     }
                 }
             }
         }
+        FlushCase();
         foreach (var p in programs.Skip(firstProgram).ToArray()) p.Dispose();
+        trace = null; // Release large bounded trace arrays before the between-case collection.
     }
     static IEnumerator SemanticCases()
     {

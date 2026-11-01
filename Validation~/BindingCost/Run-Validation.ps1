@@ -4,6 +4,8 @@ param(
     [Parameter(Mandatory=$true)][string]$Plan,
     [Parameter(Mandatory=$true)][string]$Results,
     [switch]$SemanticsOnly,
+    [switch]$Telemetry,
+    [string]$HarnessEditor,
     [ValidateRange(60,3600)][int]$TimeoutSeconds=1200
 )
 $ErrorActionPreference='Stop'
@@ -17,6 +19,11 @@ $bindingAssets=Join-Path $bindingProject 'Assets/Validation/BindingCost'
 New-Item -ItemType Directory -Path $bindingAssets,$Results -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Runtime'),(Join-Path $PSScriptRoot 'Editor') -Destination $bindingAssets -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Runtime'),(Join-Path $PSScriptRoot 'Editor') -Destination $Results -Recurse -Force
+if($HarnessEditor){
+    $bindingOverride=(Resolve-Path -LiteralPath $HarnessEditor).Path
+    Copy-Item -LiteralPath $bindingOverride -Destination (Join-Path $bindingAssets 'Editor/BindingCostValidation.cs') -Force
+    Copy-Item -LiteralPath $bindingOverride -Destination (Join-Path $Results 'Editor/BindingCostValidation.cs') -Force
+}
 $bindingResults=(Resolve-Path -LiteralPath $Results).Path
 function Get-BindingConfigurations {
     $bindingPaths=@('Packages/manifest.json','Packages/packages-lock.json')
@@ -28,10 +35,12 @@ ConvertTo-Json -InputObject @($bindingBefore) -Depth 4 | Set-Content -LiteralPat
 $bindingSavedResults=$env:TSMP_BINDING_COST_RESULTS
 $bindingSavedPlan=$env:TSMP_BINDING_COST_PLAN
 $bindingSavedSemantics=$env:TSMP_BINDING_COST_SEMANTICS_ONLY
+$bindingSavedTelemetry=$env:TSMP_BINDING_COST_TELEMETRY
 try {
     $env:TSMP_BINDING_COST_RESULTS=$bindingResults
     $env:TSMP_BINDING_COST_PLAN=$bindingPlan
     $env:TSMP_BINDING_COST_SEMANTICS_ONLY=if($SemanticsOnly){'1'}else{'0'}
+    $env:TSMP_BINDING_COST_TELEMETRY=if($Telemetry){'1'}else{'0'}
     $bindingLog=Join-Path $bindingResults 'editor.log'
     $bindingArgs="-batchmode -force-d3d11 -projectPath `"$bindingProject`" -executeMethod BindingCostValidation.Run -logFile `"$bindingLog`""
     $bindingProcess=Start-Process -FilePath $UnityEditor -ArgumentList $bindingArgs -WindowStyle Hidden -PassThru
@@ -40,7 +49,11 @@ try {
     $bindingProcess.Refresh()
     $bindingResult=Join-Path $bindingResults 'result.txt'
     $bindingErrors=if(Test-Path -LiteralPath $bindingLog){@(Select-String -LiteralPath $bindingLog -Pattern '(?i)(\berror\s+CS\d+\b|scripts have compiler errors|script compilation failed)' | ForEach-Object Line)}else{@('Missing Unity log')}
-    if($bindingErrors.Count){@('FAIL','CompilerOrLaunchFailure')+$bindingErrors | Set-Content -LiteralPath $bindingResult -Encoding utf8;throw "Binding cost compilation failed: $bindingLog"}
+    if($bindingErrors.Count){
+        if(Test-Path -LiteralPath $bindingResult){Copy-Item -LiteralPath $bindingResult -Destination (Join-Path $bindingResults 'fixture-result-before-controller.txt')}
+        @('FAIL','CompilerOrLaunchFailure')+$bindingErrors | Set-Content -LiteralPath $bindingResult -Encoding utf8
+        throw "Binding cost compilation failed: $bindingLog"
+    }
     if(Test-Path -LiteralPath $bindingResult){Get-Content -LiteralPath $bindingResult}
     if($bindingProcess.ExitCode -ne 0 -or -not(Test-Path -LiteralPath $bindingResult) -or (Get-Content -LiteralPath $bindingResult -First 1) -ne 'PASS'){throw "Binding cost failed: $bindingLog"}
 } finally {
@@ -51,5 +64,6 @@ try {
     $env:TSMP_BINDING_COST_RESULTS=$bindingSavedResults
     $env:TSMP_BINDING_COST_PLAN=$bindingSavedPlan
     $env:TSMP_BINDING_COST_SEMANTICS_ONLY=$bindingSavedSemantics
+    $env:TSMP_BINDING_COST_TELEMETRY=$bindingSavedTelemetry
     if($bindingDiff.Count){throw 'Project configuration changed'}
 }
