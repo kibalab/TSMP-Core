@@ -1,5 +1,40 @@
 # Main integration validation
 
+## Reliability integration, 2026-11-01
+
+The validated reliability work is merged into local main in all five TSMP
+repositories. Each integration is a two-parent merge of the freshly fetched
+origin/main and codex/tsmp-reliability, with exactly the same tree as the tested
+reliability revision. No conflict resolution or product edits were needed.
+
+| Repository | Integrated local main | New working branch |
+| --- | --- | --- |
+| Core | `42bca3d` | `codex/tsmp-optimization` |
+| Luma4 | `a1be05e` | `codex/tsmp-optimization` |
+| Color256 | `acc6865` | `codex/tsmp-optimization` |
+| RGB16 | `e53bc76` | `codex/tsmp-optimization` |
+| RGB20 | `cf44add` | `codex/tsmp-optimization` |
+
+Core's prior local main (`b205273`) has unrelated legacy history. It is preserved
+as `archive/legacy-main-before-reliability-20261101`; the current main starts from
+the canonical origin/main (`180646f`) before integrating reliability. Existing
+reliability branches and other worktrees are retained. No push or release was
+performed; live remote main refs remain unchanged.
+
+The independent merge audit passes **56 checks across five repositories**:
+parent order, source-tree equality, branch origins, preserved reliability refs,
+legacy-main backup and unchanged live remote refs. Evidence is retained under
+`F:/Unity/TSMP/Validation-Results/optimization-focus-20261101`, including
+`git-before.json`, `git-after.json` and `independent-merge-audit.json`.
+
+Because all merged trees are byte-identical to the previously tested revisions,
+the merge does not claim a new runtime performance result. Current pre-integration
+automatic checks and their scope are recorded in
+[WorkloadFollowup](WorkloadFollowup/RESULTS.md#product-finishing-follow-up).
+New optimization experiments and any accepted changes stay on the new branches.
+
+## Earlier integration, 2026-09-11
+
 Validated on 2026-09-11 while merging `release` at `7d0b352` into `main` at `820715a` (PR #1, humanoid Continuous interpolation).
 
 ## Merge resolution
