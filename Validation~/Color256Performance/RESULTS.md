@@ -36,6 +36,13 @@ other two age p95 values remain about 44.8 ms. Last-pair Encode p95 rises
 reversals and all outliers are retained. The small 5KB average is not presented
 as a dependable gain for every run, tail time, hardware or real-client workload.
 
+Independent raw pooling also finds 5KB Encode p99 **5.2717 to 5.5420 ms**,
+frame-VM p99 **5.7047 to 7.0487 ms**, and source-age p99 **44.9026 to 54.0197 ms**.
+Each candidate paired process contains one or two Encode calls above 6 ms,
+versus none in the originals. Their cause is not established; they are not
+dismissed as noise. The 60-second candidate does not sustain those tails
+(Encode p99/max 5.2134/5.7564 ms, frame-VM p99 5.6 ms).
+
 All **6,120/6,120 measured fields** arrive, with no sender deadline misses.
 Warmup/tail traces also retain **7,303/7,303 applications**, each checked across
 its entire field by the executed receiver harness. The 60-second candidate
@@ -60,6 +67,12 @@ still differ from older measurements with the same product code; only these
 matched pairs support the new percentages. No live VRChat, Quest or OBS/VRCDN
 validation, allocation measurement, push, release or optimization-to-main merge
 is claimed.
+
+`independent-raw-audit.json` independently reconciles **51,004 VM events and
+21,871 frame rows**, receiver IDs, complete-field-check records, source/program
+receipts and the frozen adoption criteria. It does not recheck dumped field
+bytes: those bytes are checked by the executed receiver harness. Product change
+commit: Color256 `151128b`.
 
 ## Earlier palette and block-index optimization
 
