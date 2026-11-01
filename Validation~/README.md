@@ -48,6 +48,7 @@ Use this short index for the current development-branch evidence. Each linked re
 | Many-binding callback semantics and paired Encoder cost | [BindingCost](BindingCost/RESULTS.md), [runner and `-SemanticsOnly`](BindingCost/README.md) |
 | Finite RPC burst latency and delivery through the GPU path | [RpcBurst](RpcBurst/RESULTS.md), [runner](RpcBurst/README.md) |
 | Current Color256 pacing and observer controls | [Color256Followup](Color256Followup/RESULTS.md), [runner](Color256Followup/README.md) |
+| Current Color256 calibration-row CPU improvement and retained 5KB tails | [Color256Performance](Color256Performance/RESULTS.md#calibration-row-follow-up-on-the-optimization-branch) |
 | Paired Color256 writer improvement and default-refresh recovery | [NextImprovements](NextImprovements/RESULTS.md) |
 
 Binding, burst and Color256 experiments require explicit frozen plans and remain separate commands. Do not run source A/B controllers as an ordinary regression: they deliberately exchange the dedicated project's Encoder source. Do not add their percentage reductions together or infer live FPS from VM call times. Absolute timings vary between runs, including with identical source and bytecode.

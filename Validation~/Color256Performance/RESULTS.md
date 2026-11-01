@@ -1,5 +1,68 @@
 # Color256 Udon encoder improvement, 2026-11-01
 
+## Calibration-row follow-up on the optimization branch
+
+After integrating reliability into local main, the first optimization on
+codex/tsmp-optimization copies complete calibration rows from the existing
+256-color palette with Array.Copy. Short/partial destination rows retain
+per-element bounds handling. Payload writing, palette initialization, the
+full-pixel fallback, Native encoding, shaders and protocol are unchanged. This
+is one Runtime file, **13 added/10 removed lines**, with no new arrays or GPU
+passes. The codec client program grows **17,924 to 18,144 B** (+220 B).
+
+The existing correctness runner passes **88 original / 208 candidate assertions**
+with **25 managed and 19 actual client-VM vectors per version**. Complete arrays
+match the independent coordinate/palette oracle and the original output,
+including calibration rows, short/negative regions, dirty tails and invalid
+input behavior. The same existing seven-process performance runner then
+executes three source pairs in AB/BA/AB order and a candidate 60-second check,
+with no new permanent harness or selection of inputs after timing.
+
+| Current matched workload | Original mean | Candidate mean | Mean reduction | Original / candidate p95 |
+| --- | ---: | ---: | ---: | ---: |
+| Color256 1KB | 1.454794 ms | 1.343892 ms | **7.623%** | 1.5378 / 1.4327 ms |
+| Color256 5KB | 4.982289 ms | 4.896678 ms | **1.718%** | 5.1634 / 5.1046 ms |
+
+Each mean/p95 pools **1,080 measured EncodeNow calls per version**. These are
+whole Encoder client VM elapsed times with nested work included once; they
+are not FPS, GPU execution time or whole-frame elapsed time. The 1KB mean
+improves **8.568%, 8.292%, 5.998%** across the three pairs. The 5KB pairs improve
+2.924% and 3.332%, then reverse **1.149% slower** in the last pair.
+
+There is no universal frame/latency improvement: first-pair 5KB frame-VM p95
+rises **5.5627 to 6.8991 ms**, source-age p95 **44.7774 to 53.6714 ms**; the
+other two age p95 values remain about 44.8 ms. Last-pair Encode p95 rises
+5.0680 to 5.3867 ms. Pooled 5KB maximum rises **5.5586 to 12.1510 ms**. These
+reversals and all outliers are retained. The small 5KB average is not presented
+as a dependable gain for every run, tail time, hardware or real-client workload.
+
+All **6,120/6,120 measured fields** arrive, with no sender deadline misses.
+Warmup/tail traces also retain **7,303/7,303 applications**, each checked across
+its entire field by the executed receiver harness. The 60-second candidate
+receives **1,800/1,800** at the 30Hz source target; Encode mean/p95 is
+4.8896/5.0799 ms, frame-VM p95 5.44 ms, source-age p95 44.7921 ms.
+
+Adoption criteria were frozen before timing: consistent 1KB improvement of at
+least 2% pooled, nonregressing 5KB pooled mean with no pair over 2% slower,
+complete measured delivery, original pixel/invalid-input parity, and no new
+buffers/GPU passes. All pass. The change is retained for its small-payload CPU
+saving with the 5KB tail limitations above, rather than increasing recovery or
+transport complexity. It is not added to earlier percentage reductions.
+
+Evidence: `F:/Unity/TSMP/Validation-Results/optimization-focus-20261101/`
+`color-calibration`, including the frozen adoption rules, source variants,
+correctness captures and `ab/ab-analysis.json`. Source SHA256 changes from
+`63cf1f4d725774bc923e9cc2f302b89d633640d823ed5fa9bb91329e42e64bfd` to
+`5243abfb8edb99f8b0ae21c9841d4597006baf992cfa2e954f290289711d9dc6`.
+Only the Color256 source/program varies; 391 other product sources, four other
+loaded programs and 23 configurations remain unchanged per run. Absolute timings
+still differ from older measurements with the same product code; only these
+matched pairs support the new percentages. No live VRChat, Quest or OBS/VRCDN
+validation, allocation measurement, push, release or optimization-to-main merge
+is claimed.
+
+## Earlier palette and block-index optimization
+
 Caching the256 fixed colors and writing block-texture pixels directly reduces
 mean EncodeNow time by **76.90% at1KB and79.08% at5KB** across three fresh-process
 pairs. The5KB source sustains its requested30Hz after previously achieving about
