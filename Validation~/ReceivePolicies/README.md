@@ -1,5 +1,22 @@
 # Receive Policy Regressions
 
+## Additional callback eligibility controls, 2026-11-01
+
+Three retained cases check the public dispatcher rejecting None/inactive
+targets, and one receive callback changing mode or deactivating its target
+before a second binding is processed. The second binding's previously received
+RawBytes array must retain its original reference/content. These exercise the
+existing production policy rather than a replacement receiver.
+
+They pass both for an experimental duplicate-check optimization and again after
+that optimization is rejected and the original helpers restored: **50 Native /
+51 actual client VM cases PASS**. No production receive behavior changes are
+shipped. The candidate's mean benefit and failed upper-tail guards are recorded
+in [BindingCost](../BindingCost/RESULTS.md#receive-target-experiment-not-adopted).
+Evidence: `F:/Unity/TSMP/Validation-Results/optimization-implementation-20261101`,
+with candidate results in decoder-active and restored-code final-native-policy /
+final-vm-policy plus final-client-compile. No live VRChat validation is claimed.
+
 These fixtures exercise the real Core decoder dispatch/cache helpers and encoder. They do not replace the receive implementation. Use dedicated projects referencing this checkout and the real Luma4 package.
 
 ```powershell

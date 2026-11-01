@@ -40,6 +40,9 @@ public static class ReceivePolicyValidation
             Test("None preserves reused " + fields[i] + " across mode and length changes", () => Arrays(ArrayCacheCases.Types[index], fields[index]));
         }
         Test("A non-network component without receiveInterpolation still receives", Plain);
+        Test("Public dispatcher retains its eligibility guard", DispatcherGuard);
+        Test("Receive callback changing mode preserves the next binding cache", () => CallbackEligibility(1));
+        Test("Receive callback deactivating a target preserves the next binding cache", () => CallbackEligibility(2));
         Test("None does not suppress outgoing TransSync encoding", SendOnly);
         foreach (var mode in new[] { ReceiveInterpolationMode.Discrete, ReceiveInterpolationMode.Continuous })
         foreach (bool sync in new[] { false, true })
@@ -119,7 +122,7 @@ public static class ReceivePolicyValidation
         public void Dispose() => Object.DestroyImmediate(Target.gameObject);
     }
 
-    private static void Apply(Endpoint driver, Endpoint target, string field, int type, object value, int expected)
+    private static void Apply(Endpoint driver, Endpoint target, string field, int type, object value, int expected, string entryPoint = "ApplyReceivedValue")
     {
         var payload = new byte[4096];
         int end = NetworkValueWriter.WriteObject(payload, 0, type, value);
@@ -129,7 +132,7 @@ public static class ReceivePolicyValidation
         driver.Set("fieldName", field);
         driver.Set("valueType", type);
         driver.Set("payload", payload);
-        driver.Call("ApplyReceivedValue");
+        driver.Call(entryPoint);
         Check(driver.Get<int>("appliedCount") == expected, "Unexpected applied count");
         Check(driver.Get<int>("rejectedCount") == 0, "Unexpected rejected value type");
     }
@@ -198,6 +201,51 @@ public static class ReceivePolicyValidation
             Apply(driver, target, "value", (int)NetworkValueType.Int32, 42, 1);
             Check(target.Get<int>("value") == 42 && target.Get<uint>("lastVariableHash") == 100 && target.Get<int>("notifications") == 1,
                 "Ordinary component binding was blocked");
+        }
+    }
+
+    private static void DispatcherGuard()
+    {
+        using (var driver = new Endpoint(typeof(ReceivePolicyProbe)))
+        using (var target = new Endpoint(typeof(ReceivePolicyProbe)))
+        {
+            target.Set("receiveInterpolation", ReceiveInterpolationMode.None);
+            target.Set("value", 17);
+            target.Set("lastVariableHash", 777u);
+            Apply(driver, target, "value", (int)NetworkValueType.Int32, 29, 0, "ApplyDirectValue");
+            Check(target.Get<int>("value") == 17 && target.Get<uint>("lastVariableHash") == 777 && target.Get<int>("notifications") == 0,
+                "Public dispatcher bypassed receive None");
+            target.Set("receiveInterpolation", ReceiveInterpolationMode.Discrete);
+            Apply(driver, target, "value", (int)NetworkValueType.Int32, 29, 1, "ApplyDirectValue");
+            Check(target.Get<int>("value") == 29 && target.Get<int>("notifications") == 1, "Public dispatcher stopped applying eligible values");
+            target.Target.gameObject.SetActive(false);
+            Apply(driver, target, "value", (int)NetworkValueType.Int32, 53, 0, "ApplyDirectValue");
+            Check(target.Get<int>("value") == 29 && target.Get<int>("notifications") == 1, "Public dispatcher bypassed inactive target");
+        }
+    }
+
+    private static void CallbackEligibility(int action)
+    {
+        using (var driver = new Endpoint(typeof(ReceivePolicyProbe)))
+        using (var target = new Endpoint(typeof(ReceivePolicyProbe)))
+        {
+            const int type = (int)NetworkValueType.RawBytes;
+            var original = new byte[] { 3, 7 };
+            var next = new byte[] { 11, 19 };
+            target.Set("receiveInterpolation", ReceiveInterpolationMode.Discrete);
+            Apply(driver, target, "bytes", type, original, 2, "ApplyReceivedPair");
+            Array secondCache = target.Get<Array>("bytes");
+            Check(target.Get<int>("notifications") == 2, "Pair baseline callback count differs");
+            target.Set("receiveAction", action);
+            Apply(driver, target, "bytes", type, next, 1, "ApplyReceivedPair");
+            Check(target.Get<int>("notifications") == 3, "Later binding ignored callback eligibility change");
+            Check(!ReferenceEquals(secondCache, target.Get<Array>("bytes")), "First binding did not use its own array");
+            ArrayCacheCases.AssertEqual(next, target.Get<Array>("bytes"));
+            ArrayCacheCases.AssertEqual(original, secondCache);
+            if (action == 1)
+                Check(Convert.ToInt32(target.Get<object>("receiveInterpolation")) == (int)ReceiveInterpolationMode.None, "Receive callback did not select None");
+            else
+                Check(!target.Target.gameObject.activeSelf, "Receive callback did not deactivate target");
         }
     }
 
