@@ -1,5 +1,36 @@
 # Color256 Udon encoder improvement, 2026-11-01
 
+## Current decision after repeat verification
+
+The small calibration-row change `151128b` is **reverted by `2fe5026`** on the
+optimization branch after a second frozen seven-process experiment failed its
+complete-delivery gate. The older palette/block-index optimization remains.
+Current Color256 source is again
+`63cf1f4d725774bc923e9cc2f302b89d633640d823ed5fa9bb91329e42e64bfd`.
+
+The repeat does **not** reproduce the prior 5KB tail regression. Pooled p99
+original/candidate is Encode 5.3393/5.2102 ms, frame VM 5.7997/5.5815 ms and
+source age 47.3221/44.8833 ms. Mean reductions remain 6.803% at 1KB and 2.719%
+at 5KB. However, the candidate's 60-second case receives **1,798/1,800** measured
+IDs; missing IDs are **1978 and 2372**, with no sender deadline misses. Overall
+measured delivery is **6,118/6,120**. Warm/tail loss is zero; all **7,302** accepted
+applications have complete-field checks. No corrupted application is accepted.
+
+These results do not establish that calibration copying caused the two losses.
+The isolated change is conservatively withdrawn because the acceptance gate
+failed. A passing per-run measurement validates accepted bytes and recording;
+it does not establish complete delivery. The official aggregate analyzer's
+FAIL on missing IDs is retained, not relaxed or relabeled PASS.
+
+Repeat evidence:
+`F:/Unity/TSMP/Validation-Results/optimization-implementation-20261101/`
+`color-tail-recheck`. `guards-before-timing.json` pins mean, three pooled p99
+limits (candidate <=105% original), and complete-delivery requirements before
+output. `independent-tail-audit.json` independently verifies source/program/
+configuration isolation and records measurement-valid PASS / adoption FAIL.
+Every process and outlier remains available. The initial experiment below is
+historical evidence for the now-reverted candidate.
+
 ## Calibration-row follow-up on the optimization branch
 
 After integrating reliability into local main, the first optimization on
