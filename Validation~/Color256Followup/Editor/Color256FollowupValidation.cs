@@ -69,7 +69,7 @@ public static class Color256FollowupValidation
     static readonly List<double> ageSamples = new List<double>();
     static double begin, end;
     static int renderTicks, busyTicks, deadlineMisses, submitted, duplicatesAtStart, attemptsAtStart;
-    
+
     [Serializable] public sealed class Plan { public Case[] cases; }
     [Serializable] public sealed class Case
     {

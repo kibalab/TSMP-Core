@@ -138,6 +138,9 @@ Both runs freshly compile client programs after entering Play Mode and load
 the serialized client programs. First host-step or async-observer exceptions
 are propagated to a failed result, rather than merely logged by Unity.
 
+After measurement, one trailing whitespace-only line in the repository driver
+was cleaned up. Archived executed harness bytes and their receipts are retained.
+
 | Program | Initial SHA256 | Observer-control SHA256 |
 | --- | --- | --- |
 | Encoder | `90c142e388c90447ec92e9a670c11544034b78ab79a53bf5d13d90c1bf308b8c` | `428c70ce2917eed0a77ff7f78e646a0445e2900732b4a6c97e28048168c7d144` |
