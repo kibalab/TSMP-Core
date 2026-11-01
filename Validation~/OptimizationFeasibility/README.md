@@ -1,5 +1,66 @@
 # Resource optimization feasibility
 
+## Float32 API and helper feasibility, 2026-11-01
+
+Worlds SDK **3.10.4-beta.2** exposes SingleToInt32Bits and Int32BitsToSingle.
+Actual client compilation and serialized-program VM calls confirm both APIs.
+**Product Binary.cs is unchanged**, including all Native/VRC copies. Minimum
+SDK compatibility and a product-level Encoder/Decoder A/B remain unverified.
+
+The validation-only probe tests 114 selected IEEE754 edge vectors and times
+128 ordinary finite values per event, 10 warm rounds then 80 measured rounds
+in alternating forward/reverse order. Input/heap preparation, symbol/PC lookup
+and output checks are outside Interpret timing. All 320 raw samples are retained.
+
+| Helper / 128 values | Current mean | Bitcast prototype mean | Absolute saving |
+| --- | ---: | ---: | ---: |
+| Write | 0.274364 ms | 0.133459 ms | 0.140905 ms |
+| Read | 0.247193 ms | 0.170749 ms | 0.076444 ms |
+
+These are one-process helper costs, not whole-Encoder percentages or evidence
+that Float32 conversion dominates the many-field workload. No allocation counter
+is used and no allocation-free claim is made. The prototype uses no GetBytes
+inside the VM; its existing arrays are reused.
+
+The edge corpus also characterizes existing product behavior: **10 current
+writer VM errors** (largest positive/negative subnormals, two infinities, six
+NaNs) and **23 successful finite writes with different bits**. Examples include
+127.999992 becoming 128 and maximum finite values becoming infinity. These
+deliberately selected boundaries do not estimate an ordinary traffic error rate.
+The current reader matches the prototype's existing zero/NaN/infinity policy
+for all 114 vectors. Those policies must be explicit before product adoption.
+
+The initial probe stopped after 55 vectors because it assumed every signaling
+NaN payload survived the host boundary unchanged. That FAIL, source and log are
+preserved. The corrected characterization records requested/host/heap/API bits,
+requires exact finite/zero/infinity bits and preserves NaN classification while
+recording payload changes. Two signaling NaNs are already quieted at the host;
+the heap adds no further changes. The Runtime probe and client bytecode stay
+identical. The completed run passes **25,295 assertions**; an independent audit
+recounts all vectors, timings and unchanged product sources.
+
+Evidence: `F:/Unity/TSMP/Validation-Results/optimization-implementation-20261101/`
+`float32-api`, with `inventory`, `probe`, `probe-characterized` and
+`independent-float-audit.json` records. The inventory's files are directly under
+that root; `probe` is the retained initial failure.
+
+To reproduce in a dedicated SDK project with its Editor closed, copy the two
+validation sources, use a fresh result path and let the Play Mode probe exit:
+
+```powershell
+$destination = Join-Path $project 'Assets/Validation/Float32Api'
+New-Item -ItemType Directory -Path (Join-Path $destination 'Editor'),(Join-Path $destination 'Runtime') -Force | Out-Null
+Copy-Item -LiteralPath './Validation~/OptimizationFeasibility/Editor/Float32ApiValidation.cs' -Destination (Join-Path $destination 'Editor') -Force
+Copy-Item -LiteralPath './Validation~/OptimizationFeasibility/Runtime/Float32ApiProbe.cs' -Destination (Join-Path $destination 'Runtime') -Force
+$env:TSMP_VALIDATION_RESULT = '<fresh output directory>/result.txt'
+& $unity -batchmode -force-d3d11 -projectPath $project -executeMethod Float32ApiValidation.RunProbe -logFile '<fresh output directory>/editor.log'
+```
+
+For node inventory only, use Float32ApiValidation.RunInventory and a separate
+fresh result path. Node exposure alone does not establish VM execution or speed.
+
+## Earlier feasibility investigation
+
 The following is the original investigation. The five subsequent implementations and measured results are recorded in [IMPLEMENTED.md](./IMPLEMENTED.md).
 
 This investigation follows [the resource profile](../ContinuousFrames/RESOURCE-PROFILE.md). It changes validation code only. No runtime optimization, protocol change, package release or revised end-to-end performance claim is included.
