@@ -1,6 +1,105 @@
 # Resource optimization feasibility
 
+## Float32 writer correction and minimum SDK, 2026-11-01
+
+The current product replaces only the Udon Float32 writer's arithmetic
+reconstruction with SingleToInt32Bits and four masked byte writes. Native
+writing and the reader remain unchanged. The Runtime edit is 7 added/46 removed
+lines, with no new fields, buffers, options or packet types. Udon retains +0
+normalization; Native retains signed zero. The reader still maps either zero
+to +0 and every exponent-255 input to signed MaxValue. Signaling NaNs may
+quiet before the VM; the test records requested, host and heap bits separately.
+The [protocol](../../Packages/com.kibalab.tsmp.core/Documentation~/TSMP_PROTOCOL.md)
+now states these existing policies explicitly.
+
+The new product contract exercises 3,584 scalar patterns: every finite exponent,
+both signs, five mantissa boundaries, deterministic random samples and selected
+zeros/infinities/NaNs. It also checks unaligned offsets, sentinels, returned
+cursors, Vector2/3, Quaternion and Float32Array input ownership/storage reuse.
+
+| Product/environment | Writer VM errors | Successful writes with wrong bits | Reader differences |
+| --- | ---: | ---: | ---: |
+| Original Udon, current SDK | 450 | 482 | 0 |
+| Corrected Native | 0 | 0 | 0 |
+| Corrected Udon, SDK 3.10.4-beta.2 | 0 | 0 | 0 |
+| Corrected Udon, minimum SDK 3.9.0, with Timeline compatibility fix | 0 | 0 | 0 |
+
+The original errors include 436 finite values, two infinities and 12 NaNs;
+all 482 successful wrong writes are finite. These selected inputs do not
+estimate ordinary traffic error rates. Five signaling NaNs quiet at the host;
+the heap makes no further changes. An independent audit recomputes all 14,336
+scalar rows. Wrapper/sentinel/array assertions are fixed-fixture PASS receipts,
+not independently recomputed exported byte traces.
+
+The initial SDK 3.9.0 attempt fails before the Float32 probe because the existing
+Timeline component uses unexposed PlayableDirector.isActiveAndEnabled. That
+failure and the initial SDK data-locator import error remain in the evidence.
+A separate one-condition Runtime correction checks enabled and
+gameObject.activeInHierarchy. It passes Native 20-case Timeline regression and
+actual Timeline VM checks on both SDKs, including disabled components, inactive
+parents, clearing captured data, rejecting receive and recovering on activation.
+See [Timeline validation](../Timeline/README.md). No original FAIL is relabeled.
+
+Six fresh SDK processes run the existing full Encoder/protected Decoder matrix
+in AB/BA/AB order: 12 workloads, 8 warm and 32 measured opportunities per case.
+All 2,880 Encode calls, 1,944 protected packet/header pairs, 99,360 floats and
+972 corresponding payload pairs pass. Binary is the only source exchanged;
+the existing Timeline source is constant during this earlier A/B. Encoder
+bytecode changes 138,368 to 137,576 B (-792 B); the other four loaded programs,
+391 other sources and 23 project configurations remain identical.
+
+| 128-field Encode workload | Original mean | Corrected mean | Change |
+| --- | ---: | ---: | ---: |
+| 1 target, changing | 9.5577 ms | 9.4918 ms | -0.69% |
+| 128 targets, changing | 12.8010 ms | 12.2618 ms | -4.21% |
+| 1 target, unchanged | 8.4565 ms | 8.2697 ms | -2.21% |
+| 128 targets, unchanged | 9.3320 ms | 9.5063 ms | +1.87% |
+
+Stable whole-Encoder speed improvement is **not established**. Per-pair results
+vary and all upper-tail reversals are retained below. Each pooled case has
+96 samples per variant, so nearest-rank p99 is its maximum.
+
+| Encode upper-tail reversal | Original p99/max | Corrected p99/max |
+| --- | ---: | ---: |
+| 32 fields, 1 target, changing | 1.9943 ms | 6.4337 ms |
+| 32 fields, 1 target, quarter changing | 1.9319 ms | 2.1949 ms |
+| 128 fields, 1 target, changing | 10.5286 ms | 15.5909 ms |
+| 128 fields, 128 targets, unchanged | 10.6092 ms | 12.0459 ms |
+
+Unchanged Decoder bytecode also shows timing variation. These data do not prove
+the writer caused the spikes; they do not justify a whole-frame speed claim
+either. This change is retained for demonstrated correctness, not a claimed
+performance win. The previous helper-only figures below remain historical.
+
+Final combined-product checks pass: Native GPU texture loopback (11 frames),
+current SDK client compilation (16 programs), minimum SDK compilation
+(13 Core/Luma4 programs), generated bindings in both and both Timeline VM runs.
+The minimum project uses separately verified official cached Base/Worlds 3.9.0
+archives; existing projects are not downgraded. This is automated embedded-SDK
+evidence, with no live VRChat, FPS, VCC resolver or allocation-counter claim.
+
+Evidence: `F:/Unity/TSMP/Validation-Results/float32-correctness-20261101`.
+`contract-original-vm` retains the original product failure;
+`contract-minimum390-vm` retains the initial minimum-SDK compile failure;
+`contract-minimum390-compatible-vm` is its distinct successful follow-up.
+Independent binding/contract audits retain all raw timing and scalar rows.
+
+Reproduce on dedicated projects with their Editors closed and current product
+sources installed. Use a fresh result directory for each command:
+
+```powershell
+./Validation~/OptimizationFeasibility/Run-Float32Contract.ps1 -Project $native -Results '<fresh>/native'
+./Validation~/OptimizationFeasibility/Run-Float32Contract.ps1 -Project $vrc -Results '<fresh>/vm' -Vm
+```
+
+For minimum-SDK testing, pass a separately prepared SDK 3.9.0 project to the
+second command. `PackageCompatibility/Run-Minimum.ps1` instead tests SDK-free
+package combinations and does not establish minimum SDK compatibility.
+
 ## Float32 API and helper feasibility, 2026-11-01
+
+Historical snapshot before the product correction above; all figures and
+unchanged-product statements in this section refer to its frozen earlier sources.
 
 Worlds SDK **3.10.4-beta.2** exposes SingleToInt32Bits and Int32BitsToSingle.
 Actual client compilation and serialized-program VM calls confirm both APIs.

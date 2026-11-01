@@ -1,6 +1,40 @@
 # Workload follow-up, 2026-11-01
 
-## Latest optimization implementation round
+## Current Float32 correctness and minimum-SDK follow-up
+
+Udon Float32 writing now uses the input IEEE bits, replacing arithmetic
+reconstruction with 7 added/46 removed Runtime lines. In 3,584 deliberately
+selected patterns, the original writer has 450 VM failures (436 finite) and
+482 successful finite writes with wrong bits. Corrected Native/current SDK/
+minimum SDK 3.9.0 runs each have zero writer errors, wire-bit differences or
+reader differences. Native writing, the reader, zero policies and packet format
+stay unchanged; NaN host quieting is recorded rather than hidden.
+
+Actual minimum-SDK testing also uncovers an existing Timeline API incompatibility.
+A separate one-condition correction uses enabled and activeInHierarchy. The
+initial compile failure remains distinct from the successful follow-up. Native
+20-case Timeline regression and both SDK Timeline VM runs pass, including
+disabled/inactive-parent capture/receive rejection and reactivation.
+
+Six fresh-process AB/BA/AB binding runs pass 2,880 Encode calls, 1,944 protected
+packet/header pairs, 99,360 floats and 972 byte-identical corresponding payload
+pairs. Encoder bytecode shrinks by 792 B, but **stable whole-Encoder speed
+improvement is not established**: two changing 128-field means improve about
+0.69%/4.21%, one unchanged control slows 1.87%, and four upper-tail reversals
+remain. For example, 128 fields/one target/changing has p99=max (N=96)
+10.5286 to 15.5909 ms. The writer's causation is not established; this is a
+correctness fix, not a performance claim. No extra timing attempt selects away
+unfavorable observations.
+
+The combined final product passes Native GPU loopback (11 frames), current
+SDK client compilation (16 programs), minimum Core/Luma4 compilation
+(13 programs), generated bindings and Timeline VM checks on both SDKs.
+See [complete evidence and reproduction](../OptimizationFeasibility/README.md#float32-writer-correction-and-minimum-sdk-2026-11-01).
+Raw results: `F:/Unity/TSMP/Validation-Results/float32-correctness-20261101`.
+All work stays on codex/tsmp-optimization; no main merge, push, release or live
+VRChat/FPS claim. The prior optimization-trial decisions below remain historical.
+
+## Earlier guarded optimization implementation round
 
 The follow-up on codex/tsmp-optimization measures the proposed changes but
 ships **no new sender/receiver Runtime optimization**. Core Encoder/Decoder

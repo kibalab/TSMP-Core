@@ -48,12 +48,13 @@ Use this short index for the current development-branch evidence. Each linked re
 | Many-binding callback semantics and paired Encoder cost | [BindingCost](BindingCost/RESULTS.md), [runner and `-SemanticsOnly`](BindingCost/README.md) |
 | Sender/receiver duplicate-check trials and failed adoption guards | [BindingCost follow-ups](BindingCost/RESULTS.md#receive-target-experiment-not-adopted) |
 | Actual Float32 bitcast APIs, legacy edge behavior and helper cost | [Float32 feasibility](OptimizationFeasibility/README.md#float32-api-and-helper-feasibility-2026-11-01) |
+| Corrected Float32 writer, boundary contracts and actual minimum SDK 3.9.0 | [Float32 correction](OptimizationFeasibility/README.md#float32-writer-correction-and-minimum-sdk-2026-11-01), [contract runner](OptimizationFeasibility/Run-Float32Contract.ps1) |
 | Finite RPC burst latency and delivery through the GPU path | [RpcBurst](RpcBurst/RESULTS.md), [runner](RpcBurst/README.md) |
 | Current Color256 pacing and observer controls | [Color256Followup](Color256Followup/RESULTS.md), [runner](Color256Followup/README.md) |
 | Color256 calibration-row trial, repeated delivery gate and rollback | [Color256Performance](Color256Performance/RESULTS.md#current-decision-after-repeat-verification) |
 | Paired Color256 writer improvement and default-refresh recovery | [NextImprovements](NextImprovements/RESULTS.md) |
 
-Binding, burst and Color256 experiments require explicit frozen plans and remain separate commands. Do not run source A/B controllers as an ordinary regression: they deliberately exchange the dedicated project's Encoder source. Do not add their percentage reductions together or infer live FPS from VM call times. Absolute timings vary between runs, including with identical source and bytecode.
+Binding, burst and Color256 experiments require explicit frozen plans and remain separate commands. Do not run source A/B controllers as an ordinary regression: they deliberately exchange the dedicated project's frozen product sources. Do not add their percentage reductions together or infer live FPS from VM call times. Absolute timings vary between runs, including with identical source and bytecode.
 
 The representative product check is Core + Luma4 installation, automatic Setup/bindings, state/Transform and RPC through a real texture, then the targeted parsing/budget regressions. Record useful received update rate, source age and RPC application delay when evaluating a workload; packet acceptance alone is insufficient. The recorded automated work does not certify a fresh VPM download, a populated VRChat world, Quest or a long-running OBS–VRCDN session. Those checks require their own explicit runs.
 
