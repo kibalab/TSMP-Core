@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Preserve Udon payload/message diagnostics after successful automatic frame clearing so the Inspector and debug canvas can read the written frame. Keep explicit ClearFrame, next-frame, empty-attempt and failure resets. Packet bytes, finite RPC repeats and sending defaults are unchanged.
 - Cache Udon BeforeEncode target groups when binding send state is rebuilt, replacing repeated linear target searches for each eligible field. Preserve the first eligible callback's order and once-per-target sendMode capture, including live binding replacement and callback-driven changes. Packet layout, sending defaults and Native encoding are unchanged.
 - Show the last deferred TransSync field and blocked head RPC with the bytes needed for a packet containing that item alone. Distinguish fields that cannot fit the effective budget from fields deferred by other data in the current frame, using existing serialization results. Reset these diagnostics for each encode attempt. Sending policy and defaults are unchanged.
 

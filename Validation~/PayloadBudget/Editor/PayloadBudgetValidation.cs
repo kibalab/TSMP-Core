@@ -272,6 +272,7 @@ public static class PayloadBudgetValidation
         {
             Test("Budget normalization in SDK assembly", Normalization);
             Test("Actual Udon Encoder budget, fairness, RPC deferral, recovery and manual offsets", VerifyVm);
+            Test("Default automatic clear preserves output diagnostics and Canvas byte accounting", VerifyAutoClearDiagnostics);
             Finish(); EditorApplication.Exit(failed ? 1 : 0);
         };
     }
@@ -284,7 +285,7 @@ public static class PayloadBudgetValidation
         {
             var asset = AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(path);
             asset.UpdateProgram();
-            program = asset.GetRealProgram();
+            program = asset.SerializedProgramAsset.RetrieveProgram();
             Check(program != null && program.ByteCode.Length > 0, "Missing bytecode: " + path);
             vm = UdonEditorManager.Instance.ConstructUdonVM();
             vm.LoadProgram(program);
@@ -402,6 +403,94 @@ public static class PayloadBudgetValidation
                 encoder.Set("targetPayloadBytes", 256);
                 Check(SendVm(encoder).Count == 2, "Udon manual failure poisoned later state");
                 Results.Add("MEASURED Udon fixture target29=29B/1field; unlimited=147B/3fields; fairness=alternating; pending RPC survived3limited outputs then2repeats");
+            }
+            finally { output.Release(); Object.DestroyImmediate(output); }
+        }
+    }
+
+    private static void VerifyAutoClearDiagnostics()
+    {
+        using (var source = new VmProgram("Assets/Validation/PayloadBudget/PayloadBudgetProbe.asset"))
+        using (var encoder = new VmProgram("Packages/com.kibalab.tsmp.core/Runtime/Encoder/TSMPEncoder.asset"))
+        using (var canvas = new VmProgram("Packages/com.kibalab.tsmp.core/Runtime/Core/TSMPDebugCanvas.asset"))
+        {
+            var output = new RenderTexture(640, 360, 0, RenderTextureFormat.ARGB32);
+            output.Create();
+            try
+            {
+                Check(encoder.Get<bool>("clearAfterEncode"), "Automatic clear default changed");
+                encoder.Set("output", output);
+                encoder.Set("autoEncode", false);
+                encoder.Set("debugLog", false);
+                encoder.Set("useGpuLuma4", false);
+                encoder.Set("useBlockSymbolTexture", false);
+                encoder.Set("transSyncRefreshInterval", 0f);
+                encoder.Set("transRpcRepeatFrames", 2);
+                encoder.Call("_onEnable");
+                ConfigureVm(encoder, source, new[] { "a" });
+                source.Set("transRpcEncoder", encoder.Backing);
+                source.Call("QueueEvent");
+                Check(source.Get<bool>("queueAccepted"), "Diagnostic fixture RPC was not queued");
+                canvas.Set("encoder", encoder.Backing);
+                canvas.Set("showDecoder", false);
+                canvas.Set("sampleWindowSeconds", 60f);
+                canvas.Call("ResetCounters");
+                int expectedWindowBytes = 0;
+                for (int i = 0; i < 3; i++)
+                {
+                    encoder.Call("EncodeNow");
+                    Check(encoder.Get<uint>("frameIndex") == (uint)i + 1 && encoder.Get<int>("lastEncodeStage") == 6,
+                        "Automatic clear blocked subsequent output");
+                    int bytes = encoder.Get<int>("payloadBytes");
+                    var header = encoder.Get<byte[]>("_headerBytes");
+                    var payload = encoder.Get<byte[]>("_payloadBytes");
+                    Check(bytes > 8 && bytes == Binary.ReadUInt16LE(header, FrameHeader.PayloadSizeOffset),
+                        "Successful output diagnostics lost the protected payload length");
+                    Check(encoder.Get<int>("messageCount") == (i < 2 ? 2 : 1) &&
+                          encoder.Get<int>("variableMessageCount") == 1 && encoder.Get<int>("rpcMessageCount") == (i < 2 ? 1 : 0),
+                        "Output message counters were cleared or accumulated");
+                    Check(ReadValues(payload, bytes).Single().Value.SequenceEqual(new byte[] { 17, 0, 0, 0 }),
+                        "Automatic clear changed the field contents");
+                    var table = Crc32Runtime.EnsureTable(null);
+                    Check(Binary.ReadUInt32LE(header, FrameHeader.PayloadCrc32Offset) == Crc32Runtime.Compute(payload, 0, bytes, table) &&
+                          Binary.ReadUInt32LE(header, FrameHeader.CrcOffset) == Crc32Runtime.Compute(header, 0, FrameHeader.BytesBeforeCrc, table),
+                        "Automatic clear changed protected packet bytes");
+                    Check(!encoder.Get<bool>("_frameOpen") && encoder.Get<int>("_payloadOffset") == 0 && encoder.Get<int>("_messageCount") == 0,
+                        "Automatic clear retained the working frame");
+                    expectedWindowBytes += bytes + FrameHeader.Size;
+                    canvas.Call("_update");
+                    Check(canvas.Get<int>("_txWindowBytes") == expectedWindowBytes, "Canvas omitted the successful payload bytes");
+                    canvas.Call("_update");
+                    Check(canvas.Get<int>("_txWindowBytes") == expectedWindowBytes, "Canvas counted one output twice");
+                }
+                Check(encoder.Get<int>("queuedRpcCount") == 0, "Automatic clear changed finite RPC repeats");
+                encoder.Call("ClearFrame");
+                Check(encoder.Get<int>("payloadBytes") == 0 && encoder.Get<int>("messageCount") == 0 &&
+                      encoder.Get<int>("variableMessageCount") == 0 && encoder.Get<int>("rpcMessageCount") == 0,
+                    "Explicit ClearFrame no longer clears diagnostics");
+                encoder.Set("clearAfterEncode", false);
+                encoder.Call("EncodeNow");
+                Check(encoder.Get<int>("payloadBytes") == 29 && encoder.Get<bool>("_frameOpen"), "Opt-out working frame changed");
+                encoder.Call("BeginFrame");
+                Check(encoder.Get<int>("payloadBytes") == 0 && encoder.Get<int>("messageCount") == 0 &&
+                      encoder.Get<int>("variableMessageCount") == 0 && encoder.Get<int>("rpcMessageCount") == 0,
+                    "BeginFrame no longer resets diagnostics");
+                encoder.Call("ClearFrame");
+                encoder.Set("clearAfterEncode", true);
+                ConfigureVm(encoder, source, new string[0]);
+                uint before = encoder.Get<uint>("frameIndex");
+                encoder.Call("EncodeNow");
+                Check(encoder.Get<uint>("frameIndex") == before && encoder.Get<int>("payloadBytes") == 0 && encoder.Get<int>("messageCount") == 0,
+                    "Empty attempt retained stale diagnostics or advanced output");
+                ConfigureVm(encoder, source, new[] { "a" });
+                encoder.Call("EncodeNow");
+                encoder.Set("output", (RenderTexture)null);
+                before = encoder.Get<uint>("frameIndex");
+                encoder.Call("EncodeNow");
+                Check(encoder.Get<uint>("frameIndex") == before && encoder.Get<int>("payloadBytes") == 0 &&
+                      encoder.Get<int>("messageCount") == 0 && !string.IsNullOrEmpty(encoder.Get<string>("lastError")),
+                    "Failed attempt retained stale diagnostics or advanced output");
+                Results.Add("MEASURED default clear: 3 protected outputs, 2 finite RPC copies, Canvas payload/header accounting, opt-out, explicit reset, empty and failed attempts");
             }
             finally { output.Release(); Object.DestroyImmediate(output); }
         }

@@ -25,7 +25,7 @@ Native コーデックは既定で false の `SupportsGpuLuma4Encoding` によ�
 | `output` | エンコードされたフレームを受け取るテクスチャをレンダリングします。テクスチャ サイズは、最終的なフレーム サイズを定義します。 |
 | `frameRate` | `autoEncode` が有効な場合の最大自動エンコード レート。 |
 | `autoEncode` | コンポーネント更新ループでエンコードします。別のスクリプトが `EncodeNow()` を呼び出すときは無効にします。 |
-| `clearAfterEncode` | 現在のフレームを書き込んだ後、未使用のフレーム ピクセルをクリアします。コーデックやペイロード サイズを頻繁に変更する場合は、これを有効にします。 |
+| `clearAfterEncode` | Udon Writer: 出力成功後に作業中のフレームをリセットします（既定 `true`）。出力カウンターは残ります。通常の Unity では試行ごとに payload を再構築します。 |
 | `selectedCodec` | ペイロード バイトをピクセルに変換するために使用されるコーデック コンポーネント。 Luma4 はデフォルトのコーデックです。 |
 | `useBlockSymbolTexture` | 選択したコーデックがサポートしている場合は、コーデック ブロック テクスチャ パスを使用します。 |
 | `networkBehaviours` | `[TransSync]` データおよび TSMP RPC メッセージに寄与する可能性のあるバインドされた動作。 |
@@ -49,8 +49,10 @@ Native コーデックは既定で false の `SupportsGpuLuma4Encoding` によ�
 | `variableMessageCount` | 変数状態メッセージの数。 |
 | `rpcMessageCount` | RPC メッセージの数。 |
 | `FrameIndex` / `frameIndex` | ヘッダーに書き込まれる単調フレームカウンター。 |
-| `lastEncodeStage` | 最後のエンコード段階の短いテキスト識別子。 |
+| `lastEncodeStage` | Udon の整数段階: 0 初期、1 準備、2 自動フィールド、3 パケット/ヘッダー、4 テクスチャ書き込み、5 出力/反映、6 完了。エラー時は前の段階で停止することがあります。 |
 | `LastError` / `lastError` | 最後のエンコーダエラー。ランタイム ビルドでは重要なエラーもログに記録されます。 |
+
+Udon の出力成功後は、自動リセットしても `payloadBytes`、`messageCount`、`variableMessageCount`、`rpcMessageCount` を Inspector とデバッグ画面から読み取れます。直近の試行の値であり、最後の成功を永続保存する値ではありません。`BeginFrame()`、明示的な `ClearFrame()`、空の試行、失敗した試行ではリセットされます。出力成功は `frameIndex`、失敗理由は `lastError` で確認してください。Writer のリセットは出力ピクセルやパケットバッファの内容を消去しません。
 
 ## `EncodeNow()`
 
@@ -109,10 +111,10 @@ public bool QueueTransRpc(int networkId, uint rpcHash, string methodName)
 
 ## 生の変数ライター API
 
-これらのメンバーは、高度なツールと生成されたコードを対象としています。
+これらの Udon Writer メンバーは、高度なツールと生成されたコードを対象としています。
 
 ```csharp
-public bool BeginFrame()
+public void BeginFrame()
 public void ClearFrame()
 public bool BeginVariableState(int networkId)
 public bool WriteRawBytesVariable(uint variableHash, byte[] value)
@@ -127,8 +129,8 @@ public void CancelCurrentMessage()
 カスタム変数メッセージにはこのフローを使用します。
 
 ```csharp
-if (encoder.BeginFrame() &&
-    encoder.BeginVariableState(networkId) &&
+encoder.BeginFrame();
+if (encoder.BeginVariableState(networkId) &&
     encoder.WriteRawBytesVariable(variableHash, payload))
 {
     encoder.EndVariableState();

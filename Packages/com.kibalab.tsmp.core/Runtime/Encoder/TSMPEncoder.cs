@@ -751,13 +751,18 @@ namespace K13A.TSMP
 
         public void ClearFrame()
         {
-            _frameOpen = false;
-            _payloadOffset = 0;
-            _messageCount = 0;
+            ResetFrameBuilder();
             messageCount = 0;
             variableMessageCount = 0;
             rpcMessageCount = 0;
             payloadBytes = 0;
+        }
+
+        private void ResetFrameBuilder()
+        {
+            _frameOpen = false;
+            _payloadOffset = 0;
+            _messageCount = 0;
             _currentMessageStartOffset = -1;
             _currentVariableCount = 0;
             _currentRpcArgumentCount = 0;
@@ -1031,7 +1036,7 @@ namespace K13A.TSMP
                 AdvancePendingRpcQueue();
 
             if (clearAfterEncode)
-                ClearFrame();
+                ResetFrameBuilder();
         }
 
         private bool WritePendingRpcCalls()
