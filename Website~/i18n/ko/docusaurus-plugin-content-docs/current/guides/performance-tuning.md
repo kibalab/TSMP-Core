@@ -106,3 +106,9 @@ Player count가 늘어나면 특히 avatar pose sync에서 payload가 빠르게 
 3. High-bandwidth feature를 하나씩 추가합니다.
 4. 추가할 때마다 payload usage를 확인합니다.
 5. Transport와 capacity가 안정된 뒤 receive interpolation을 조정합니다.
+
+## 필드 수와 대상 객체 수 측정
+
+같은 payload 크기라도 Udon 처리 비용은 다를 수 있습니다. byte 배열 필드 하나와 여러 scalar 필드, behaviour 하나와 여러 behaviour를 각각 비교하세요. 변경 감지도 전송 대상 필드를 읽고 직렬화한 뒤 바이트를 비교하므로, 값이 그대로인 경우와 일부만 바뀌는 경우도 측정합니다.
+
+첫 인코딩과 실행 중 바인딩 변경은 안정된 반복 처리와 구분해서 측정하세요. Udon 인코더는 기존 송신 상태를 다시 만들 때 대상별 BeforeEncode 그룹을 캐시하고, 평상시에는 이 매핑을 재사용합니다. 바인딩이 많으면 필드 접근·직렬화·수신 적용 비용도 남습니다. 전체 처리시간과 함께 필드별 갱신 지연과 RPC 큐 대기시간을 기록하세요.

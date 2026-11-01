@@ -106,3 +106,9 @@ If data disappears when another player joins:
 3. Add one high-bandwidth feature at a time.
 4. Watch payload usage after each addition.
 5. Tune receive interpolation after transport and capacity are stable.
+
+## Measure field and target counts
+
+Equal payload sizes can have different Udon costs. Compare one byte-array field with many scalar fields, and one behaviour with many behaviours. Include unchanged and partially changing values: change filtering still reads and serializes eligible fields before comparing their bytes.
+
+Measure the first encode and live binding changes separately from stable operation. The Udon encoder caches each target's BeforeEncode group during its existing send-state rebuild; ordinary frames reuse that mapping. A larger binding table still has field access, serialization and receive-dispatch costs. Record per-field update age and RPC queue delay alongside total processing time.

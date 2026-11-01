@@ -644,9 +644,9 @@ namespace K13A.TSMP
         private int _codecQueryActiveWidthBlocksKey;
         private int _codecQueryActiveHeightBlocksKey;
         private UdonBehaviour[] _cachedBindingUdonTargets;
-        private UdonBehaviour[] _beforeEncodeTargets;
+        private int[] _beforeEncodeTargetGroups;
+        private bool[] _beforeEncodeVisited;
         private int[] _beforeEncodeSendModes;
-        private int _beforeEncodeTargetCount;
         private int _cachedBindingTargetCount = -1;
         private const int MaxPendingTransRpcs = 32;
         private int _nextTransRpcEventId = 1;
@@ -1153,11 +1153,13 @@ namespace K13A.TSMP
             EnsureBindingTargetCache(count);
             EnsureSendState(count);
             EnsureBeforeEncodeTargetCache(count);
-            _beforeEncodeTargetCount = 0;
             BeginBoundVariableWrite();
             int limit = effectivePayloadBudgetBytes;
             for (int i = 0; i < count; i++)
+            {
                 _sendPendingLengths[i] = 0;
+                _beforeEncodeVisited[i] = false;
+            }
 
             for (int groupStart = 0; groupStart < count;)
             {
@@ -1177,7 +1179,7 @@ namespace K13A.TSMP
                     }
                     if (!TransSyncSendScheduler.IsDue(_sendCompleted[index], _sendLastTimes[index], _sendTime, _sendIntervals[index]))
                         continue;
-                    int sendMode = SendBeforeEncodeOnce(target);
+                    int sendMode = SendBeforeEncodeOnce(target, index);
                     object value = GetProgramVariable(target, bindingFieldNames[index]);
                     int length = NetworkValueEntryWriter.WriteVariableValue(_sendScratch, 0, bindingVariableHashes[index], _sendTypes[index], value);
                     if (length < 0)
@@ -1256,12 +1258,24 @@ namespace K13A.TSMP
             _sendLastTimes = new double[count];
             _sendPendingOffsets = new int[count];
             _sendPendingLengths = new int[count];
+            _beforeEncodeTargetGroups = new int[count];
             if (_sendScratch == null)
                 _sendScratch = new byte[TransSyncSendScheduler.ScratchBytes];
             _sendRotation = 0;
             for (int i = 0; i < count; i++)
             {
                 _sendTargets[i] = _cachedBindingUdonTargets[i];
+                // Stable binding identities share one callback/sendMode cache entry.
+                // Build only when send state changes, preserving first-visit order
+                // under priority rotation without scanning targets per field.
+                _beforeEncodeTargetGroups[i] = i;
+                for (int previous = 0; previous < i; previous++)
+                {
+                    if ((Object)_sendTargets[previous] != (Object)_sendTargets[i])
+                        continue;
+                    _beforeEncodeTargetGroups[i] = _beforeEncodeTargetGroups[previous];
+                    break;
+                }
                 _sendNetworkIds[i] = bindingNetworkIds[i];
                 _sendHashes[i] = bindingVariableHashes[i];
                 _sendTypes[i] = bindingValueTypes[i];
@@ -1339,16 +1353,22 @@ namespace K13A.TSMP
 
         private void EnsureBeforeEncodeTargetCache(int count)
         {
-            _beforeEncodeTargets = EncoderUdonBindingRuntime.EnsureBeforeEncodeTargetCache(_beforeEncodeTargets, count);
+            if (_beforeEncodeVisited == null || _beforeEncodeVisited.Length < count)
+                _beforeEncodeVisited = new bool[count];
             if (_beforeEncodeSendModes == null || _beforeEncodeSendModes.Length < count)
                 _beforeEncodeSendModes = new int[count];
         }
 
-        private int SendBeforeEncodeOnce(UdonBehaviour target)
+        private int SendBeforeEncodeOnce(UdonBehaviour target, int index)
         {
-            int sendMode;
-            _beforeEncodeTargetCount = EncoderUdonBindingRuntime.SendBeforeEncodeOnce(target, _beforeEncodeTargets, _beforeEncodeTargetCount, _beforeEncodeSendModes, out sendMode);
-            return sendMode;
+            int group = _beforeEncodeTargetGroups[index];
+            if (!_beforeEncodeVisited[group])
+            {
+                TSMPBehaviour.SendCustomEvent(target, TSMPNetworkBehaviour.BeforeEncodeEventName);
+                _beforeEncodeSendModes[group] = EncoderUdonBindingRuntime.GetSendMode(target);
+                _beforeEncodeVisited[group] = true;
+            }
+            return _beforeEncodeSendModes[group];
         }
 
         private void EnsureBindingTargetCache(int count)
