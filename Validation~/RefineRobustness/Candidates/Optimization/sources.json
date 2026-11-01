@@ -1,0 +1,35 @@
+{
+  "status": "CPU_EQUIVALENT_PENDING_GPU_PERFORMANCE",
+  "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+  "timeUtc": "2026-10-31T01:09:04.659951+00:00",
+  "sourceHead": "5ac6725",
+  "files": [
+    {
+      "original": "F:\\Unity\\TSMP\\TSMPCodec-RGB16\\Packages\\com.kibalab.tsmp.codec.rgb16\\Runtime\\Shaders\\TSMPDecodeRgb16VariableBytes.shader",
+      "originalSha256": "a92b277ea95d5e8e55d9e46c7003aa170d0e80230fb0eb9c253805e41e265ab1",
+      "candidate": "C:\\Users\\kjh03\\.codex\\worktrees\\tsmp-reliability\\TSMP\\Validation~\\RefineRobustness\\Candidates\\Optimization\\Rgb16VariableGenericByte.shader",
+      "candidateSha256": "0f1293005aa9eb9fbb256f74074a1c27cef6e4df0eaa4d5e52d498c25c252fa3",
+      "fragBulkBodyIdentical": true,
+      "helperDecodeSymbolCallSites": 1,
+      "baselineHelperDecodeSymbolCallSites": 3
+    },
+    {
+      "original": "F:\\Unity\\TSMP\\TSMPCodec-RGB16\\Packages\\com.kibalab.tsmp.codec.rgb16\\Runtime\\Shaders\\TSMPDecodeRgb16VariableRefineBytes.shader",
+      "originalSha256": "b3ce428a0859da7743b85b6a82c2cff41a84f6ca838e0d18079aeb3450590aa2",
+      "candidate": "C:\\Users\\kjh03\\.codex\\worktrees\\tsmp-reliability\\TSMP\\Validation~\\RefineRobustness\\Candidates\\Optimization\\Rgb16VariableRefineGenericByte.shader",
+      "candidateSha256": "53f8550bfba6f7ecfb5f4a699d41d31832b0a4bc45ce4e8a7fabd3fb9c418248",
+      "fragBulkBodyIdentical": true,
+      "helperDecodeSymbolCallSites": 1,
+      "baselineHelperDecodeSymbolCallSites": 3
+    }
+  ],
+  "allOffsetByteComparisons": 211968,
+  "packetComparisons": 144,
+  "packetBytes": 142470,
+  "differences": 0,
+  "fixedShaderChanged": false,
+  "runtimeChanged": false,
+  "nativeProjectChanged": false,
+  "committed": false,
+  "note": "Replaces only the variable DecodeByte helper plus unique shadow Shader name. Existing >=8 frag bulk path is text-identical. Removes duplicate old/early helper call sites. Performance improvement is unproven pending GPU A/B."
+}

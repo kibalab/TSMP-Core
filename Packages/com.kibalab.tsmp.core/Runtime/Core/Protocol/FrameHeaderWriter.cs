@@ -207,6 +207,30 @@ namespace K13A.TSMP
             Binary.WriteUInt32LE(buffer, offset + FrameHeader.CrcOffset, crc);
         }
 
+        // The base header must already have been written. The payload CRC and
+        // presence flag are included in the recomputed header CRC.
+        public static bool TryWritePayloadCrc32(byte[] header, int offset, byte[] payload, int payloadLength, uint[] crcTable)
+        {
+            if (header == null || offset < 0 || offset > header.Length - FrameHeader.Size)
+                return false;
+            if (payload == null || payloadLength < 0 || payloadLength > payload.Length)
+                return false;
+            if (payloadLength != Binary.ReadUInt16LE(header, offset + FrameHeader.PayloadSizeOffset))
+                return false;
+
+            uint[] table = Crc32Runtime.EnsureTable(crcTable);
+            uint payloadCrc = Crc32Runtime.Compute(payload, 0, payloadLength, table);
+            int flags = Binary.ReadUInt16LE(header, offset + FrameHeader.FlagsOffset);
+            Binary.WriteUInt16LE(header, offset + FrameHeader.FlagsOffset, (ushort)(flags | (int)FrameFlags.PayloadCrc32));
+            if (header[offset + FrameHeader.VersionMinorOffset] < ProtocolConstants.PayloadCrcVersionMinor)
+                header[offset + FrameHeader.VersionMinorOffset] = ProtocolConstants.PayloadCrcVersionMinor;
+            Binary.WriteUInt32LE(header, offset + FrameHeader.PayloadCrc32Offset, payloadCrc);
+            for (int i = FrameHeader.PayloadCrc32Bytes; i < FrameHeader.PayloadReservedBytes; i++)
+                header[offset + FrameHeader.PayloadReservedOffset + i] = 0;
+            WriteComputedHeaderCrc(header, offset, table);
+            return true;
+        }
+
         private static uint WriteComputedHeaderCrc(byte[] buffer, int offset, uint[] crcTable)
         {
             uint[] table = Crc32Runtime.EnsureTable(crcTable);

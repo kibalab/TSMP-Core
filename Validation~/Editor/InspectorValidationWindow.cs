@@ -21,9 +21,16 @@ public sealed class InspectorValidationWindow : EditorWindow
     {
         EditorSceneManager.OpenScene("Assets/Validation/Loopback.unity");
         var window = GetWindow<InspectorValidationWindow>();
+        var avatar = new GameObject("Avatar capacity inspector").AddComponent<TSMPNetworkVrchatAvatarPoseSync>();
+        avatar.networkId = 60001;
+        avatar.transRpcEncoder = FindObjectOfType<TSMPEncoder>();
+        avatar.maxPlayers = 80; // Exercise the over-capacity warning, not a support claim.
+        var unboundAvatar = new GameObject("Unbound avatar inspector").AddComponent<TSMPNetworkVrchatAvatarPoseSync>();
+        unboundAvatar.networkId = 60002;
         window.targets = new UnityEngine.Object[] {
             FindObjectOfType<TSMPSetup>(), FindObjectOfType<TSMPEncoder>(), FindObjectOfType<TSMPDecoder>(),
-            FindObjectOfType<TSMPNetworkTransformSync>(), FindObjectOfType<TSMPNetworkHumanoidPoseSync>(), FindObjectOfType<LoopbackProbe>()
+            FindObjectOfType<TSMPNetworkTransformSync>(), FindObjectOfType<TSMPNetworkHumanoidPoseSync>(), FindObjectOfType<LoopbackProbe>(),
+            avatar, unboundAvatar
         };
         window.position = new Rect(50, 50, 520, 850);
         window.Show();

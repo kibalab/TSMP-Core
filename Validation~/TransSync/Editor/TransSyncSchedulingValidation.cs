@@ -40,6 +40,7 @@ public static class TransSyncSchedulingValidation
         Test("Large fields do not prevent smaller fields or queued RPC", Capacity);
         Test("NaN, infinity and negative intervals normalize to zero", InvalidIntervals);
         Test("Snapshot and editor binding generation preserve all scheduling options", Metadata);
+        Test("Setup and automatic binding paths agree on collisions, order, direction and RPC-only targets", BindingPaths);
 #if !UDONSHARP
         Test("Native BeforeEncode manual writes remain independent of automatic scheduling", ManualWrites);
 #endif
@@ -322,6 +323,91 @@ public static class TransSyncSchedulingValidation
             paced = Array.IndexOf(encoder.bindingFieldNames, "paced");
             Check(encoder.bindingPriorities[high] == 100 && !encoder.bindingSendOnChange[high] && encoder.bindingMinSendIntervals[paced] == .25f, "Editor builder lost scheduling metadata");
             Object.DestroyImmediate(owner);
+        }
+    }
+
+    private static void BindingPaths()
+    {
+        var first = Create("A binding owner");
+        var duplicate = Create("Z duplicate owner");
+        var rpcOnly = Create("RPC-only owner");
+        var owner = new GameObject("Binding endpoints");
+        try
+        {
+            first.networkId = duplicate.networkId = 73;
+            rpcOnly.networkId = 74;
+            first.highEnabled = first.pacedEnabled = first.collisionEnabled = first.bindingDirectionsEnabled = true;
+            duplicate.highEnabled = true;
+            var sources = new TSMPNetworkBehaviour[] { duplicate, rpcOnly, first };
+            var send = TransSyncBindingSnapshotBuilder.Build(false, sources);
+            var receive = TransSyncBindingSnapshotBuilder.Build(true, sources);
+            Check(sources[0] == duplicate, "Binding compilation mutated caller order");
+            Check(send.Collisions.Length == 2 && receive.Collisions.Length == 2, "Both same-component and cross-component collisions must be diagnosed");
+            Check(send.Collisions.All(c => c.FirstTarget == first && c.FirstFieldName == "high"), "Collision ownership must retain the first ordered field");
+            Check(send.Targets.Length == 3 && send.Targets.All(t => t == first), "Duplicate send bindings were retained");
+            Check(send.FieldNames.SequenceEqual(new[] { "high", "paced", "sendOnly" }), "Send order/direction changed");
+            Check(receive.Targets.Length == 5 && receive.FieldNames.Take(3).SequenceEqual(new[] { "high", "paced", "receiveOnly" }), "Receive order/direction changed");
+            Check(receive.Targets[3] == rpcOnly && receive.Targets[4] == duplicate
+                && receive.FieldNames.Skip(3).All(string.IsNullOrEmpty)
+                && receive.VariableHashes.Skip(3).All(h => h == 0)
+                && receive.ValueTypes.Skip(3).All(t => t == NetworkFrameProtocol.ValueTypeUnsupported), "RPC-only fallback was lost for empty or collision-only targets");
+            Check(send.Priorities[0] == 100 && send.Priorities[2] == 23 && !send.SendOnChange[2]
+                && send.MinSendIntervals[2] == .5f && send.SentEvents[2] == nameof(TransSyncSchedulingProbe.TSMPBeforeEncode), "Scheduling options changed while excluding collisions");
+            var reversed = TransSyncBindingSnapshotBuilder.Build(false, sources.Reverse().ToArray());
+            Check(send.Targets.SequenceEqual(reversed.Targets) && send.FieldNames.SequenceEqual(reversed.FieldNames), "Collision winner depends on caller enumeration order");
+
+#if UDONSHARP
+            var encoder = owner.AddUdonSharpComponent<TSMPEncoder>();
+            var decoder = owner.AddUdonSharpComponent<TSMPDecoder>();
+#else
+            var encoder = owner.AddComponent<TSMPEncoder>();
+            var decoder = owner.AddComponent<TSMPDecoder>();
+#endif
+            encoder.autoEncode = false;
+            decoder.applyEveryFrame = false;
+            const BindingFlags StaticPrivate = BindingFlags.NonPublic | BindingFlags.Static;
+            Type setup = typeof(TSMPSetup).Assembly.GetType("K13A.TSMP.SetupApplier", true);
+            setup.GetMethod("ApplyEncoderBindings", StaticPrivate).Invoke(null, new object[] { encoder });
+            setup.GetMethod("ApplyDecoderBindings", StaticPrivate).Invoke(null, new object[] { decoder });
+            CheckBindingTable(encoder, send, true);
+            CheckBindingTable(decoder, receive, false);
+
+            Type editor = typeof(K13A.TSMP.Editor.TransSyncBindingBuilder);
+            editor.GetMethod("AssignEncoderBindings", StaticPrivate).Invoke(null, new object[] { encoder, sources, 0 });
+            editor.GetMethod("RebuildDecoder", StaticPrivate).Invoke(null, new object[] { decoder, sources.Reverse().ToArray() });
+            CheckBindingTable(encoder, send, true);
+            CheckBindingTable(decoder, receive, false);
+            Check(K13A.TSMP.Editor.TransSyncBindingBuilder.TryGetTransSyncCollisionWarning(first, out string firstWarning)
+                && firstWarning.Contains("high")
+                && K13A.TSMP.Editor.TransSyncBindingBuilder.TryGetTransSyncCollisionWarning(duplicate, out _), "Editor collision diagnostics were lost");
+            Results.Add("Expected TransSync collision errors above are the negative fixture: first field wins in both setup and rebuild; RPC-only targets remain available.");
+        }
+        finally
+        {
+            Object.DestroyImmediate(first.gameObject);
+            Object.DestroyImmediate(duplicate.gameObject);
+            Object.DestroyImmediate(rpcOnly.gameObject);
+            Object.DestroyImmediate(owner);
+        }
+    }
+
+    private static void CheckBindingTable(Component target, TransSyncBindingSnapshot expected, bool send)
+    {
+        Check(((Component[])target.GetType().GetField("bindingTargets").GetValue(target)).SequenceEqual(expected.Targets), "Binding targets differ between setup and editor rebuild");
+        Check(((ushort[])target.GetType().GetField("bindingNetworkIds").GetValue(target)).SequenceEqual(expected.NetworkIds), "Binding IDs differ");
+        Check(((uint[])target.GetType().GetField("bindingVariableHashes").GetValue(target)).SequenceEqual(expected.VariableHashes), "Binding hashes differ");
+        Check(((byte[])target.GetType().GetField("bindingValueTypes").GetValue(target)).SequenceEqual(expected.ValueTypes), "Binding types differ");
+        Check(((string[])target.GetType().GetField("bindingFieldNames").GetValue(target)).SequenceEqual(expected.FieldNames), "Binding fields differ");
+        Check(((int[])target.GetType().GetField("bindingDirections").GetValue(target)).SequenceEqual(expected.Directions), "Binding directions differ");
+        Check(((int[])target.GetType().GetField("bindingPriorities").GetValue(target)).SequenceEqual(expected.Priorities), "Binding priorities differ");
+#if UDONSHARP
+        Check(((UdonBehaviour[])target.GetType().GetField("bindingUdonTargets").GetValue(target)).SequenceEqual(expected.UdonTargets), "Backing Udon targets differ");
+#endif
+        if (send)
+        {
+            Check(((bool[])target.GetType().GetField("bindingSendOnChange").GetValue(target)).SequenceEqual(expected.SendOnChange), "Send-on-change metadata differs");
+            Check(((float[])target.GetType().GetField("bindingMinSendIntervals").GetValue(target)).SequenceEqual(expected.MinSendIntervals), "Send intervals differ");
+            Check(((string[])target.GetType().GetField("bindingSentEvents").GetValue(target)).SequenceEqual(expected.SentEvents), "Sent events differ");
         }
     }
 

@@ -90,4 +90,4 @@ Check these in order:
 5. Decoder message count is greater than zero.
 6. Receiver objects have matching TSMP network components.
 7. Receive interpolation is not `None`.
-8. `TSMPSetup` was applied after the last scene change.
+8. `TSMPSetup` automatic preparation completed after the last scene change.

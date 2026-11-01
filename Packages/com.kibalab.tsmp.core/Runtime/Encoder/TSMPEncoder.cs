@@ -32,6 +32,7 @@ namespace K13A.TSMP
         public const string PayloadBytesMemberName = "PayloadBytes";
         public const string PayloadBytesFieldName = nameof(payloadBytes);
         public const string MaxPayloadBytesFieldName = nameof(maxPayloadBytes);
+        public const string TargetPayloadBytesFieldName = nameof(targetPayloadBytes);
         public const string EncodeNowMethodName = nameof(EncodeNow);
         public const string BindingTargetsFieldName = nameof(bindingTargets);
         public const string BindingUdonTargetsFieldName = "bindingUdonTargets";
@@ -78,7 +79,10 @@ namespace K13A.TSMP
 #endif
         [HideInInspector] public int payloadSymbolMode;
         public int codecId;
+        [Tooltip("Backing payload buffer capacity. This can grow to the raster capacity; use Target Payload Bytes to limit transmitted data.")]
         public int maxPayloadBytes = 4096;
+        [Min(0), Tooltip("Maximum network payload bytes per output frame, including its 8-byte network header. Zero uses the available raster capacity. Oversized fields wait; they are not fragmented.")]
+        public int targetPayloadBytes;
         public uint streamId = 1;
         public ushort layoutId;
 
@@ -97,7 +101,17 @@ namespace K13A.TSMP
         [HideInInspector] public float[] bindingMinSendIntervals;
         [HideInInspector] public string[] bindingSentEvents;
         [HideInInspector] public int deferredVariableCount;
+        // Current EncodeNow diagnostics. Required bytes include a complete minimal network packet.
+        [HideInInspector] public int oversizedVariableCount;
+        [HideInInspector] public int lastDeferredVariableNetworkId;
+        [HideInInspector] public string lastDeferredVariableName;
+        [HideInInspector] public int lastDeferredVariableRequiredBytes;
+        [HideInInspector] public bool lastDeferredVariableFitsBudget;
+        [HideInInspector] public int blockedRpcNetworkId;
+        [HideInInspector] public uint blockedRpcHash;
+        [HideInInspector] public int blockedRpcRequiredBytes;
         private bool _isEncoding;
+        private bool _targetPayloadBudgetActive;
 
         [HideInInspector] public int encodedObjectCount;
         [HideInInspector] public int queuedRpcCount;
@@ -106,6 +120,8 @@ namespace K13A.TSMP
         [HideInInspector] public int rpcMessageCount;
         [HideInInspector] public int payloadBytes;
         [HideInInspector] public int usablePayloadBytes;
+        [HideInInspector] public int effectivePayloadBudgetBytes;
+        [HideInInspector] public int deferredRpcCount;
         [HideInInspector] public int bindingCount;
         [HideInInspector] public int autoVariableCount;
         [HideInInspector] public int lastEncodeStage;
@@ -191,6 +207,7 @@ namespace K13A.TSMP
             blockSize = Mathf.Max(1, blockSize);
             sampleSize = FrameHeader.ClampDecodeSampleSize(sampleSize, blockSize);
             maxPayloadBytes = NetworkPayloadBuffer.ClampCapacity(maxPayloadBytes);
+            targetPayloadBytes = Mathf.Clamp(targetPayloadBytes, 0, NetworkFrameProtocol.MaximumPayloadBytes);
             transRpcRepeatFrames = Mathf.Clamp(transRpcRepeatFrames, 1, 16);
         }
 
@@ -243,6 +260,7 @@ namespace K13A.TSMP
         private void EncodeFrame()
         {
             lastError = string.Empty;
+            ResetBudgetDiagnostics();
 
             if (output == null)
             {
@@ -272,6 +290,9 @@ namespace K13A.TSMP
 
             usablePayloadBytes = codec.GetPayloadCapacityBytes(width, height, blockSize);
             EnsurePayloadBufferCapacity(usablePayloadBytes);
+            _targetPayloadBudgetActive = targetPayloadBytes > 0;
+            effectivePayloadBudgetBytes = NetworkPayloadBuffer.ResolveWriteLimit(targetPayloadBytes,
+                Mathf.Min(maxPayloadBytes, usablePayloadBytes));
 
             if (!BuildNetworkPayload())
             {
@@ -293,8 +314,19 @@ namespace K13A.TSMP
                 SetLastError($"Payload does not fit. payload={payloadBytes}, usable={usablePayloadBytes}.");
                 return;
             }
+            if (payloadBytes > effectivePayloadBudgetBytes)
+            {
+                SetLastError("Payload exceeds the transmission budget.");
+                return;
+            }
 
             BuildHeader();
+
+            if (!FrameHeaderWriter.TryWritePayloadCrc32(_header, 0, _encodedPayload, payloadBytes, _crc32Table))
+            {
+                SetLastError("Failed to add payload checksum.");
+                return;
+            }
 
             lastFrameUsedGpuLuma4 = codec.SupportsGpuLuma4Encoding
                 && TryWriteGpuLuma4(_header, _encodedPayload, payloadBytes, codec.GetPayloadStartRow(width, blockSize), 128f / 255f);
@@ -386,6 +418,7 @@ namespace K13A.TSMP
                 if (configuredCapacity >= NetworkFrameProtocol.NetworkHeaderBytes)
                     capacity = Mathf.Min(capacity, configuredCapacity);
             }
+            capacity = NetworkPayloadBuffer.ResolveWriteLimit(targetPayloadBytes, capacity);
 
             if (!EncoderNativeFrameBuilder.ValidateRpc(rpc, ref _rpcValidationBuffer, capacity, out string error))
             {
@@ -436,7 +469,7 @@ namespace K13A.TSMP
                 ref _currentMessageStartOffset,
                 ref _currentVariableCount,
                 frameIndex,
-                Mathf.Min(maxPayloadBytes, usablePayloadBytes),
+                effectivePayloadBudgetBytes,
                 out messageCount,
                 out variableMessageCount,
                 out rpcMessageCount,
@@ -445,9 +478,20 @@ namespace K13A.TSMP
                 _sendState,
                 _sendTime,
                 transSyncRefreshInterval,
-                SetLastError);
+                SetLastError,
+                _targetPayloadBudgetActive);
 
             queuedRpcCount = _queuedRpcs.Count;
+            deferredRpcCount = _sendState.BlockedRpcRequiredBytes > 0 ? 1 : 0;
+            deferredVariableCount = _sendState.DeferredCount;
+            oversizedVariableCount = _sendState.OversizedCount;
+            lastDeferredVariableNetworkId = _sendState.LastDeferredNetworkId;
+            lastDeferredVariableName = _sendState.LastDeferredName;
+            lastDeferredVariableRequiredBytes = _sendState.LastDeferredRequiredBytes;
+            lastDeferredVariableFitsBudget = _sendState.LastDeferredFitsBudget;
+            blockedRpcNetworkId = _sendState.BlockedRpcNetworkId;
+            blockedRpcHash = _sendState.BlockedRpcHash;
+            blockedRpcRequiredBytes = _sendState.BlockedRpcRequiredBytes;
             if (!result)
                 lastError = error;
             return result;
@@ -456,6 +500,7 @@ namespace K13A.TSMP
         private void EnsureResources()
         {
             SyncOutputDimensions();
+            _crc32Table = Crc32Runtime.EnsureFastTable(_crc32Table);
             if (_header == null || _header.Length != FrameHeader.Size)
                 _header = new byte[FrameHeader.Size];
         }
@@ -541,6 +586,11 @@ namespace K13A.TSMP
                 _payloadOffset = valueStartOffset;
                 return false;
             }
+            if (nextOffset > GetManualPayloadWriteLimit(_payload.Length))
+            {
+                lastError = "Manually written field exceeds the transmission budget.";
+                return false;
+            }
 
             _payloadOffset = nextOffset;
             _currentVariableCount++;
@@ -564,6 +614,7 @@ namespace K13A.TSMP
         private Color32[] _luma4Colors;
         private bool _usingBlockTexture;
         private bool _frameOpen;
+        private bool _pendingRpcWritten;
         private int _payloadOffset;
         private int _messageCount;
         private int _currentMessageStartOffset = -1;
@@ -593,9 +644,9 @@ namespace K13A.TSMP
         private int _codecQueryActiveWidthBlocksKey;
         private int _codecQueryActiveHeightBlocksKey;
         private UdonBehaviour[] _cachedBindingUdonTargets;
-        private UdonBehaviour[] _beforeEncodeTargets;
+        private int[] _beforeEncodeTargetGroups;
+        private bool[] _beforeEncodeVisited;
         private int[] _beforeEncodeSendModes;
-        private int _beforeEncodeTargetCount;
         private int _cachedBindingTargetCount = -1;
         private const int MaxPendingTransRpcs = 32;
         private int _nextTransRpcEventId = 1;
@@ -644,7 +695,6 @@ namespace K13A.TSMP
         private void Start()
         {
             EnsureResources();
-            _crc32Table = Crc32Runtime.EnsureTable(_crc32Table);
             ResetTSMPLogBudget(debugErrorLogBudget);
             _nextEncodeTime = 0f;
         }
@@ -701,13 +751,18 @@ namespace K13A.TSMP
 
         public void ClearFrame()
         {
-            _frameOpen = false;
-            _payloadOffset = 0;
-            _messageCount = 0;
+            ResetFrameBuilder();
             messageCount = 0;
             variableMessageCount = 0;
             rpcMessageCount = 0;
             payloadBytes = 0;
+        }
+
+        private void ResetFrameBuilder()
+        {
+            _frameOpen = false;
+            _payloadOffset = 0;
+            _messageCount = 0;
             _currentMessageStartOffset = -1;
             _currentVariableCount = 0;
             _currentRpcArgumentCount = 0;
@@ -725,6 +780,8 @@ namespace K13A.TSMP
             int nextMessageType;
             if (!EncoderUdonFrameWriter.BeginVariableState(_payloadBytes, _payloadOffset, _currentMessageStartOffset, frameIndex, networkId, out nextPayloadOffset, out nextMessageStartOffset, out nextVariableCount, out nextRpcArgumentCount, out nextMessageType, out error))
                 return Fail(error);
+            if (nextPayloadOffset > GetManualPayloadWriteLimit(_payloadBytes.Length))
+                return Fail("VariableState header exceeds the transmission budget.");
 
             _payloadOffset = nextPayloadOffset;
             _currentMessageStartOffset = nextMessageStartOffset;
@@ -771,6 +828,8 @@ namespace K13A.TSMP
             int nextMessageType;
             if (!EncoderUdonFrameWriter.BeginRpcCall(_payloadBytes, _payloadOffset, _currentMessageStartOffset, frameIndex, networkId, rpcHash, out nextPayloadOffset, out nextMessageStartOffset, out nextVariableCount, out nextRpcArgumentCount, out nextMessageType, out error))
                 return Fail(error);
+            if (nextPayloadOffset > GetManualPayloadWriteLimit(_payloadBytes.Length))
+                return Fail("RpcCall header exceeds the transmission budget.");
 
             _payloadOffset = nextPayloadOffset;
             _currentMessageStartOffset = nextMessageStartOffset;
@@ -821,6 +880,19 @@ namespace K13A.TSMP
             if (string.IsNullOrEmpty(methodName))
                 return false;
 
+            if (targetPayloadBytes > 0)
+            {
+                int capacity = NetworkFrameProtocol.MaximumPayloadBytes;
+                if (output != null && (selectedCodec != null || selectedCodecUdonTarget != null))
+                {
+                    _codecQueryValid = false;
+                    capacity = GetPayloadCapacityBytes();
+                }
+                int limit = NetworkPayloadBuffer.ResolveWriteLimit(targetPayloadBytes, capacity);
+                if (GetTransRpcMessageBytes(methodName) > limit - NetworkFrameProtocol.NetworkHeaderBytes)
+                    return Fail("TransRPC does not fit the transmission budget.");
+            }
+
             EnsurePendingRpcQueue();
             if (_pendingRpcCount >= MaxPendingTransRpcs)
                 return Fail("TransRPC queue is full.");
@@ -866,7 +938,7 @@ namespace K13A.TSMP
             lastEncodeStage = 1;
             lastError = string.Empty;
             _sendTime = GetSendTime();
-            deferredVariableCount = 0;
+            ResetBudgetDiagnostics();
             _codecQueryValid = false;
             EnsureResources();
 
@@ -884,13 +956,15 @@ namespace K13A.TSMP
 
             usablePayloadBytes = GetPayloadCapacityBytes();
             EnsurePayloadBufferCapacity(usablePayloadBytes);
+            _targetPayloadBudgetActive = targetPayloadBytes > 0;
+            effectivePayloadBudgetBytes = NetworkPayloadBuffer.ResolveWriteLimit(targetPayloadBytes,
+                Mathf.Min(usablePayloadBytes, _payloadBytes.Length));
 
             if (!_frameOpen)
                 BeginFrameInternal();
             if (!_frameOpen)
                 return;
 
-            bool wrotePendingRpc = _pendingRpcCount > 0;
             if (!WritePendingRpcCalls())
             {
                 AbortEncode(lastError);
@@ -931,8 +1005,19 @@ namespace K13A.TSMP
                 AbortEncode("Payload does not fit. payload=" + payloadBytes + ", usable=" + usablePayloadBytes + ".");
                 return;
             }
+            if (payloadBytes > effectivePayloadBudgetBytes)
+            {
+                AbortEncode("Payload exceeds the transmission budget.");
+                return;
+            }
 
             BuildHeader();
+
+            if (!FrameHeaderWriter.TryWritePayloadCrc32(_headerBytes, 0, _payloadBytes, payloadBytes, _crc32Table))
+            {
+                AbortEncode("Failed to add payload checksum.");
+                return;
+            }
 
             lastEncodeStage = 4;
             if (!WriteFrameTexture())
@@ -947,20 +1032,34 @@ namespace K13A.TSMP
 
             lastEncodeStage = 6;
             frameIndex++;
-            if (wrotePendingRpc)
+            if (_pendingRpcWritten)
                 AdvancePendingRpcQueue();
 
             if (clearAfterEncode)
-                ClearFrame();
+                ResetFrameBuilder();
         }
 
         private bool WritePendingRpcCalls()
         {
             queuedRpcCount = _pendingRpcCount;
+            _pendingRpcWritten = false;
             if (_pendingRpcCount <= 0)
                 return true;
 
-            return WritePendingRpcCall(0);
+            if (_targetPayloadBudgetActive)
+            {
+                int messageBytes = GetTransRpcMessageBytes(_pendingRpcMethodNames[0]);
+                if (messageBytes > effectivePayloadBudgetBytes - _payloadOffset)
+                {
+                    deferredRpcCount = 1;
+                    blockedRpcNetworkId = _pendingRpcNetworkIds[0];
+                    blockedRpcHash = _pendingRpcHashes[0];
+                    blockedRpcRequiredBytes = NetworkFrameProtocol.NetworkHeaderBytes + messageBytes;
+                    return true;
+                }
+            }
+            _pendingRpcWritten = WritePendingRpcCall(0);
+            return _pendingRpcWritten;
         }
 
         private bool WritePendingRpcCall(int index)
@@ -1059,11 +1158,13 @@ namespace K13A.TSMP
             EnsureBindingTargetCache(count);
             EnsureSendState(count);
             EnsureBeforeEncodeTargetCache(count);
-            _beforeEncodeTargetCount = 0;
             BeginBoundVariableWrite();
-            int limit = Mathf.Min(usablePayloadBytes, _payloadBytes.Length);
+            int limit = effectivePayloadBudgetBytes;
             for (int i = 0; i < count; i++)
+            {
                 _sendPendingLengths[i] = 0;
+                _beforeEncodeVisited[i] = false;
+            }
 
             for (int groupStart = 0; groupStart < count;)
             {
@@ -1083,7 +1184,7 @@ namespace K13A.TSMP
                     }
                     if (!TransSyncSendScheduler.IsDue(_sendCompleted[index], _sendLastTimes[index], _sendTime, _sendIntervals[index]))
                         continue;
-                    int sendMode = SendBeforeEncodeOnce(target);
+                    int sendMode = SendBeforeEncodeOnce(target, index);
                     object value = GetProgramVariable(target, bindingFieldNames[index]);
                     int length = NetworkValueEntryWriter.WriteVariableValue(_sendScratch, 0, bindingVariableHashes[index], _sendTypes[index], value);
                     if (length < 0)
@@ -1097,6 +1198,13 @@ namespace K13A.TSMP
                     if (length + overhead > limit - _payloadOffset)
                     {
                         deferredVariableCount++;
+                        lastDeferredVariableNetworkId = networkId;
+                        lastDeferredVariableName = bindingFieldNames[index];
+                        lastDeferredVariableRequiredBytes = NetworkFrameProtocol.NetworkHeaderBytes + NetworkFrameProtocol.MessageHeaderBytes
+                            + NetworkFrameProtocol.VariableStateBodyHeaderBytes + length;
+                        lastDeferredVariableFitsBudget = lastDeferredVariableRequiredBytes <= limit;
+                        if (!lastDeferredVariableFitsBudget)
+                            oversizedVariableCount++;
                         continue;
                     }
                     if (!EnsureBoundVariableMessage(networkId))
@@ -1155,12 +1263,24 @@ namespace K13A.TSMP
             _sendLastTimes = new double[count];
             _sendPendingOffsets = new int[count];
             _sendPendingLengths = new int[count];
+            _beforeEncodeTargetGroups = new int[count];
             if (_sendScratch == null)
                 _sendScratch = new byte[TransSyncSendScheduler.ScratchBytes];
             _sendRotation = 0;
             for (int i = 0; i < count; i++)
             {
                 _sendTargets[i] = _cachedBindingUdonTargets[i];
+                // Stable binding identities share one callback/sendMode cache entry.
+                // Build only when send state changes, preserving first-visit order
+                // under priority rotation without scanning targets per field.
+                _beforeEncodeTargetGroups[i] = i;
+                for (int previous = 0; previous < i; previous++)
+                {
+                    if ((Object)_sendTargets[previous] != (Object)_sendTargets[i])
+                        continue;
+                    _beforeEncodeTargetGroups[i] = _beforeEncodeTargetGroups[previous];
+                    break;
+                }
                 _sendNetworkIds[i] = bindingNetworkIds[i];
                 _sendHashes[i] = bindingVariableHashes[i];
                 _sendTypes[i] = bindingValueTypes[i];
@@ -1238,16 +1358,22 @@ namespace K13A.TSMP
 
         private void EnsureBeforeEncodeTargetCache(int count)
         {
-            _beforeEncodeTargets = EncoderUdonBindingRuntime.EnsureBeforeEncodeTargetCache(_beforeEncodeTargets, count);
+            if (_beforeEncodeVisited == null || _beforeEncodeVisited.Length < count)
+                _beforeEncodeVisited = new bool[count];
             if (_beforeEncodeSendModes == null || _beforeEncodeSendModes.Length < count)
                 _beforeEncodeSendModes = new int[count];
         }
 
-        private int SendBeforeEncodeOnce(UdonBehaviour target)
+        private int SendBeforeEncodeOnce(UdonBehaviour target, int index)
         {
-            int sendMode;
-            _beforeEncodeTargetCount = EncoderUdonBindingRuntime.SendBeforeEncodeOnce(target, _beforeEncodeTargets, _beforeEncodeTargetCount, _beforeEncodeSendModes, out sendMode);
-            return sendMode;
+            int group = _beforeEncodeTargetGroups[index];
+            if (!_beforeEncodeVisited[group])
+            {
+                TSMPBehaviour.SendCustomEvent(target, TSMPNetworkBehaviour.BeforeEncodeEventName);
+                _beforeEncodeSendModes[group] = EncoderUdonBindingRuntime.GetSendMode(target);
+                _beforeEncodeVisited[group] = true;
+            }
+            return _beforeEncodeSendModes[group];
         }
 
         private void EnsureBindingTargetCache(int count)
@@ -1262,6 +1388,8 @@ namespace K13A.TSMP
             int nextVariableCount;
             if (!EncoderUdonFrameWriter.WriteVariableValue(_payloadBytes, _payloadOffset, _currentMessageStartOffset, _currentMessageType, _currentVariableCount, variableHash, valueType, value, out nextPayloadOffset, out nextVariableCount, out error))
                 return Fail(error);
+            if (nextPayloadOffset > GetManualPayloadWriteLimit(_payloadBytes.Length))
+                return Fail("Manually written field exceeds the transmission budget.");
 
             _payloadOffset = nextPayloadOffset;
             _currentVariableCount = nextVariableCount;
@@ -1275,6 +1403,8 @@ namespace K13A.TSMP
             int nextRpcArgumentCount;
             if (!EncoderUdonFrameWriter.WriteRpcArgument(_payloadBytes, _payloadOffset, _currentMessageStartOffset, _currentMessageType, _currentRpcArgumentCount, valueType, value, out nextPayloadOffset, out nextRpcArgumentCount, out error))
                 return Fail(error);
+            if (nextPayloadOffset > GetManualPayloadWriteLimit(_payloadBytes.Length))
+                return Fail("RPC argument exceeds the transmission budget.");
 
             _payloadOffset = nextPayloadOffset;
             _currentRpcArgumentCount = nextRpcArgumentCount;
@@ -1382,6 +1512,7 @@ namespace K13A.TSMP
         private void EnsureResources()
         {
             SyncOutputDimensions();
+            _crc32Table = Crc32Runtime.EnsureFastTable(_crc32Table);
             blockSize = EncoderUdonTextureRuntime.ClampBlockSize(blockSize);
             width = EncoderUdonTextureRuntime.ClampDimension(width, blockSize);
             height = EncoderUdonTextureRuntime.ClampDimension(height, blockSize);
@@ -1579,6 +1710,34 @@ namespace K13A.TSMP
 
 #endif
 
+        private void ResetBudgetDiagnostics()
+        {
+            deferredVariableCount = 0;
+            deferredRpcCount = 0;
+            oversizedVariableCount = 0;
+            lastDeferredVariableNetworkId = 0;
+            lastDeferredVariableName = string.Empty;
+            lastDeferredVariableRequiredBytes = 0;
+            lastDeferredVariableFitsBudget = false;
+            blockedRpcNetworkId = 0;
+            blockedRpcHash = 0;
+            blockedRpcRequiredBytes = 0;
+        }
+
+        private int GetManualPayloadWriteLimit(int bufferLength)
+        {
+            if (_isEncoding)
+                return effectivePayloadBudgetBytes;
+            return NetworkPayloadBuffer.ResolveWriteLimit(targetPayloadBytes, bufferLength);
+        }
+
+        private int GetTransRpcMessageBytes(string methodName)
+        {
+            return NetworkFrameProtocol.MessageHeaderBytes + NetworkFrameProtocol.RpcCallBodyHeaderBytes
+                + 2 * NetworkFrameProtocol.RpcArgumentHeaderBytes + NetworkFrameProtocol.Int32Bytes
+                + Utf8.GetByteCount(methodName, NetworkFrameProtocol.MaximumPayloadBytes + 1);
+        }
+
         private bool TryWriteGpuLuma4(byte[] header, byte[] payload, int count, int startRow, float background)
         {
             if (!useGpuLuma4 || !useBlockSymbolTexture)
@@ -1637,7 +1796,7 @@ namespace K13A.TSMP
         private void ReportDeferredVariables()
         {
             if (deferredVariableCount > 0)
-                LogTSMPWarning(LogPrefix, "Payload capacity deferred " + deferredVariableCount + " TransSync field(s). Increase output capacity or reduce field size/send frequency.", debugLog, 1f);
+                LogTSMPWarning(LogPrefix, "Payload limit deferred " + deferredVariableCount + " TransSync field(s). Increase the target budget/output capacity or reduce field size/send frequency.", debugLog, 1f);
         }
 
         private void SetLastError(string error)

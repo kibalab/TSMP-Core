@@ -63,6 +63,16 @@ Working textures and materials are prepared automatically under `Assets/TSMPGene
 
 The package's Udon program assets are used only with the SDK. The shared Controller is SDK-neutral; other demonstration scenes may still use optional avatars, streaming plugins, or VRChat components and require those dependencies.
 
+## Starting profile {#starting-profile}
+
+Use Core 1.0 + Luma4 1.0, the shared Controller, 1280x720, block size 8, Full Humanoid (22 records), fingers and display names off, and `maxPlayers=16` as the first avatar validation candidate. Start at a target of 30 Hz and measure the actual publication and application rates. This is a proposed baseline, not certification of 16-player real-time performance.
+
+At these settings Luma4 holds 6,720 payload bytes. One avatar field for 16 players with all roots at cold start needs 2,495 bytes including NetworkFrame framing, before other fields or RPCs. The Avatar Pose inspector shows this cold-start estimate, encoder capacity and pose-only headroom. A warm root cache can reduce bytes; it does not remove the cold-start requirement. The setting limit of 80 and a calculated byte-fit limit are not tested player counts.
+
+`TSMPSetup` defaults to 1280x720; an Encoder added on its own defaults to 640x360 until an output texture or Setup configures it. Check the actual encoder output dimensions before comparing capacity.
+
+The 2026-10-27 checks used Windows, Unity 2022.3.22f1, D3D11 and an RTX 4090. They cover native GPU loopback, Windows Mono, actual Editor Udon VM execution with Worlds 3.10.4-beta.2, and a local world bundle build. Live VRChat world entry was blocked by authentication/UI access. Actual 16-player avatar load, compressed external transport, long-running operation, lower hardware, Quest and IL2CPP remain unverified. Local loopback, VM execution and a successful world build each prove their own stage.
+
 ## Existing scenes
 
 Existing Controller instances keep their original prefab references and overrides: the previous prefab is retained at `Samples/Legacy/TSMPControllerLegacy.prefab` with its original GUID. New instances use the shared `Samples/TSMPController.prefab`. Existing SDK scenes do not need a conversion command. When moving a legacy scene into an SDK-free project, use the shared Controller and review the scene's other optional dependencies; the legacy prefab is not a universal SDK-free sample.

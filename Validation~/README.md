@@ -10,6 +10,56 @@ For VRChat, create a separate Worlds project with the SDK, then reference the sa
 
 ## Run
 
+For a prepared, dedicated project, run the current suite with one command:
+
+```powershell
+$unity = 'C:/Program Files/Unity/Hub/Editor/2022.3.22f1/Editor/Unity.exe'
+& './Validation~/Run-Suite.ps1' -UnityEditor $unity -Project 'F:/Validation/NoSDK' -Results 'F:/Results/TSMP' -Profile Native
+& './Validation~/Run-Suite.ps1' -UnityEditor $unity -Project 'F:/Validation/VRC' -Results 'F:/Results/TSMP' -Profile Sdk
+```
+
+The suite imports first. The SDK profile then initializes SDK defines, copies all shared regression fixtures, creates their Udon program assets and compiles them in `PrepareSdk`, and starts a fresh client compilation before functional checks. This prevents later tests from introducing unprepared probe programs after compilation. It does not install TSMP packages or the SDK; use the separate projects described above.
+
+Each run gets a new evidence directory with original logs and `checks.csv`/`checks.json`. Preparation or script compilation failure stops dependent checks and records them as `NOTRUN`, while other functional failures remain `FAIL` and do not erase earlier evidence. `CompilerFailure` points to the original Unity compiler log; Inspector checks also perform a batch compilation preflight before opening a GUI editor. A failed Build prevents Player from using an old executable. `ProductOrHarnessFailure` requires triage; it is not an automatic product-bug classification. Use `-Steps Workflow,Configuration,TransSync` to select a smaller suite; preparation remains automatic. `-IncludeSnapshot` adds the [snapshot suite](DecoderSnapshot/README.md), which requires all four codecs. World builds and Inspector UI checks are opt-in through `-Steps`.
+
+| Project | Use | Excluded routes |
+| --- | --- | --- |
+| Native | Play/Build/Player, ArrayCache, TimelineRegression, ReceivePolicies and shared Editor regressions | Udon and VM steps |
+| SDK | PrepareSdk/Udon, UdonArrays, TimelineVm, ReceivePoliciesVm, RpcQueueVm, TransSyncVm and shared Editor regressions | Native Play/Build/Player, ArrayCache, TimelineRegression and ReceivePolicies |
+
+The runners reject mismatched routes before copying scripts or opening Unity. Workflow compares the Controller's decoder handlers with all discovered codec IDs, so installing additional codecs does not violate a single-handler assertion. These checks still require the real Luma4 package for loopback and several shared regressions.
+
+## Current regression entry point
+
+Keep the default Native/SDK suite for shared setup, compilation and texture-loopback coverage. After changing payload parsing or sender scheduling, select the existing targeted regressions through the same entry point:
+
+```powershell
+& './Validation~/Run-Suite.ps1' -UnityEditor $unity -Project 'F:/Validation/NoSDK' -Results 'F:/Results/TSMP' -Profile Native -Steps FrameStructure,PayloadBudget
+& './Validation~/Run-Suite.ps1' -UnityEditor $unity -Project 'F:/Validation/VRC' -Results 'F:/Results/TSMP' -Profile Sdk -Steps FrameStructure,PayloadBudget
+```
+
+These two steps are opt-in, so the default suite's workload is unchanged. `Run-Validation.ps1 -Step FrameStructure` and `-Step PayloadBudget` also work individually. They delegate to the existing dedicated runners, select their `-Vm` mode for SDK projects, and retain their original logs, source receipts and result files in a fresh subdirectory. They do not replace the default texture-loopback test. [FrameStructure](FrameStructure/README.md) covers CRC-valid malformed tails before state/RPC application; [PayloadBudget](PayloadBudget/README.md) covers field deferral, rotation, finite RPC repeats and budget changes. Both VM runners compile current client bytecode themselves.
+
+Use this short index for the current development-branch evidence. Each linked report identifies its tested sources and retained failures; historical reports elsewhere remain historical evidence, not additional current release claims.
+
+| Question | Current evidence and reproduction |
+| --- | --- |
+| Latest state, limits and aggregate audit | [Workload follow-up](WorkloadFollowup/RESULTS.md) |
+| Many-binding callback semantics and paired Encoder cost | [BindingCost](BindingCost/RESULTS.md), [runner and `-SemanticsOnly`](BindingCost/README.md) |
+| Finite RPC burst latency and delivery through the GPU path | [RpcBurst](RpcBurst/RESULTS.md), [runner](RpcBurst/README.md) |
+| Current Color256 pacing and observer controls | [Color256Followup](Color256Followup/RESULTS.md), [runner](Color256Followup/README.md) |
+| Paired Color256 writer improvement and default-refresh recovery | [NextImprovements](NextImprovements/RESULTS.md) |
+
+Binding, burst and Color256 experiments require explicit frozen plans and remain separate commands. Do not run source A/B controllers as an ordinary regression: they deliberately exchange the dedicated project's Encoder source. Do not add their percentage reductions together or infer live FPS from VM call times. Absolute timings vary between runs, including with identical source and bytecode.
+
+The representative product check is Core + Luma4 installation, automatic Setup/bindings, state/Transform and RPC through a real texture, then the targeted parsing/budget regressions. Record useful received update rate, source age and RPC application delay when evaluating a workload; packet acceptance alone is insufficient. The recorded automated work does not certify a fresh VPM download, a populated VRChat world, Quest or a long-running OBS–VRCDN session. Those checks require their own explicit runs.
+
+For finite offline compressed-video byte accuracy, use the separate [VideoTransport probe](VideoTransport/README.md). It preserves failed compression profiles and compares complete payloads; it is not part of the Native/SDK functional suite or a live transport benchmark.
+
+The Native `PayloadIntegrity` step combines legacy characterization with protected-frame regression (`Stage=CharacterizationAndRegression`). It confirms that a format-preserving mutation can still pass a legacy header-only CRC, then checks payload CRC32 vectors and boundaries, protected mutation rejection before state/RPC dispatch, strict rejection of missing checksums and successful retry of the intact frame/event. A legacy characterization pass alone does not establish corruption rejection. The [snapshot suite](DecoderSnapshot/README.md) adds real GPU readback and compiled Udon VM coverage.
+
+Individual commands remain available:
+
 ```powershell
 $unity = 'C:\Program Files\Unity\Hub\Editor\2022.3.22f1\Editor\Unity.exe'
 $runner = '.\Validation~\Run-Validation.ps1'
@@ -24,6 +74,7 @@ $runner = '.\Validation~\Run-Validation.ps1'
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-NoSDK -Results F:\Unity\TSMP\Validation-Results -Step Player
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-NoSDK -Results F:\Unity\TSMP\Validation-Results -Step Inspect
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step InitializeSdk
+& $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step PrepareSdk
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step Udon
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step UdonArrays
 & $runner -UnityEditor $unity -Project F:\Unity\TSMP\Validation-VRC -Results F:\Unity\TSMP\Validation-Results -Step EditorEncoding
@@ -36,7 +87,7 @@ $runner = '.\Validation~\Run-Validation.ps1'
 
 Run steps sequentially after import settles. `InitializeSdk` uses the SDK's `EnvConfig.SetActiveSDKDefines` to configure the isolated Worlds project; restart Unity before `Udon`. `World` uses `IVRCSdkWorldBuilderApi.Build`, including SDK validation and callbacks, and never calls an upload API. A first SDK build can change Player settings and request another Unity compile. Wait for that import and retry rather than bypassing validation.
 
-`Build` creates a Development Windows x64 Mono Player with managed stripping disabled. `Player` deliberately does not use `-batchmode` or `-nographics`: an earlier Windows batch-mode Player did not complete GPU readback in the test timeout despite reporting a graphics adapter. The harness enables Run In Background. `Inspect` opens an EditorWindow and executes the six custom inspectors' IMGUI paths, then exits; it is not a screenshot-based layout review.
+`Build` creates a Development Windows x64 Mono Player with managed stripping disabled. `Player` defaults to a hidden windowed invocation and enables Run In Background. Use `-PlayerMode Batch` for an explicit graphics-enabled batch-mode control; neither mode uses `-nographics`. Historical runs have encountered readback timeouts under different invocation conditions, while the same executable passed controls. Preserve both logs and the invocation mode rather than treating a successful control as the cause of the failure. `-TimeoutSeconds` bounds each process and the runners restore their environment variables after success or failure. `Inspect` opens an EditorWindow and executes the six custom inspectors' IMGUI paths, then exits; it is not a screenshot-based layout review.
 
 `ArrayCache` runs the decoder's payload parsing and field dispatch in the SDK-free Editor. It verifies independent arrays for different fields and for multiple recipients of the same variable. `UdonArrays` compiles all installed UdonSharp programs for the client, then executes the array-decoding helpers as real Udon bytecode in the Editor VM. Neither array step exercises a GPU; run `Play` separately for the existing texture loopback. Keep the two array steps in their respective SDK-free and SDK projects.
 

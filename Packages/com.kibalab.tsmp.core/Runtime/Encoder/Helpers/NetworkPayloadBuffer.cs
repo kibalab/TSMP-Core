@@ -2,6 +2,23 @@ namespace K13A.TSMP
 {
     public static class NetworkPayloadBuffer
     {
+        // The backing buffer may grow to the raster capacity. A transmission target
+        // is independent of that allocation and includes the network-frame header.
+        public static int ResolveWriteLimit(int targetBytes, int capacityBytes)
+        {
+            int limit = capacityBytes;
+            if (limit < 0)
+                limit = 0;
+            if (limit > NetworkFrameProtocol.MaximumPayloadBytes)
+                limit = NetworkFrameProtocol.MaximumPayloadBytes;
+            if (targetBytes <= 0)
+                return limit;
+            int target = targetBytes;
+            if (target < NetworkFrameProtocol.NetworkHeaderBytes)
+                target = NetworkFrameProtocol.NetworkHeaderBytes;
+            return target < limit ? target : limit;
+        }
+
         public static int ClampCapacity(int byteCount)
         {
             return ClampCapacity(byteCount, NetworkFrameProtocol.MinimumPayloadBufferBytes);

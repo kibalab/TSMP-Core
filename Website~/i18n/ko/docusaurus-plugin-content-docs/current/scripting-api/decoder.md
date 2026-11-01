@@ -4,6 +4,12 @@ title: TSMPDecoder API
 
 # `TSMPDecoder`
 
+## Payload checksum
+
+실제 encoder는 header 0.2에 payload CRC32를 포함합니다. Payload 처리로 진행한 프레임은 payload-readback-only·parse-only 모드를 포함해 readback 후 해당 프레임의 prediction 갱신과 변수·RPC 적용 전에 표시된 checksum을 검증합니다. 보호 프레임의 수동 layout 길이도 header `PayloadSize`와 일치해야 합니다. `requirePayloadCrc32`는 legacy 호환을 위해 기본 false이며 true일 때 checksum 없는 프레임을 거부합니다. 이 설정은 decode 요청별로 보관되므로 변경은 이후 요청에 반영됩니다.
+
+`lastPayloadCrcPresent`는 header flag, `lastPayloadCrcVerified`는 완료된 body 검증 성공을 나타냅니다. Header-only와 body 검증 전에 건너뛴 중복·과거 프레임은 `Verified=false`입니다. 예측 skip 경로는 CRC를 통과한 header 메타데이터만 갱신할 수 있으며 body를 채택하거나 적용하지 않습니다. 기본 수용한 legacy 프레임의 payload는 무보호입니다. [Checksum 계약](../concepts/protocol.md#payload-integrity)을 참고하세요.
+
 ## 헤더와 본문 직접 출력
 
 `useCombinedByteOutput`의 기본값은 `true`입니다. 예측 경로에서 지원 코덱은 복원한 56바이트 헤더와 본문을 전용 RGBA8 readback 텍스처에 직접 출력합니다. 별도 합치기 패스와 본문 중간 출력이 줄어듭니다. 원본 스냅샷, 헤더 CRC 검사, 정확한 길이 비교와 같은 이미지에서의 폴백은 유지됩니다. 전송 데이터그램은 바뀌지 않으며 일정 수신율을 보장하는 기능은 아닙니다.
@@ -61,14 +67,15 @@ public void DecodeNow()
 3. Magic, version, payload layout, CRC를 검증합니다.
 4. `codecId`로 codec handler를 선택합니다.
 5. 같은 스냅샷에서 payload bytes를 디코딩합니다.
-6. Network messages를 파싱합니다.
-7. 변수를 적용하고 RPC를 호출합니다.
+6. 표시된 payload CRC와 checksum 필수 정책을 검증합니다.
+7. Network messages를 파싱합니다.
+8. 변수를 적용하고 RPC를 호출합니다.
 
 ## 예측 readback {#predicted-readback}
 
 유효한 헤더를 학습한 뒤에는 CPU가 헤더를 기다리지 않고, 이전 설정으로 현재 이미지의 Luma4 헤더 패스와 payload 패스를 실행합니다. 복원된 바이트를 별도의 linear RGBA8 타깃으로 묶어 한 번만 readback합니다. 이 바이트 타깃은 입력의 형식을 보존하는 스냅샷과 별개입니다.
 
-현재 헤더의 magic, version, size, CRC와 기존 프레임 순서 검사를 통과해야 합니다. CRC 이전 바이트 중 프레임 번호·타임스탬프·payload 길이를 제외한 값은 캐시와 같아야 합니다. payload 길이는 별도로 **정확히 같은지** 검사하고, 해석된 block/sample/start-block 설정도 비교합니다. 길이가 늘거나 줄거나, 코덱·옵션·스트림·레이아웃이 달라지면 추측한 payload를 버리고 **같은 스냅샷**에서 실제 payload를 다시 요청합니다. 원본은 다시 캡처하지 않습니다. CRC 실패 시에는 검증되지 않은 데이터로 재시도하지 않고 프레임을 폐기합니다.
+현재 헤더의 magic, version, size, header CRC와 기존 프레임 순서 검사를 통과해야 합니다. CRC 이전 바이트 중 프레임 번호·타임스탬프·payload 길이와 프레임별 payload CRC `44..47`을 제외한 값은 캐시와 같아야 합니다. payload 길이는 별도로 **정확히 같은지** 검사하고 해석된 block/sample/start-block 설정도 비교합니다. Flags와 reserved `48..49`는 메타데이터 비교에 유지됩니다. 길이·코덱·옵션·스트림·레이아웃 등이 달라지면 추측한 payload를 버리고 **같은 스냅샷**에서 실제 payload를 다시 요청하며 원본은 다시 캡처하지 않습니다. 복원 후 현재 payload CRC를 검사하고 checksum 실패 시 검증되지 않은 데이터로 재시도하지 않고 프레임을 폐기합니다.
 
 정확한 길이만 허용하므로 사용자 정의 코덱이 더 많은 바이트를 요청받았을 때 같은 접두 데이터를 반환한다고 가정하지 않습니다. 코덱 API와 기존 셰이더는 바뀌지 않으며 각 패스의 `PrepareDecode`도 계속 호출합니다. 비활성화, 입력 크기·방향 변경, 수동 레이아웃·안전 모드 사용 뒤에는 헤더를 다시 학습합니다. 결합 리소스가 없으면 기존 순차 경로를 사용합니다. 머티리얼 참조는 Editor와 빌드 준비 단계에서 자동 지정하고, 일반 Unity 런타임 생성 시에는 패키지 리소스에서 불러옵니다.
 
@@ -110,7 +117,7 @@ Inspector에 추가 설정은 필요 없습니다. 슬롯마다 입력과 같은
 
 ### 데이터그램 호환성
 
-데이터그램과 프로토콜 버전은 **변경하지 않습니다**. 헤더는 56바이트이고 payload 형식도 같습니다. `20..23`은 `StreamId` UInt32 LE, `24..27`은 `FrameIndex` UInt32 LE, `28..31`은 `TimestampMs` UInt32 LE이며 타임스탬프는 이 판정에 사용하지 않습니다. 예약 영역 `44..49`는 계속 0입니다. CRC32는 `0..51`을 계산해 `52..55`에 기록합니다. 윈도우 크기와 세션 ID는 전송하지 않습니다. 나머지는 [프레임 레이아웃](../concepts/protocol.md)을 참조하세요. 기존 송신기는 변경할 필요가 없으며 수신기의 프레임 채택 정책만 바뀝니다.
+프레임 윈도우 규칙 자체는 데이터그램 필드를 추가하지 않습니다. 헤더는 56바이트이고 payload 메시지 형식도 유지됩니다. `20..23`은 `StreamId` UInt32 LE, `24..27`은 `FrameIndex`, `28..31`은 이 판정에 사용하지 않는 `TimestampMs`입니다. 실제 encoder의 header 0.2는 별도로 flag bit 0과 `44..47`에 payload CRC를 쓰며 `48..49`는 0입니다. Header CRC32는 `0..51`을 계산해 `52..55`에 기록합니다. 윈도우 크기와 세션 ID는 전송하지 않습니다. Checksum 필수 설정이 아니면 legacy 0.1 프레임도 수용합니다. [프레임 호환성](../concepts/protocol.md#payload-integrity)을 참고하세요.
 
 ## `ResetDecodeDiagnostics()`
 

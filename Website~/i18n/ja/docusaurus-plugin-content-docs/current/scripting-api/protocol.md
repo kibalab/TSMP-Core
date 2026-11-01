@@ -17,6 +17,8 @@ title: プロトコルAPI
 | `Size` | `56` |
 | `BytesBeforeCrc` | `52` |
 | `CrcOffset` | `52` |
+| `PayloadCrc32Offset` | `44` |
+| `PayloadCrc32Bytes` | `4` |
 | `MaxCodecOptionBytes` | `5` |
 
 重要な方法:
@@ -29,6 +31,10 @@ title: プロトコルAPI
 | `ClampDecodeSampleSize(...)` | クランプデコードサンプリングサイズ。 |
 
 ヘッダー CRC は常に `WriteTo` によって書き込まれます。
+
+`CreateDefault()` は legacy header 0.1 の既定値を維持します。`FrameFlags.PayloadCrc32` が有効なら `WriteTo` は指定された `PayloadCrc32` を書き、header minor version を最低0.2にします。本文の checksum 自体は計算しません。実際の encoder は `FrameHeaderWriter.TryWritePayloadCrc32` で計算し、flag・version・header CRC を完成します。[Wire 契約](../concepts/protocol.md#payload-integrity)を参照してください。
+
+Header validity と payload バイトの検証は別です。`FrameHeaderReader.TryValidatePayload` が payload CRC と decoder の checksum 必須方針を適用前に検査します。
 
 ## FrameHeaderReader
 
@@ -50,6 +56,7 @@ title: プロトコルAPI
 | タイプ | 価値観 |
 | --- | --- |
 | `SymbolMode` | `Luma4` |
+| `FrameFlags` | `None`, `PayloadCrc32` (bit 0) |
 | `PayloadType` | `Empty`、`NetworkFrame` |
 | `NetworkMessageType` | `VariableState`、`RpcCall` |
 | `NetworkValueType` | Bool、Int32、Float32、ベクトル、四元数、UTF8 文字列、生のバイト、サポートされている配列。 |

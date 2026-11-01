@@ -22,7 +22,7 @@ Automatic fields honor [TransSync send scheduling](../scripting-api/transsync.md
 1. Assign the output texture through `TSMPSetup`.
 2. Choose Luma4 through the Codec tab.
 3. Set the target frame rate.
-4. Click `Apply Setup`.
+4. Allow automatic Setup preparation to finish; `Apply Setup` is an optional manual refresh.
 5. Watch the output texture while synchronized objects move.
 
 The output texture should visibly change when payload data changes. If it stays flat or only shows a static pattern, check setup references and payload diagnostics.
@@ -53,6 +53,12 @@ High-bandwidth sources include:
 - Large blend shape selections.
 - Many active players.
 - Many independent transform objects.
+
+## Payload integrity
+
+The production encoder always writes a payload CRC32 in its 56-byte header and marks the frame as protocol 0.2. This covers exactly the serialized payload length for both ordinary Unity and Udon output, with every codec; it does not reduce payload capacity or add bytes to the NetworkFrame body. A current decoder validates it before applying values or RPCs.
+
+Older decoders can read the same frame layout but do not check the payload CRC. Legacy header-building APIs retain their 0.1 default, so custom senders using them do not gain payload protection automatically. See the [wire layout and compatibility rules](../concepts/protocol.md#payload-integrity). A checksum detects a changed frame; it does not recover it or guarantee a target publication rate.
 
 ## RPC use
 

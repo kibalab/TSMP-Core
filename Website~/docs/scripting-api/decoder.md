@@ -4,6 +4,12 @@ title: TSMPDecoder API
 
 # `TSMPDecoder`
 
+## Payload checksum
+
+Production encoder frames carry payload CRC32 under header 0.2. When the decoder processes a frame's payload, it verifies an announced checksum after readback, before that frame refreshes prediction or applies variables/RPCs, including payload-readback-only and parse-only modes. A protected manual-layout read must match header `PayloadSize`. `requirePayloadCrc32` defaults to false for legacy compatibility; true rejects frames without the checksum. This setting is captured for each decode request, so changes affect later requests.
+
+`lastPayloadCrcPresent` reports the header flag and `lastPayloadCrcVerified` reports a completed successful body check. Header-only mode and duplicate/out-of-order frames skipped before body verification have `Verified=false`. The predicted skip path may refresh only CRC-valid header metadata without accepting or applying the body. Default-accepted legacy frames are not payload-protected. See [the checksum contract](../concepts/protocol.md#payload-integrity).
+
 ## Combined byte output
 
 `useCombinedByteOutput` defaults to `true`. In the predicted path, compatible codec shaders write the 56-byte decoded header and payload directly into the private RGBA8 readback target, removing the separate packing pass and intermediate payload write. The immutable source snapshot, header CRC validation, exact-length prediction check and same-snapshot fallback are unchanged. This does not change the wire datagram or guarantee a delivery rate.
@@ -61,14 +67,15 @@ The initial/fallback path performs this order:
 3. Validate magic, version, payload layout, and CRC.
 4. Select a codec handler by `codecId`.
 5. Decode payload bytes from the same snapshot.
-6. Parse network messages.
-7. Apply variables and dispatch RPC calls.
+6. Verify an announced payload CRC and enforce required-checksum policy.
+7. Parse network messages.
+8. Apply variables and dispatch RPC calls.
 
 ## Predicted readback {#predicted-readback}
 
 After learning a valid header, the decoder can submit a Luma4 header pass and a payload pass using the previous configuration without waiting for the header on the CPU. It packs the decoded bytes into a private linear RGBA8 target and submits one readback. This byte target is separate from the format-preserving input snapshot.
 
-The current header must pass magic, version, size and CRC validation, then the normal frame-order filter. All header bytes before CRC must match the cached header except frame index, timestamp and payload length. Payload length is then checked separately for **exact equality**, and resolved block/sample/start-block settings must match. A length change in either direction, codec/option/stream/layout change or other mismatch discards the speculative payload and requests the actual payload from the **same snapshot**. No second source capture occurs. CRC failure rejects the frame instead of falling back to unchecked data.
+The current header must pass magic, version, size and header CRC validation, then the normal frame-order filter. All header bytes before CRC must match the cached header except frame index, timestamp, payload length and the per-frame payload CRC at `44..47`. Payload length is checked separately for **exact equality**, and resolved block/sample/start-block settings must match. Flags and reserved bytes `48..49` remain part of the metadata comparison. A length change in either direction, codec/option/stream/layout change or other mismatch discards the speculative payload and requests the actual payload from the **same snapshot**. No second source capture occurs. The current payload CRC is checked after recovery; checksum failure rejects the frame instead of falling back to unchecked data.
 
 Exact-length prediction avoids assuming custom codecs produce the same prefix when asked to decode more bytes. Existing codec interfaces and shaders are unchanged; each pass still calls `PrepareDecode` with its current snapshot. A header must be learned again after disable, source dimension/orientation changes, or use of manual layout/safety modes. Missing packing resources retain the sequential path. The serialized packing material is populated automatically in the Editor/build preparation; ordinary Unity runtime creation also loads the package resource.
 
@@ -110,7 +117,7 @@ This is deliberately a heuristic without a session ID. A delayed old zero can tr
 
 ### Datagram compatibility
 
-The datagram and protocol version are **unchanged**. The header is still 56 bytes and the payload format is unchanged. `StreamId` occupies bytes `20..23` (UInt32 little-endian), `FrameIndex` bytes `24..27` (UInt32 little-endian), and `TimestampMs` bytes `28..31` (UInt32 little-endian, not used by this rule). Reserved bytes `44..49` remain zero. Header CRC32 remains at `52..55` over bytes `0..51`. Neither the window size nor a session ID is transmitted. See the [frame layout](../concepts/protocol.md) for the remaining fields. Existing senders require no change; the receiver's frame-admission policy changes.
+The frame-window rule itself adds no datagram fields. The header remains 56 bytes and the payload message layout is unchanged. `StreamId` occupies bytes `20..23` (UInt32 little-endian), `FrameIndex` bytes `24..27`, and `TimestampMs` bytes `28..31` (not used by this rule). Production header 0.2 separately uses flag bit 0 and bytes `44..47` for payload CRC; `48..49` remain zero. Header CRC32 remains at `52..55` over bytes `0..51`. Neither window size nor a session ID is transmitted. Legacy 0.1 frames remain accepted unless checksum is required. See [frame compatibility](../concepts/protocol.md#payload-integrity).
 
 ## `ResetDecodeDiagnostics()`
 

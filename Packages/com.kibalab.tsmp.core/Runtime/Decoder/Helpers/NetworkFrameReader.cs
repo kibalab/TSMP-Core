@@ -2,6 +2,99 @@ namespace K13A.TSMP
 {
     public static class NetworkFrameReader
     {
+        // Validate every declared body before any state/RPC side effect. This
+        // walks headers and lengths only: no payload copy, decoded values or CRC.
+        public static bool TryValidateNetworkFrame(byte[] buffer, int length, out int messageCount, out string error)
+        {
+            messageCount = 0;
+            error = null;
+            if (buffer == null || length < NetworkFrameProtocol.NetworkHeaderBytes)
+            {
+                error = "Payload is too small for NetworkFrame.";
+                return false;
+            }
+            if (length > buffer.Length)
+            {
+                error = "Payload length exceeds buffer capacity.";
+                return false;
+            }
+            int cursor;
+            if (!TryReadNetworkFrameHeader(buffer, out messageCount, out cursor))
+            {
+                error = "NetworkFrame header is malformed.";
+                return false;
+            }
+            for (int message = 0; message < messageCount; message++)
+            {
+                ushort networkId;
+                int messageType, bodyStart, bodyEnd, nextMessage;
+                if (!TryReadMessageHeader(buffer, cursor, length, out networkId, out messageType,
+                    out bodyStart, out bodyEnd, out nextMessage))
+                {
+                    error = "NetworkFrame message is malformed.";
+                    return false;
+                }
+                int bodyCursor, count;
+                if (IsVariableStateMessage(messageType))
+                {
+                    if (!TryReadVariableStateHeader(buffer, bodyStart, bodyEnd, out count, out bodyCursor))
+                    {
+                        error = "VariableState body is too small.";
+                        return false;
+                    }
+                    for (int value = 0; value < count; value++)
+                    {
+                        uint hash;
+                        int type, offset, valueLength, nextValue;
+                        if (!TryReadVariableEntry(buffer, bodyCursor, bodyEnd, out hash, out type,
+                            out offset, out valueLength, out nextValue))
+                        {
+                            error = "VariableState value is malformed.";
+                            return false;
+                        }
+                        bodyCursor = nextValue;
+                    }
+                    if (bodyCursor != bodyEnd)
+                    {
+                        error = "VariableState body has trailing bytes.";
+                        return false;
+                    }
+                }
+                else
+                {
+                    uint hash;
+                    if (!TryReadRpcCallHeader(buffer, bodyStart, bodyEnd, out hash, out count, out bodyCursor))
+                    {
+                        error = "RpcCall body is too small.";
+                        return false;
+                    }
+                    for (int argument = 0; argument < count; argument++)
+                    {
+                        int type, offset, valueLength, nextArgument;
+                        if (!TryReadRpcArgument(buffer, bodyCursor, bodyEnd, out type, out offset,
+                            out valueLength, out nextArgument))
+                        {
+                            error = "RpcCall body is malformed.";
+                            return false;
+                        }
+                        bodyCursor = nextArgument;
+                    }
+                    if (bodyCursor != bodyEnd)
+                    {
+                        error = "RpcCall body is malformed.";
+                        return false;
+                    }
+                }
+                cursor = nextMessage;
+            }
+            if (cursor != length)
+            {
+                error = "NetworkFrame has trailing bytes.";
+                return false;
+            }
+            return true;
+        }
+
         public static bool TryReadNetworkFrameHeader(byte[] buffer, out int messageCount, out int nextOffset)
         {
             messageCount = 0;

@@ -6,6 +6,7 @@ namespace K13A.TSMP
 
         public const byte VersionMajor = 0;
         public const byte VersionMinor = 1;
+        public const byte PayloadCrcVersionMinor = 2;
 
         public const int DefaultBlockSize = 8;
         public const int DefaultSampleSize = 4;

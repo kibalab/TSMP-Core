@@ -161,7 +161,8 @@ public sealed class DecoderSnapshotValidation : MonoBehaviour
         }
     }
 
-    public static void Write(TSMPCodec codec, Texture2D texture, byte[] payload, uint frame, int sample, bool corruptHeader = false)
+    public static void Write(TSMPCodec codec, Texture2D texture, byte[] payload, uint frame, int sample, bool corruptHeader = false,
+        bool protectPayload = false, bool corruptPayload = false)
     {
         var header = FrameHeader.CreateDefault();
         header.BlockSize = 8;
@@ -181,8 +182,17 @@ public sealed class DecoderSnapshotValidation : MonoBehaviour
         if (options.Length > 4) header.CodecOption4 = options[4];
         var bytes = new byte[FrameHeader.Size];
         header.WriteTo(bytes, 0);
+        if (protectPayload)
+            Check(FrameHeaderWriter.TryWritePayloadCrc32(bytes, 0, payload, payload.Length, null), "Protected fixture header");
         if (corruptHeader) bytes[FrameHeader.FrameIndexOffset] ^= 1;
-        Check(codec.TryWriteFrame(texture, 8, bytes, payload, out string error), error);
+        byte[] encodedPayload = payload;
+        if (corruptPayload)
+        {
+            Check(payload.Length > 0, "Corruption fixture needs payload bytes");
+            encodedPayload = (byte[])payload.Clone();
+            encodedPayload[encodedPayload.Length - 1] ^= 1;
+        }
+        Check(codec.TryWriteFrame(texture, 8, bytes, encodedPayload, out string error), error);
     }
 
     static void Upload(Texture source, RenderTexture destination, bool flip)
@@ -192,7 +202,9 @@ public sealed class DecoderSnapshotValidation : MonoBehaviour
 
     static IEnumerator Drain(TSMPDecoder decoder)
     {
-        float deadline = Time.realtimeSinceStartup + 60;
+        // First use can synchronously compile a recovery shader variant in the
+        // Editor. Keep the correctness deadline separate from performance data.
+        float deadline = Time.realtimeSinceStartup + 180;
         while (decoder.readbackInFlight && Time.realtimeSinceStartup < deadline) yield return null;
         Check(!decoder.readbackInFlight, "Readback timeout: stage=" + Field<int>(decoder, "_decodeStage") +
             "; frame=" + decoder.lastFrameIndex + "; error=" + decoder.lastError);
@@ -274,6 +286,8 @@ public sealed class DecoderSnapshotValidation : MonoBehaviour
         }
         results.Add("PASS " + cases + " changing-source cases: 4 codecs/all variants, sample 1/4, both orientations, same/different payload size and codec switch, ARGB32/Float inputs; allocation reuse");
 
+        var integrity = PayloadIntegrity(decoder, codecs, a);
+        while (integrity.MoveNext()) yield return integrity.Current;
         var lengths = PayloadLengths(decoder, codecs[0], a);
         while (lengths.MoveNext()) yield return lengths.Current;
         var lifecycle = Lifecycle(decoder, codecs[0], a, b);
@@ -293,6 +307,131 @@ public sealed class DecoderSnapshotValidation : MonoBehaviour
         foreach (var codec in codecs) Drop(codec.gameObject);
         yield return null;
         foreach (var material in owned) Drop(material);
+    }
+
+    public static byte[] MixedValueRpcPacket(int value, int eventId, int extraBytes = 0)
+    {
+        var bytes = new byte[256 + extraBytes];
+        int cursor = NetworkFrameWriter.BeginNetworkFrame(bytes, 0, (uint)eventId);
+        int start = cursor;
+        cursor = NetworkFrameWriter.BeginVariableState(bytes, cursor, 1, 0);
+        cursor = NetworkValueEntryWriter.WriteVariableValue(bytes, cursor, StableHash.Fnv1A32(nameof(receivedValue)), NetworkFrameProtocol.ValueTypeInt32, value);
+        if (extraBytes > 0)
+            cursor = NetworkValueEntryWriter.WriteVariableValue(bytes, cursor, 999, NetworkFrameProtocol.ValueTypeRawBytes, Payload(41, extraBytes));
+        Check(cursor >= 0 && NetworkFrameWriter.EndVariableState(bytes, start, cursor, extraBytes > 0 ? 2 : 1), "Build protected state fixture");
+        string method = nameof(TSMPNetworkGameObjectToggle.ToggleObject);
+        cursor = NetworkFrameWriter.WriteRpcCall(bytes, cursor, 2, 0, StableHash.Fnv1A32(method), new object[] { method, eventId }, out int failed, out int error);
+        Check(cursor >= 0 && NetworkFrameWriter.EndNetworkFrame(bytes, 0, 2), "Build protected RPC fixture: " + failed + "/" + error);
+        Array.Resize(ref bytes, cursor);
+        return bytes;
+    }
+
+    IEnumerator PayloadIntegrity(TSMPDecoder decoder, TSMPCodec[] codecs, Texture2D image)
+    {
+        var source = Target(640, 360);
+        var toggleOwner = new GameObject("CRC RPC receiver");
+        var toggleTarget = new GameObject("CRC toggle target");
+        var toggle = toggleOwner.AddComponent<TSMPNetworkGameObjectToggle>();
+        toggle.targetObject = toggleTarget;
+        decoder.sourceTexture = source;
+        decoder.flipY = true;
+        decoder.sampleSize = 4;
+        decoder.requirePayloadCrc32 = true;
+        foreach (var codec in codecs)
+        foreach (int mode in new[] { 2, 3 })
+        {
+            decoder.decodeSafetyMode = mode;
+            byte[] packet = NetworkPayload(7); // 32 valid bytes: GPU padding and retained capacity are not data.
+            Write(codec, image, packet, ++sequence, 4, protectPayload: true);
+            Upload(image, source, true);
+            decoder.DecodeNow();
+            var wait = Drain(decoder);
+            while (wait.MoveNext()) yield return wait.Current;
+            Verify(decoder, packet, sequence, "Protected " + codec.displayName + "/" + mode);
+            Check(decoder.lastPayloadCrcPresent && decoder.lastPayloadCrcVerified, "Protected payload was not verified");
+            uint appliedBefore = Field<uint>(decoder, "_lastAppliedFrameIndex");
+            Write(codec, image, packet, ++sequence, 4, protectPayload: true, corruptPayload: true);
+            Upload(image, source, true);
+            decoder.DecodeNow();
+            wait = Drain(decoder);
+            while (wait.MoveNext()) yield return wait.Current;
+            Check(decoder.lastHeaderValid && !decoder.lastFrameValid && decoder.lastPayloadCrcPresent && !decoder.lastPayloadCrcVerified,
+                "Damaged payload accepted in " + codec.displayName + "/" + mode);
+            Check(Field<uint>(decoder, "_lastAppliedFrameIndex") == appliedBefore, "CRC rejection advanced applied frame");
+        }
+        decoder.decodeSafetyMode = 0;
+        decoder.skipDuplicateFrames = true;
+        decoder.bindingTargets = new Component[] { this, toggle };
+        decoder.bindingNetworkIds = new ushort[] { 1, 2 };
+        decoder.bindingVariableHashes = new[] { StableHash.Fnv1A32(nameof(receivedValue)), 0u };
+        decoder.bindingValueTypes = new[] { (byte)NetworkValueType.Int32, (byte)NetworkFrameProtocol.ValueTypeUnsupported };
+        decoder.bindingFieldNames = new[] { nameof(receivedValue), string.Empty };
+        decoder.bindingDirections = new int[2];
+        int eventId = 20000;
+        foreach (bool prediction in new[] { false, true })
+        {
+            decoder.usePredictedReadback = prediction;
+            decoder.useCombinedByteOutput = prediction;
+            byte[] warm = MixedValueRpcPacket(41, ++eventId);
+            Write(codecs[0], image, warm, ++sequence, 4, protectPayload: true);
+            Upload(image, source, true); decoder.DecodeNow();
+            var wait = Drain(decoder);
+            while (wait.MoveNext()) yield return wait.Current;
+            Check(decoder.lastFrameValid && decoder.lastPayloadCrcVerified, "Protected prediction warmup");
+            receivedValue = -1; toggleTarget.SetActive(false);
+            byte[] packet = MixedValueRpcPacket(42, ++eventId);
+            uint frame = ++sequence;
+            Write(codecs[0], image, packet, frame, 4, protectPayload: true, corruptPayload: true);
+            Upload(image, source, true); decoder.DecodeNow();
+            wait = Drain(decoder);
+            while (wait.MoveNext()) yield return wait.Current;
+            Check(!decoder.lastFrameValid && receivedValue == -1 && !toggleTarget.activeSelf, "CRC failure partially applied state or RPC");
+            Write(codecs[0], image, packet, frame, 4, protectPayload: true);
+            Upload(image, source, true); decoder.DecodeNow();
+            wait = Drain(decoder);
+            while (wait.MoveNext()) yield return wait.Current;
+            Check(decoder.lastFrameValid && decoder.lastPayloadCrcVerified && receivedValue == 42 && toggleTarget.activeSelf,
+                "CRC failure consumed frame baseline or RPC dedup entry");
+        }
+        decoder.overlapReadbacks = true;
+        foreach (bool badHead in new[] { true, false })
+        {
+            receivedValue = -1; toggleTarget.SetActive(false);
+            byte[] first = MixedValueRpcPacket(42, ++eventId);
+            byte[] second = MixedValueRpcPacket(99, ++eventId, 701);
+            Write(codecs[0], image, first, ++sequence, 4, protectPayload: true, corruptPayload: badHead);
+            Upload(image, source, true); decoder.DecodeNow();
+            Write(codecs[0], image, second, ++sequence, 4, protectPayload: true, corruptPayload: !badHead);
+            Upload(image, source, true); decoder.DecodeNow();
+            Check(decoder.pendingDecodeCount == 2, "Protected overlap did not use both slots");
+            var wait = Drain(decoder);
+            while (wait.MoveNext()) yield return wait.Current;
+            Check(receivedValue == (badHead ? 99 : 42) && toggleTarget.activeSelf, "CRC slot context leaked or bad slot applied state/RPC");
+        }
+        decoder.decodeSafetyMode = 2;
+        Write(codecs[0], image, NetworkPayload(0), ++sequence, 4);
+        Upload(image, source, true); decoder.DecodeNow();
+        decoder.requirePayloadCrc32 = false; // Changing policy must not weaken the in-flight request.
+        var legacyWait = Drain(decoder);
+        while (legacyWait.MoveNext()) yield return legacyWait.Current;
+        Check(!decoder.lastFrameValid && !decoder.lastPayloadCrcPresent, "Strict decoder accepted missing CRC");
+        decoder.requirePayloadCrc32 = false;
+        Write(codecs[0], image, NetworkPayload(0), ++sequence, 4);
+        Upload(image, source, true); decoder.DecodeNow();
+        decoder.requirePayloadCrc32 = true; // The compatible request retains its captured policy.
+        legacyWait = Drain(decoder);
+        while (legacyWait.MoveNext()) yield return legacyWait.Current;
+        Check(decoder.lastFrameValid && !decoder.lastPayloadCrcPresent && !decoder.lastPayloadCrcVerified, "Legacy compatibility lost");
+        decoder.requirePayloadCrc32 = false;
+        decoder.skipDuplicateFrames = false;
+        decoder.bindingTargets = new Component[0];
+        decoder.bindingNetworkIds = new ushort[0];
+        decoder.bindingVariableHashes = new uint[0];
+        decoder.bindingValueTypes = new byte[0];
+        decoder.bindingFieldNames = new string[0];
+        decoder.bindingDirections = new int[0];
+        Drop(source); Drop(toggleOwner); Drop(toggleTarget);
+        results.Add("PASS payload CRC: four codecs in readback/parse modes; state+RPC atomic rejection/retransmit in predicted/fallback paths; both bad-slot orders/different lengths; strict missing and legacy compatibility");
     }
 
     IEnumerator PayloadLengths(TSMPDecoder decoder, TSMPCodec codec, Texture2D texture)

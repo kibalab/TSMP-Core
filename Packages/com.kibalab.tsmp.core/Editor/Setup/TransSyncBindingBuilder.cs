@@ -398,52 +398,24 @@ namespace K13A.TSMP.Editor
             if (behaviours == null)
                 return;
 
-            TSMPNetworkVrchatAvatarPoseSync[] avatarPoseSyncs = Object.FindObjectsOfType<TSMPNetworkVrchatAvatarPoseSync>(true);
-            ScanTransSyncCollisions(behaviours, avatarPoseSyncs, true, logCollisions);
-            ScanTransSyncCollisions(behaviours, avatarPoseSyncs, false, logCollisions);
+            ScanTransSyncCollisions(behaviours, true, logCollisions);
+            ScanTransSyncCollisions(behaviours, false, logCollisions);
         }
 
-        private static void ScanTransSyncCollisions(TSMPNetworkBehaviour[] behaviours, TSMPNetworkVrchatAvatarPoseSync[] avatarPoseSyncs, bool sendTable, bool logCollisions)
+        private static void ScanTransSyncCollisions(TSMPNetworkBehaviour[] behaviours, bool sendTable, bool logCollisions)
         {
-            var owners = new Dictionary<BindingKey, BindingOwner>();
-            string tableName = sendTable ? "send" : "receive";
+            TransSyncBindingSnapshot snapshot = TransSyncBindingSnapshotBuilder.Build(!sendTable, behaviours);
+            RegisterSnapshotCollisions(snapshot, sendTable ? "send" : "receive", logCollisions);
+        }
 
-            for (int i = 0; i < behaviours.Length; i++)
+        private static void RegisterSnapshotCollisions(TransSyncBindingSnapshot snapshot, string tableName, bool logCollisions)
+        {
+            for (int i = 0; i < snapshot.Collisions.Length; i++)
             {
-                TSMPNetworkBehaviour behaviour = behaviours[i];
-                if (behaviour == null)
-                    continue;
-                if (IsAvatarPosePoolBehaviour(behaviour, avatarPoseSyncs))
-                    continue;
-
-                ushort networkId = ResolveNetworkId(behaviour);
-                FieldInfo[] fields = behaviour.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                for (int f = 0; f < fields.Length; f++)
-                {
-                    FieldInfo field = fields[f];
-                    TransSyncAttribute sync = field.GetCustomAttribute<TransSyncAttribute>(true);
-                    if (sync == null)
-                        continue;
-                    if (sendTable && sync.Direction == NetworkSyncDirection.ReceiveOnly)
-                        continue;
-                    if (!sendTable && sync.Direction == NetworkSyncDirection.SendOnly)
-                        continue;
-                    if (!IsTransSyncFieldEnabled(behaviour, sync, field))
-                        continue;
-                    if (!NetworkValueCodec.TryGetValueType(field.FieldType, out _))
-                        continue;
-
-                    uint variableHash = StableHash.VariableHash(behaviour.GetType(), field.Name, sync.Key);
-                    var key = new BindingKey(networkId, variableHash);
-                    BindingOwner current = CreateBindingOwner(behaviour, field);
-                    if (owners.TryGetValue(key, out BindingOwner existing))
-                    {
-                        RegisterTransSyncCollision(tableName, key, existing, current, logCollisions);
-                        continue;
-                    }
-
-                    owners.Add(key, current);
-                }
+                TransSyncBindingSnapshot.Collision collision = snapshot.Collisions[i];
+                BindingOwner first = CreateBindingOwner(collision.FirstTarget, collision.FirstFieldName);
+                BindingOwner duplicate = CreateBindingOwner(collision.DuplicateTarget, collision.DuplicateFieldName);
+                RegisterTransSyncCollision(tableName, new BindingKey(collision.NetworkId, collision.VariableHash), first, duplicate, logCollisions);
             }
         }
 
@@ -517,91 +489,16 @@ namespace K13A.TSMP.Editor
             if (encoder == null)
                 return false;
 
-            var targets = new List<Component>();
-#if UDONSHARP
-            var udonTargets = new List<UdonBehaviour>();
-#endif
-            var networkIds = new List<ushort>();
-            var variableHashes = new List<uint>();
-            var valueTypes = new List<byte>();
-            var fieldNames = new List<string>();
-            var directions = new List<int>();
-            var priorities = new List<int>();
-            var sendOnChange = new List<bool>();
-            var minSendIntervals = new List<float>();
-            var sentEvents = new List<string>();
-            var collisions = new Dictionary<BindingKey, BindingOwner>();
-            TSMPNetworkVrchatAvatarPoseSync[] avatarPoseSyncs = Object.FindObjectsOfType<TSMPNetworkVrchatAvatarPoseSync>(true);
-
-            for (int i = 0; i < behaviours.Length; i++)
-            {
-                TSMPNetworkBehaviour behaviour = behaviours[i];
-                if (behaviour == null)
-                    continue;
-
-                if (IsAvatarPosePoolBehaviour(behaviour, avatarPoseSyncs))
-                    continue;
-
-                ushort networkId = ResolveNetworkId(behaviour);
-                FieldInfo[] fields = behaviour.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                for (int f = 0; f < fields.Length; f++)
-                {
-                    FieldInfo field = fields[f];
-                    TransSyncAttribute sync = field.GetCustomAttribute<TransSyncAttribute>(true);
-                    if (sync == null || sync.Direction == NetworkSyncDirection.ReceiveOnly)
-                        continue;
-
-                    if (!IsTransSyncFieldEnabled(behaviour, sync, field))
-                        continue;
-
-                    if (!NetworkValueCodec.TryGetValueType(field.FieldType, out NetworkValueType valueType))
-                    {
-                        Debug.LogWarning("[TSMP] TransSync unsupported field type: " + behaviour.GetType().Name + "." + field.Name + " type=" + field.FieldType.Name, behaviour);
-                        continue;
-                    }
-
-                    uint variableHash = StableHash.VariableHash(behaviour.GetType(), field.Name, sync.Key);
-                    var key = new BindingKey(networkId, variableHash);
-                    BindingOwner current = CreateBindingOwner(behaviour, field);
-                    if (collisions.TryGetValue(key, out BindingOwner existing))
-                    {
-                        RegisterTransSyncCollision("send", key, existing, current, true);
-                        continue;
-                    }
-                    collisions.Add(key, current);
-
-                    targets.Add(behaviour);
-#if UDONSHARP
-                    udonTargets.Add(GetBackingUdonBindingTarget(behaviour));
-#endif
-                    networkIds.Add(networkId);
-                    variableHashes.Add(variableHash);
-                    valueTypes.Add((byte)valueType);
-                    fieldNames.Add(field.Name);
-                    directions.Add((int)sync.Direction);
-                    priorities.Add(sync.Priority);
-                    sendOnChange.Add(sync.SendOnChange);
-                    minSendIntervals.Add(TransSyncSendScheduler.NormalizeInterval(sync.MinSendInterval));
-                    sentEvents.Add(sync.SentEvent ?? string.Empty);
-                }
-            }
-
+            WarnInvalidTransSyncFields(behaviours, false);
+            TransSyncBindingSnapshot snapshot = TransSyncBindingSnapshotBuilder.Build(false, behaviours);
+            RegisterSnapshotCollisions(snapshot, "send", true);
             Undo.RecordObject(encoder, "Assign TSMP encoder bindings");
-            SetComponentArrayFieldValue(encoder, FieldBindingTargets, targets);
-#if UDONSHARP
-            SetFieldValue(encoder, FieldBindingUdonTargets, udonTargets.ToArray());
-#endif
-            SetFieldValue(encoder, FieldBindingNetworkIds, networkIds.ToArray());
-            SetFieldValue(encoder, FieldBindingVariableHashes, variableHashes.ToArray());
-            SetFieldValue(encoder, FieldBindingValueTypes, valueTypes.ToArray());
-            SetFieldValue(encoder, FieldBindingFieldNames, fieldNames.ToArray());
-            SetFieldValue(encoder, FieldBindingDirections, directions.ToArray());
-            SetFieldValue(encoder, FieldBindingPriorities, priorities.ToArray());
-            SetFieldValue(encoder, nameof(TSMPEncoder.bindingSendOnChange), sendOnChange.ToArray());
-            SetFieldValue(encoder, nameof(TSMPEncoder.bindingMinSendIntervals), minSendIntervals.ToArray());
-            SetFieldValue(encoder, nameof(TSMPEncoder.bindingSentEvents), sentEvents.ToArray());
+            ApplyBindingSnapshot(encoder, snapshot);
+            SetFieldValue(encoder, nameof(TSMPEncoder.bindingSendOnChange), snapshot.SendOnChange);
+            SetFieldValue(encoder, nameof(TSMPEncoder.bindingMinSendIntervals), snapshot.MinSendIntervals);
+            SetFieldValue(encoder, nameof(TSMPEncoder.bindingSentEvents), snapshot.SentEvents);
             EditorUtility.SetDirty(encoder);
-            bindingCount = targets.Count;
+            bindingCount = snapshot.Targets.Length;
             return true;
         }
 
@@ -610,124 +507,63 @@ namespace K13A.TSMP.Editor
             if (decoder == null)
                 return 0;
 
-            var targets = new List<Component>();
-#if UDONSHARP
-            var udonTargets = new List<UdonBehaviour>();
-#endif
-            var networkIds = new List<ushort>();
-            var variableHashes = new List<uint>();
-            var valueTypes = new List<byte>();
-            var fieldNames = new List<string>();
-            var directions = new List<int>();
-            var priorities = new List<int>();
-            var collisions = new Dictionary<BindingKey, BindingOwner>();
-            TSMPNetworkVrchatAvatarPoseSync[] avatarPoseSyncs = Object.FindObjectsOfType<TSMPNetworkVrchatAvatarPoseSync>(true);
+            WarnInvalidTransSyncFields(behaviours, true);
+            TransSyncBindingSnapshot snapshot = TransSyncBindingSnapshotBuilder.Build(true, behaviours);
+            RegisterSnapshotCollisions(snapshot, "receive", true);
+            Undo.RecordObject(decoder, "Rebuild TSMP TransSync bindings");
+            ApplyBindingSnapshot(decoder, snapshot);
+            EditorUtility.SetDirty(decoder);
+            return snapshot.Targets.Length;
+        }
 
+        private static void ApplyBindingSnapshot(Component target, TransSyncBindingSnapshot snapshot)
+        {
+            SetFieldValue(target, FieldBindingTargets, snapshot.Targets);
+#if UDONSHARP
+            SetFieldValue(target, FieldBindingUdonTargets, snapshot.UdonTargets);
+#endif
+            SetFieldValue(target, FieldBindingNetworkIds, snapshot.NetworkIds);
+            SetFieldValue(target, FieldBindingVariableHashes, snapshot.VariableHashes);
+            SetFieldValue(target, FieldBindingValueTypes, snapshot.ValueTypes);
+            SetFieldValue(target, FieldBindingFieldNames, snapshot.FieldNames);
+            SetFieldValue(target, FieldBindingDirections, snapshot.Directions);
+            SetFieldValue(target, FieldBindingPriorities, snapshot.Priorities);
+        }
+
+        // Preserve editor authoring warnings; eligibility and collision handling are
+        // owned by the shared snapshot compiler rather than this diagnostic scan.
+        private static void WarnInvalidTransSyncFields(TSMPNetworkBehaviour[] behaviours, bool receive)
+        {
+            if (behaviours == null)
+                return;
+
+            TSMPNetworkVrchatAvatarPoseSync[] avatarPoseSyncs = Object.FindObjectsOfType<TSMPNetworkVrchatAvatarPoseSync>(true);
             for (int i = 0; i < behaviours.Length; i++)
             {
                 TSMPNetworkBehaviour behaviour = behaviours[i];
-                if (behaviour == null)
+                if (behaviour == null || IsAvatarPosePoolBehaviour(behaviour, avatarPoseSyncs))
                     continue;
 
-                if (IsAvatarPosePoolBehaviour(behaviour, avatarPoseSyncs))
-                    continue;
-
-                ushort networkId = ResolveNetworkId(behaviour);
-                int targetStartCount = targets.Count;
                 FieldInfo[] fields = behaviour.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 for (int f = 0; f < fields.Length; f++)
                 {
                     FieldInfo field = fields[f];
                     TransSyncAttribute sync = field.GetCustomAttribute<TransSyncAttribute>(true);
-                    if (sync == null || sync.Direction == NetworkSyncDirection.SendOnly)
+                    if (sync == null || (receive ? sync.Direction == NetworkSyncDirection.SendOnly : sync.Direction == NetworkSyncDirection.ReceiveOnly))
                         continue;
-
                     if (!IsTransSyncFieldEnabled(behaviour, sync, field))
                         continue;
-
-                    if (!NetworkValueCodec.TryGetValueType(field.FieldType, out NetworkValueType valueType))
-                    {
+                    if (!NetworkValueCodec.TryGetValueType(field.FieldType, out _))
                         Debug.LogWarning("[TSMP] TransSync unsupported field type: " + behaviour.GetType().Name + "." + field.Name + " type=" + field.FieldType.Name, behaviour);
-                        continue;
-                    }
-
-                    uint variableHash = StableHash.VariableHash(behaviour.GetType(), field.Name, sync.Key);
-                    var key = new BindingKey(networkId, variableHash);
-                    BindingOwner current = CreateBindingOwner(behaviour, field);
-                    if (collisions.TryGetValue(key, out BindingOwner existing))
-                    {
-                        RegisterTransSyncCollision("receive", key, existing, current, true);
-                        continue;
-                    }
-                    collisions.Add(key, current);
-
-                    targets.Add(behaviour);
-#if UDONSHARP
-                    udonTargets.Add(GetBackingUdonBindingTarget(behaviour));
-#endif
-                    networkIds.Add(networkId);
-                    variableHashes.Add(variableHash);
-                    valueTypes.Add((byte)valueType);
-                    fieldNames.Add(field.Name);
-                    directions.Add((int)sync.Direction);
-                    priorities.Add(sync.Priority);
                 }
-
-                if (targets.Count == targetStartCount)
-                    AddRpcOnlyTarget(behaviour, networkId, targets,
-#if UDONSHARP
-                        udonTargets,
-#endif
-                        networkIds, variableHashes, valueTypes, fieldNames, directions, priorities);
             }
-
-            Undo.RecordObject(decoder, "Rebuild TSMP TransSync bindings");
-            SetComponentArrayFieldValue(decoder, FieldBindingTargets, targets);
-#if UDONSHARP
-            SetFieldValue(decoder, FieldBindingUdonTargets, udonTargets.ToArray());
-#endif
-            SetFieldValue(decoder, FieldBindingNetworkIds, networkIds.ToArray());
-            SetFieldValue(decoder, FieldBindingVariableHashes, variableHashes.ToArray());
-            SetFieldValue(decoder, FieldBindingValueTypes, valueTypes.ToArray());
-            SetFieldValue(decoder, FieldBindingFieldNames, fieldNames.ToArray());
-            SetFieldValue(decoder, FieldBindingDirections, directions.ToArray());
-            SetFieldValue(decoder, FieldBindingPriorities, priorities.ToArray());
-            EditorUtility.SetDirty(decoder);
-
-            return targets.Count;
         }
 
-        private static void AddRpcOnlyTarget(
-            TSMPNetworkBehaviour behaviour,
-            ushort networkId,
-            List<Component> targets,
-#if UDONSHARP
-            List<UdonBehaviour> udonTargets,
-#endif
-            List<ushort> networkIds,
-            List<uint> variableHashes,
-            List<byte> valueTypes,
-            List<string> fieldNames,
-            List<int> directions,
-            List<int> priorities)
-        {
-            targets.Add(behaviour);
-#if UDONSHARP
-            udonTargets.Add(GetBackingUdonBindingTarget(behaviour));
-#endif
-            networkIds.Add(networkId);
-            variableHashes.Add(0u);
-            valueTypes.Add((byte)NetworkFrameProtocol.ValueTypeUnsupported);
-            fieldNames.Add(string.Empty);
-            directions.Add((int)NetworkSyncDirection.ReceiveOnly);
-            priorities.Add(0);
-        }
-
-        private static BindingOwner CreateBindingOwner(TSMPNetworkBehaviour behaviour, FieldInfo field)
+        private static BindingOwner CreateBindingOwner(TSMPNetworkBehaviour behaviour, string fieldName)
         {
             BindingOwner owner = new BindingOwner();
             owner.Behaviour = behaviour;
-            owner.FieldName = field != null ? field.Name : string.Empty;
+            owner.FieldName = fieldName ?? string.Empty;
             owner.FieldPath = GetBindingOwnerPath(behaviour, owner.FieldName);
             return owner;
         }
@@ -857,22 +693,6 @@ namespace K13A.TSMP.Editor
 
             return false;
         }
-
-#if UDONSHARP
-        private static UdonBehaviour GetBackingUdonBindingTarget(TSMPNetworkBehaviour behaviour)
-        {
-            if (behaviour == null)
-                return null;
-
-            Component component = behaviour;
-            UdonSharpBehaviour proxy = component as UdonSharpBehaviour;
-            if (proxy == null)
-                return null;
-
-            return UdonSharpEditorUtility.GetBackingUdonBehaviour(proxy);
-        }
-
-#endif
 
         private static bool SameArray(System.Array current, List<Component> next)
         {

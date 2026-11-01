@@ -21,6 +21,7 @@ namespace K13A.TSMP.Editor
         private SerializedProperty _selectedCodec;
         private SerializedProperty _codecId;
         private SerializedProperty _maxPayloadBytes;
+        private SerializedProperty _targetPayloadBytes;
         private SerializedProperty _streamId;
         private SerializedProperty _layoutId;
         private SerializedProperty _autoBuildVariablesFromBindings;
@@ -47,6 +48,7 @@ namespace K13A.TSMP.Editor
             _selectedCodec = serializedObject.FindProperty("selectedCodec");
             _codecId = serializedObject.FindProperty("codecId");
             _maxPayloadBytes = serializedObject.FindProperty("maxPayloadBytes");
+            _targetPayloadBytes = serializedObject.FindProperty("targetPayloadBytes");
             _streamId = serializedObject.FindProperty("streamId");
             _layoutId = serializedObject.FindProperty("layoutId");
             _autoBuildVariablesFromBindings = serializedObject.FindProperty("autoBuildVariablesFromBindings");
@@ -87,7 +89,9 @@ namespace K13A.TSMP.Editor
             InspectorUI.BeginSection("Encode");
             InspectorUI.Property(_autoEncode);
             InspectorUI.Property(_frameRate);
-            InspectorUI.Property(_maxPayloadBytes);
+            InspectorUI.Property(_targetPayloadBytes);
+            if (_targetPayloadBytes != null && !_targetPayloadBytes.hasMultipleDifferentValues && _targetPayloadBytes.intValue > 0)
+                EditorGUILayout.HelpBox("Fields larger than this budget wait until the budget increases or the field becomes smaller. Fields are not fragmented. RPCs queued before a budget reduction remain pending.", MessageType.Info);
 
             using (new EditorGUI.DisabledScope(targets.Length != 1))
             {
@@ -127,6 +131,24 @@ namespace K13A.TSMP.Editor
                 InspectorUI.ReadOnlyInt("Binding Count", encoder.bindingCount);
                 InspectorUI.ReadOnlyInt("Auto Variables", encoder.autoVariableCount);
                 InspectorUI.ReadOnlyInt("Deferred Variables", encoder.deferredVariableCount);
+                InspectorUI.ReadOnlyInt("Deferred RPCs", encoder.deferredRpcCount);
+                InspectorUI.ReadOnlyInt("Fields Too Large Alone", encoder.oversizedVariableCount);
+                if (encoder.deferredVariableCount > 0)
+                {
+                    InspectorUI.ReadOnlyText("Last Deferred Field", encoder.lastDeferredVariableNetworkId + ": " + encoder.lastDeferredVariableName);
+                    InspectorUI.ReadOnlyInt("Field Packet Bytes", encoder.lastDeferredVariableRequiredBytes);
+                    InspectorUI.ReadOnlyText("Field Budget Status", encoder.lastDeferredVariableFitsBudget
+                        ? "Fits alone; deferred by other data in this frame."
+                        : "Cannot fit alone; increase the budget/capacity or reduce the field.");
+                }
+                if (encoder.deferredRpcCount > 0)
+                {
+                    InspectorUI.ReadOnlyText("Blocked Head RPC", encoder.blockedRpcNetworkId + ": " + encoder.blockedRpcHash);
+                    InspectorUI.ReadOnlyInt("RPC Packet Bytes", encoder.blockedRpcRequiredBytes);
+                    InspectorUI.ReadOnlyText("RPC Budget Status", encoder.blockedRpcRequiredBytes <= encoder.effectivePayloadBudgetBytes
+                        ? "Fits alone; deferred by other data in this frame."
+                        : "Cannot fit alone; queued repeats are preserved until it fits.");
+                }
             }
             InspectorUI.EndSection();
         }
@@ -144,6 +166,7 @@ namespace K13A.TSMP.Editor
                 DrawFrameIndex(encoder);
                 InspectorUI.ReadOnlyInt("Payload Bytes", encoder.payloadBytes);
                 InspectorUI.ReadOnlyInt("Usable Payload Bytes", encoder.usablePayloadBytes);
+                InspectorUI.ReadOnlyInt("Effective Payload Budget", encoder.effectivePayloadBudgetBytes);
                 InspectorUI.ReadOnlyInt("Messages", encoder.messageCount);
             }
 
@@ -151,6 +174,7 @@ namespace K13A.TSMP.Editor
             if (_showAdvanced)
             {
                 InspectorUI.Property(_codecId);
+                InspectorUI.Property(_maxPayloadBytes);
                 InspectorUI.Property(_blockExpandMaterial);
                 InspectorUI.Property(_clearAfterEncode);
                 InspectorUI.Property(_useBlockSymbolTexture);
@@ -196,6 +220,7 @@ namespace K13A.TSMP.Editor
         private static void DrawRuntimeStatus(TSMPEncoder encoder)
         {
             InspectorUI.ReadOnlyInt("Usable Payload Bytes", encoder.usablePayloadBytes);
+            InspectorUI.ReadOnlyInt("Effective Payload Budget", encoder.effectivePayloadBudgetBytes);
             InspectorUI.ReadOnlyInt("Variable Messages", encoder.variableMessageCount);
             InspectorUI.ReadOnlyInt("RPC Messages", encoder.rpcMessageCount);
             InspectorUI.ReadOnlyInt("Queued RPCs", encoder.queuedRpcCount);

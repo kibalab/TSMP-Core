@@ -22,7 +22,7 @@ title: TSMPEncoder
 1. `TSMPSetup`에서 output texture를 지정합니다.
 2. Codec 탭에서 Luma4를 선택합니다.
 3. Target frame rate를 설정합니다.
-4. `Apply Setup`을 클릭합니다.
+4. Setup 자동 준비가 끝났는지 확인합니다. `Apply Setup`은 선택적인 수동 갱신입니다.
 5. 동기화 오브젝트를 움직이면서 output texture를 확인합니다.
 
 Payload data가 바뀌면 output texture도 눈에 띄게 변해야 합니다. 계속 flat하거나 정적인 패턴만 보인다면 setup reference와 payload diagnostics를 확인하세요.
@@ -53,6 +53,12 @@ Encoder는 프레임마다 하나의 payload를 만듭니다. Payload에는 다�
 - 큰 blend shape selection.
 - 많은 active players.
 - 많은 독립 transform objects.
+
+## Payload 무결성
+
+실제 encoder는 항상 56바이트 header에 payload CRC32를 기록하고 프레임을 프로토콜 0.2로 표시합니다. 일반 Unity와 Udon 출력에서 모든 코덱의 정확한 직렬화 payload 길이를 보호하며, payload 용량을 줄이거나 NetworkFrame body에 바이트를 추가하지 않습니다. 현재 decoder는 값이나 RPC를 적용하기 전에 이를 검증합니다.
+
+구 decoder는 같은 frame layout을 읽지만 payload CRC를 검사하지 않습니다. Legacy header 생성 API는 0.1 기본값을 유지하므로, 이를 사용하는 커스텀 송신기에 payload 보호가 자동으로 생기지는 않습니다. [Wire layout과 호환 규칙](../concepts/protocol.md#payload-integrity)을 참고하세요. Checksum은 변경된 프레임을 검출하며 복구나 목표 발행률을 보장하지 않습니다.
 
 ## RPC 사용
 

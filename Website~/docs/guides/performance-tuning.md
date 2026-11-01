@@ -33,6 +33,16 @@ Do not tune by visual smoothness alone. A transport issue and a payload issue ca
 
 Payload reduction is usually the best first optimization because it reduces encode work, transport bandwidth, decode work, and apply work at the same time.
 
+## Bound transmitted bytes
+
+`TSMPEncoder.targetPayloadBytes` limits each network payload independently of backing-buffer growth. The default `0` uses the existing raster-capacity limit. A positive target includes network/message headers and must fit complete fields or RPCs; fields are not fragmented.
+
+Check `effectivePayloadBudgetBytes`, `deferredVariableCount`, `deferredRpcCount` and `queuedRpcCount` while changing this setting. A field that cannot fit remains deferred. Reducing the target after enqueue can leave a large RPC at the head of the queue and delay later RPCs; increasing the target resumes it without consuming its pending repetitions.
+
+The Encoder Inspector identifies the most recently deferred field and blocked head RPC, with the bytes needed for a complete packet containing that item alone. Compare that size with the effective budget. A field that fits alone can still wait because other data used this frame's space; `oversizedVariableCount` counts eligible fields that cannot fit alone. These diagnostics describe the latest encode attempt, not receiver age or an acknowledgement. No extra serialization is performed for these values.
+
+Compare applied updates, the age of each field and event delivery as well as packet success. A smaller packet can pass more often while some application data never arrives. Select a fixed target with the actual workload before adding automatic adjustment.
+
 ## Then tune frame rate
 
 Higher frame rate can reduce latency, but it increases Udon and texture work.
@@ -45,6 +55,14 @@ Recommended approach:
 2. Confirm loss is low.
 3. Raise frame rate only if motion needs it.
 4. Stop raising frame rate when loss or CPU cost increases.
+
+## Measure CRC recovery cost
+
+`TSMPDecoder.maxCrcRecoveryAttempts` allows zero, one or two alternative payload decodes after a protected CRC failure. The default is two. Zero disables retries while retaining ordinary CRC validation. `recoverHeaderCrc` defaults off.
+
+Retries use the same captured image and can add GPU work, asynchronous readback waiting and callback processing. Measure callback CPU time and submission-to-application latency separately, including p95 and successful unique updates. GPU pass time alone is not whole-decoder cost or VRChat FPS.
+
+Keep the retry budget that meets both delivery and latency requirements. The second attempt can recover frames that the first cannot. Receiver polling can also repeat work on held video frames; a fixed polling cap needs a separate test for missed source IDs and RPCs.
 
 ## Then tune capacity
 
@@ -88,3 +106,9 @@ If data disappears when another player joins:
 3. Add one high-bandwidth feature at a time.
 4. Watch payload usage after each addition.
 5. Tune receive interpolation after transport and capacity are stable.
+
+## Measure field and target counts
+
+Equal payload sizes can have different Udon costs. Compare one byte-array field with many scalar fields, and one behaviour with many behaviours. Include unchanged and partially changing values: change filtering still reads and serializes eligible fields before comparing their bytes.
+
+Measure the first encode and live binding changes separately from stable operation. The Udon encoder caches each target's BeforeEncode group during its existing send-state rebuild; ordinary frames reuse that mapping. A larger binding table still has field access, serialization and receive-dispatch costs. Record per-field update age and RPC queue delay alongside total processing time.

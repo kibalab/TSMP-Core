@@ -15,6 +15,8 @@ namespace K13A.TSMP
                     continue;
                 if (i >= FrameHeader.PayloadSizeOffset && i < FrameHeader.PayloadReservedOffset)
                     continue;
+                if (i >= FrameHeader.PayloadCrc32Offset && i < FrameHeader.PayloadCrc32Offset + FrameHeader.PayloadCrc32Bytes)
+                    continue;
                 if ((int)previous[i] != (int)current[i])
                     return false;
             }

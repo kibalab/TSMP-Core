@@ -19,9 +19,11 @@ public static class ContinuousFrameUdonValidation
 {
     const string ProbePath = "Assets/ContinuousFrames/ContinuousFrameProbe.asset";
     const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
+    static bool clientReady;
 
     public static void Run()
     {
+        clientReady = false;
         ContinuousFrameValidation.CreateScene();
         var asset = AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(ProbePath);
         if (asset == null)
@@ -78,7 +80,7 @@ public static class ContinuousFrameUdonValidation
     static void Attach()
     {
         if (SessionState.GetBool("TSMP.ContinuousUdon", false))
-            ContinuousFrameValidation.UdonFactory = (runner, test) => new Loopback(runner, test);
+            ContinuousFrameValidation.UdonFactory = CreateLoopback;
         EditorApplication.playModeStateChanged -= Entered;
         EditorApplication.playModeStateChanged += Entered;
     }
@@ -87,7 +89,56 @@ public static class ContinuousFrameUdonValidation
     {
         if (state != PlayModeStateChange.EnteredPlayMode || !SessionState.GetBool("TSMP.ContinuousUdon", false)) return;
         SessionState.SetBool("TSMP.ContinuousUdon", false);
-        ContinuousFrameValidation.UdonFactory = (runner, test) => new Loopback(runner, test);
+        ContinuousFrameValidation.UdonFactory = CreateLoopback;
+    }
+
+    static ContinuousFrameValidation.ILoopback CreateLoopback(ContinuousFrameValidation runner, ContinuousFrameValidation.Case test)
+    {
+        if (!clientReady)
+        {
+            bool failed = false;
+            Application.LogCallback listener = (message, stack, type) =>
+            {
+                if (type == LogType.Error || type == LogType.Exception || type == LogType.Assert) failed = true;
+            };
+            Application.logMessageReceived += listener;
+            try { UdonSharpCompilerV1.CompileSync(new UdonSharpCompileOptions { IsEditorBuild = false }); }
+            finally { Application.logMessageReceived -= listener; }
+            if (failed) throw new InvalidOperationException("Post-Play client compilation failed.");
+            clientReady = true;
+            File.WriteAllText(Path.Combine(Environment.GetEnvironmentVariable("TSMP_CONTINUOUS_RESULTS"), "bytecode-target.txt"),
+                "Client compilation after Play Mode entry, before retrieving VM programs.\n");
+        }
+        return new Loopback(runner, test);
+    }
+
+    static void WarmGraphics(TSMPCodec codec, RenderTexture source, RenderTexture output)
+    {
+        double started = EditorApplication.timeSinceStartup;
+        RenderTexture previous = RenderTexture.active;
+        var pixel = new Texture2D(1, 1, TextureFormat.RGBA32, false, true);
+        try
+        {
+            for (int variant = 0; variant < codec.DecodeMaterialCount; variant++)
+            foreach (int sample in new[] { 1, 4 })
+            {
+                var material = codec.GetDecodeMaterial(variant);
+                if (material == null) throw new InvalidOperationException("Missing preparation material.");
+                material.SetFloat("_BlockSize", 8); material.SetFloat("_SampleSize", sample);
+                material.SetFloat("_StartBlock", codec.GetPayloadStartRow(source.width, 8) * (source.width / 8));
+                material.SetFloat("_ByteCount", 127); material.SetFloat("_ActiveWidthBlocks", source.width / 8);
+                material.SetFloat("_SourceWidth", source.width); material.SetFloat("_SourceHeight", source.height);
+                material.SetFloat("_OutputWidth", output.width); material.SetFloat("_OutputHeight", output.height);
+                material.SetFloat("_FlipY", 1);
+                codec.PrepareDecode(source, material);
+                Graphics.Blit(source, output, material);
+            }
+            RenderTexture.active = output;
+            pixel.ReadPixels(new Rect(0, 0, 1, 1), 0, 0);
+            File.AppendAllText(Path.Combine(Environment.GetEnvironmentVariable("TSMP_CONTINUOUS_RESULTS"), "graphics-preparation.txt"),
+                codec.displayName + " " + (EditorApplication.timeSinceStartup - started).ToString("F3", System.Globalization.CultureInfo.InvariantCulture) + "s outside VM/profile timing\n");
+        }
+        finally { RenderTexture.active = previous; Object.DestroyImmediate(pixel); }
     }
 
     sealed class Program : IDisposable
@@ -199,6 +250,8 @@ public static class ContinuousFrameUdonValidation
             var bytes = ContinuousFrameValidation.Texture(512, Math.Max(1, (test.Bytes + 64 + 2047) / 2048));
             owned.Add(source);
             owned.Add(bytes);
+            WarmGraphics(native, source, bytes);
+            if (test.Codec != 0) WarmGraphics(runner.CloneCodec(0, owned), source, bytes);
             var expand = new Material(runner.expandMaterial);
             owned.Add(expand);
             encoder = Add("Packages/com.kibalab.tsmp.core/Runtime/Encoder/TSMPEncoder.asset");

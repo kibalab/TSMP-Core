@@ -22,15 +22,15 @@ Automatic preparation handles changes such as:
 - Changing manual network IDs.
 - Moving TSMP components into or out of prefabs.
 
-If the encoded texture changes but receiver objects do not move, check the Bindings tab and the decoder source. `Apply Setup` is available as an optional manual refresh, not a required step after every edit.
+If the encoded texture changes but receiver objects do not move, check network IDs in the Debug tab and the decoder source. `Apply Setup` is available as an optional manual refresh, not a required step after every edit.
 
 ## Common workflow
 
 1. Drag `TSMPController.prefab` into the scene.
-2. Assign texture and scene references in the Reference tab.
+2. Assign scene and source-texture references in Setup, and working render textures in Output.
 3. Confirm Luma4 is selected in the Codec tab.
 4. Add TSMP sync components to objects.
-5. Check that the expected objects appear in the Bindings tab.
+5. Check that the expected objects appear in the Debug tab's Network IDs list.
 6. Enter Play mode or test in VRChat.
 7. Watch `TSMPDebugCanvas` while moving or interacting with synced objects.
 
@@ -38,10 +38,12 @@ If the encoded texture changes but receiver objects do not move, check the Bindi
 
 | Tab | Use it for |
 | --- | --- |
-| Reference | Assign encoder, decoder, textures, render textures, and shared scene references. |
+| Setup | Assign encoder, decoder and source-texture references. |
 | Codec | Select the Luma4 handler, view codec package metadata, and refresh codec discovery. |
-| Bindings | Review synchronized behaviours, generated bindings, and network IDs. |
-| Debug | Run manual encode actions and inspect setup diagnostics. |
+| Frame | Set dimensions, block size, sampling and orientation. |
+| Output | Assign and size output and byte render textures. |
+| Auto | Configure automatic preparation and editor encoding. |
+| Debug | Review capacity and network IDs, and run a manual encode. |
 
 ## What to assign first
 
@@ -74,7 +76,7 @@ Automatic preparation and the optional `Apply Setup` button update the same runt
 - Configures codec decode materials.
 - Creates runtime codec instances when needed.
 
-After applying, check the Bindings tab. If a component you expected to sync is not listed, the encoder will not send it.
+After preparation, check network IDs in Debug and the Encoder/Decoder binding diagnostics if expected data is missing.
 
 ## Safe defaults
 

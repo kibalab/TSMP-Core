@@ -20,7 +20,7 @@ Most decode problems are caused by the input texture not containing an unmodifie
 - A compatible Luma4 handler.
 - A payload byte texture.
 - Matching TSMP network behaviours and bindings.
-- `TSMPSetup` applied after references are assigned.
+- `TSMPSetup` automatic preparation completed after references are assigned.
 
 ## How to use it
 
@@ -28,7 +28,7 @@ Most decode problems are caused by the input texture not containing an unmodifie
 2. Use the same Luma4 path as the sender.
 3. Assign or auto-size the payload byte texture through `TSMPSetup`.
 4. Make sure receiver objects have matching TSMP network components.
-5. Click `Apply Setup`.
+5. Allow automatic Setup preparation to finish; use `Apply Setup` only for an optional manual refresh.
 6. Watch logs or `TSMPDebugCanvas` for frame status.
 
 ## Frame window
@@ -50,7 +50,20 @@ In `TSMPDebugCanvas`, a working decoder should show:
 - Message counts that match the kind of data being sent.
 - Low loss during steady playback.
 
-If the frame is valid but objects do not move, check network IDs, receive interpolation, and whether receiver objects are active.
+If the frame is valid but objects do not move, check network IDs, receive interpolation, and whether receiver objects are active. `valid=yes` reflects the selected decode mode and frame filtering; inspect the payload checksum indicators to see whether a body was verified. The header CRC covers bytes 0..51, and current encoder frames carry a separate payload CRC. Legacy frames accepted without that checksum can still contain structurally valid changes to values or RPC arguments. Test the actual transport against known sent bytes or application markers.
+
+## Payload integrity {#payload-integrity}
+
+When a frame proceeds to payload processing, its announced payload CRC32 is checked after readback, before it refreshes prediction or applies variables/RPCs. A mismatch rejects the frame. Sequential, predicted, combined-output and overlapping readbacks use this check, including payload-readback-only and parse-only safety modes. For protected frames, a manual layout or length override must still match the header's `PayloadSize`.
+
+**Require Payload Checksum** (`requirePayloadCrc32`) defaults to `false` so existing senders remain usable. Enable it when reception must reject frames without a payload checksum. Current `TSMPEncoder` output includes the checksum automatically; legacy header APIs and older senders may omit it.
+
+| Indicator | Meaning |
+| --- | --- |
+| Payload Checksum Present (`lastPayloadCrcPresent`) | The accepted header announces a payload CRC. |
+| Payload Checksum Verified (`lastPayloadCrcVerified`) | The payload was read and its checksum matched. |
+
+Header-only mode does not check the body. Duplicate or older frames skipped before payload processing are not payload-verified either; the predicted path may refresh only their CRC-valid header metadata without accepting or applying the body. A legacy frame may be accepted while both indicators are false. The flags distinguish these cases from a completed checksum check; `valid=yes` alone is not a payload-integrity claim. See [frame compatibility](../concepts/protocol.md#payload-integrity).
 
 ## Decode order
 
@@ -61,7 +74,8 @@ The first frame and the fallback path work in stages:
 3. Choose a codec handler from the codec ID.
 4. Decode payload bytes into the payload byte texture.
 5. Read payload bytes.
-6. Dispatch variable state messages and RPC messages.
+6. Verify the payload CRC when present; reject missing checksums when required.
+7. Dispatch variable state messages and RPC messages.
 
 After a valid frame, **Use Predicted Readback** is enabled by default. The decoder can recover the current header and payload together using the previous configuration, reducing two sequential GPU readback waits to one. It still checks the current header before applying any values or RPCs. Changed settings or payload length cause the same captured image to be processed through the fallback path.
 
@@ -71,7 +85,7 @@ No extra material assignment is required. You can disable the optimization under
 
 **Overlap Readbacks** is enabled by default under **Diagnostics > Advanced Decode**. The decoder can retain two images, starting the next capture while the first is waiting on the GPU. Results are applied in capture order. If both slots are occupied, it skips a new capture instead of extending a queue. Disable this option to compare with single-slot operation; no sender change is needed.
 
-This can reduce missing frames when a readback takes longer than one update, but uses more memory and can increase application latency and GPU/CPU load. Each snapshot needs about 3.52 MiB at 640x360 or 31.64 MiB at 1920x1080; two allocated slots double that storage, excluding byte buffers. It cannot recover frames that never reached the input texture. **Pending Frames** shows occupied slots and **Skipped Busy Captures** counts attempts rejected at capacity, not unique lost frames.
+This can reduce missing frames when a readback takes longer than one update, but uses more memory and can increase application latency and GPU/CPU load. Snapshot texel storage depends on the input format: ARGB32 uses 4 bytes/pixel, ARGBHalf 8, and ARGBFloat 16; other inputs or unsupported formats can use the Float32 fallback. In the Udon path, matching applies to supported RenderTexture formats; other texture types use Float32. At 1280x720 this is about 3.52 / 7.03 / 14.06 MiB per snapshot respectively. Two allocated slots double those amounts, excluding byte textures, CPU buffers and driver overhead. It cannot recover frames that never reached the input texture. **Pending Frames** shows occupied slots and **Skipped Busy Captures** counts attempts rejected at capacity, not unique lost frames.
 
 ## Receive interpolation
 
@@ -87,7 +101,7 @@ Use `None` when a component should send data but not apply incoming data on that
 
 ## CRC failures
 
-If the decoder logs a CRC mismatch, the frame was damaged before decode. Check scaling, filtering, compression, and Luma4 setting mismatch first.
+The decoder reports header and payload CRC mismatches separately. Either means the received bytes do not match their checksum. Check scaling, filtering, compression, and Luma4 setting mismatch first. A missing checksum under strict reception is a sender compatibility issue, not a measured pixel-corruption event.
 
 Typical causes:
 
@@ -103,6 +117,7 @@ Typical causes:
 | --- | --- |
 | `header=no` | Confirm the full TSMP image reaches the decoder input. |
 | `valid=no` with CRC warnings | Remove scaling/filtering/color processing from the transport. |
+| Payload checksum required | Use a current encoder, or allow legacy reception only when that is intended. |
 | `msg=0` | Confirm encoder payload is non-zero and setup bindings exist. |
 | RPC count stays zero | Test with `TSMPNetworkGameObjectToggle` and check frame loss. |
 | Values are received but not applied | Check receive interpolation and active state. |

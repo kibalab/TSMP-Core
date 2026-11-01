@@ -63,6 +63,16 @@ SDK のないプロジェクトで `UDONSHARP` や `COMPILER_UDONSHARP` を手�
 
 パッケージの Udon Program Asset は SDK 環境でのみ使用します。共通 Controller は SDK なしで利用できますが、他のデモシーンにはアバター、ストリーミングプラグイン、VRChat コンポーネントなどの依存が必要な場合があります。
 
+## 開始プロファイル {#starting-profile}
+
+最初のアバター検証候補は Core 1.0 + Luma4 1.0、共通 Controller、1280x720、block size 8、Full Humanoid 22レコード、指・名前なし、`maxPlayers=16` です。目標30Hzから始め、実際の送信率と適用率を測定します。これは基準候補であり、実際の16人のリアルタイム性能を認証するものではありません。
+
+この設定の Luma4 payload 容量は6,720バイトです。キャッシュのない初期状態で16人全員の root を含むアバターフィールド1個は、NetworkFrame framing を含め2,495バイトです。他のフィールドと RPC は追加容量を使います。Avatar Pose インスペクターは初期推定量、エンコーダー容量とポーズのみの余裕を表示します。キャッシュで root のバイト数を減らせても、初期容量の条件は残ります。設定上限80人や計算上の収容上限は検証済み人数ではありません。
+
+`TSMPSetup` の既定解像度は1280x720です。単独追加した Encoder は、出力テクスチャや Setup による設定前には640x360を使います。容量の比較では実際の出力サイズを確認してください。
+
+2026-10-27の検証環境は Windows、Unity 2022.3.22f1、D3D11、RTX 4090です。Native GPU loopback、Windows Mono、Worlds 3.10.4-beta.2 の実際の Editor Udon VM とローカル world bundle build を確認しました。実クライアントのワールド入場は認証・UI アクセスにより未確認です。実際の16人のアバター負荷、圧縮された外部転送、長時間運転、低スペック、Quest、IL2CPP は未検証です。loopback、VM 実行と world build はそれぞれの段階の証拠です。
+
 ## 既存のシーン
 
 既存 Controller のプレハブ参照とオーバーライドを維持するため、以前のプレハブは元の GUID のまま `Samples/Legacy/TSMPControllerLegacy.prefab` に保持します。新しいインスタンスには共通の `Samples/TSMPController.prefab` を使用します。既存 SDK シーンの変換コマンドは不要です。ただし、以前のシーンを SDK のないプロジェクトへ移す場合は、共通 Controller を使用し、他の任意依存も確認してください。Legacy プレハブ自体は SDK なしで使う共通サンプルではありません。

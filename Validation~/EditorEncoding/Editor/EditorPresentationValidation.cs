@@ -61,7 +61,13 @@ public static class EditorPresentationValidation
             foreach (string name in new[] { "Luma4", "RGB16", "RGB20", "Color256", "Luma4" })
             {
                 var prefab = AssetDatabase.LoadAssetAtPath<GameObject>("Packages/com.kibalab.tsmp.codec." + name.ToLowerInvariant() + "/Runtime/Codec_" + name + ".prefab");
-                var codec = DecoderSnapshotValidation.InstantiateCodec(prefab.GetComponent<TSMPCodec>(), materials);
+                if (prefab == null)
+                {
+                    Check(name != "Luma4", "Required Luma4 prefab is missing");
+                    Results.Add("SKIP optional codec not installed: " + name);
+                    continue;
+                }
+                var codec = InstantiateCodec(prefab.GetComponent<TSMPCodec>(), materials);
                 owned.Add(codec.gameObject);
                 encoder.selectedCodec = codec;
 #if UDONSHARP
@@ -168,6 +174,32 @@ public static class EditorPresentationValidation
         var rt = new RenderTexture(width, height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear);
         rt.Create();
         return rt;
+    }
+
+    // Keep this EditorEncoding harness independent of the optional all-codec
+    // snapshot suite. Never assign frame properties to package material assets.
+    static TSMPCodec InstantiateCodec(TSMPCodec prefab, List<Material> owned)
+    {
+        Check(prefab != null, "Codec prefab has no TSMPCodec component");
+        var codec = Object.Instantiate(prefab.gameObject).GetComponent<TSMPCodec>();
+        var copies = new Dictionary<Material, Material>();
+        Func<Material, Material> clone = original =>
+        {
+            if (original == null) return null;
+            if (copies.TryGetValue(original, out Material copy)) return copy;
+            copy = new Material(original) { hideFlags = HideFlags.DontSave };
+            copies.Add(original, copy);
+            owned.Add(copy);
+            return copy;
+        };
+        foreach (var field in codec.GetType().GetFields(BindingFlags.Public | BindingFlags.Instance))
+        {
+            if (field.FieldType == typeof(Material))
+                field.SetValue(codec, clone((Material)field.GetValue(codec)));
+            else if (field.FieldType == typeof(Material[]) && field.GetValue(codec) is Material[] materials)
+                field.SetValue(codec, materials.Select(clone).ToArray());
+        }
+        return codec;
     }
 
     static Color32[] Read(RenderTexture target)

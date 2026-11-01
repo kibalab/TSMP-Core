@@ -1,0 +1,20 @@
+[
+  {
+    "baseline": "F:\\Unity\\TSMP\\TSMPCodec-RGB16\\Packages\\com.kibalab.tsmp.codec.rgb16\\Runtime\\Shaders\\TSMPDecodeRgb16RefineBytes.shader",
+    "baselineSha256": "b660c18645e27cf387d8a0fa25a9fe655a25c1c784523a9d3da7020ac0df52e7",
+    "candidate": "Rgb16AffineRefine.shader",
+    "candidateSha256": "5c84d64abf82357c9e1510f2d20dd70ed677153747e84d6c7ccbd9e8e6698f75"
+  },
+  {
+    "baseline": "F:\\Unity\\TSMP\\TSMPCodec-RGB16\\Packages\\com.kibalab.tsmp.codec.rgb16\\Runtime\\Shaders\\TSMPDecodeRgb16VariableRefineBytes.shader",
+    "baselineSha256": "e3445ca5cf31c09a7dd53d8b3341a5c7ee7613c18c265c4cc0eddf18952657ae",
+    "candidate": "Rgb16AffineVariableRefine.shader",
+    "candidateSha256": "3f8650265386ea7e4d2ff749d1ee1f12f4761d3b2d9cdbb0abea53b7a64aa7a9",
+    "previousCandidateSha256": "7327ac8b822f24de3e5530312bc5232dc1fc2cad85be1d9cc93f99ed50d4a050",
+    "subByteFixEvidence": "F:\\Unity\\TSMP\\Validation-Results\\refine-robustness-20261031\\rgb16-analysis\\subbyte-fix"
+  },
+  {
+    "candidate": "Rgb16AffinePrepare.shader",
+    "candidateSha256": "f50863dfbb4542abf32ab2f9dcee1ef56cb4449becde6346de92b215af2e4273"
+  }
+]

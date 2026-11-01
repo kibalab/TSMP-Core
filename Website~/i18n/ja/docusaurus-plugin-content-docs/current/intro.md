@@ -36,7 +36,7 @@ Scene data -> TSMPEncoder -> texture/video path -> TSMPDecoder -> scene data
 
 
 
-このプレハブをシーンにドラッグし、必要なテクスチャと参照を割り当ててから、`Apply Setup` で `TSMPSetup` を実行します。
+`Packages/com.kibalab.tsmp.core/Samples/TSMPController.prefab` をシーンに配置し、`TSMPSetup` でテクスチャと参照を確認します。コンポーネント、コーデック、バインディングは変更時と Play モード・ビルド前に自動準備されます。`Apply Setup` は任意の手動更新です。
 
 複雑なシーンを構築する前に、ループバック テストから始めてください。ループバックは、エンコーダー、トランスポート、デコーダー、バインディング、およびレシーバー オブジェクトが相互に一致していることを証明します。
 
@@ -50,7 +50,7 @@ Scene data -> TSMPEncoder -> texture/video path -> TSMPDecoder -> scene data
 | `TSMPNetwork*` コンポーネント | どのシーンデータを送受信するかを選択します。 |
 | `TSMPDebugCanvas` | ゲーム内でフレーム、帯域幅、損失、ペイロード、ヘッダー、エラー診断を表示します。 |
 
-TSMP には、デフォルトのコーデックとして Luma4 が含まれています。ユーザー向けのセットアップ パスは、デフォルトで Luma4 を使用します。
+推奨する開始構成は Core と別パッケージの Luma4 です。[開始プロファイルと検証範囲](./getting-started/installation.md#starting-profile)を確認してください。
 
 ## TSMP の得意なこと
 

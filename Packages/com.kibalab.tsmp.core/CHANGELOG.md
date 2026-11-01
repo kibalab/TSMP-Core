@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Preserve Udon payload/message diagnostics after successful automatic frame clearing so the Inspector and debug canvas can read the written frame. Keep explicit ClearFrame, next-frame, empty-attempt and failure resets. Packet bytes, finite RPC repeats and sending defaults are unchanged.
+- Cache Udon BeforeEncode target groups when binding send state is rebuilt, replacing repeated linear target searches for each eligible field. Preserve the first eligible callback's order and once-per-target sendMode capture, including live binding replacement and callback-driven changes. Packet layout, sending defaults and Native encoding are unchanged.
+- Show the last deferred TransSync field and blocked head RPC with the bytes needed for a packet containing that item alone. Distinguish fields that cannot fit the effective budget from fields deferred by other data in the current frame, using existing serialization results. Reset these diagnostics for each encode attempt. Sending policy and defaults are unchanged.
+
 ## 1.0.0
 
 Stable promotion of all 0.3.0-beta.1 through 0.3.0-beta.3 changes since stable 0.2.0. Runtime, shaders and asset GUIDs are unchanged from beta.3.
@@ -64,7 +70,7 @@ Stable promotion of all 0.3.0-beta.1 through 0.3.0-beta.3 changes since stable 0
 - Install Core 1.0.0 with Luma4 1.0.0 and, if used, RGB16/RGB20/Color256 2.0.0. Codec UPM dependencies use Core 1.0.0; VPM uses >=1.0.0. No prerelease selection is required. SDK remains optional in ordinary Unity and VPM-only for VRChat.
 - SendOnChange now controls actual traffic compared with 0.2.0. Select Send Mode Always for continuous resend, subject to field intervals and capacity. RPC repeats remain finite.
 - Protocol version, the 56-byte header, packet layouts and codec IDs are unchanged. Window Size is receiver-local, not a new wire field or a reliable session identifier.
-- Included resource measurements: Udon sender 11.27 -> 0.457 ms (24.7x), receiver submission/callback 3.904 -> 0.791 ms (4.9x), paired CPU means 15.17 -> 1.248 ms. The baseline already had predicted/two-slot decoding; these are not direct 0.2.0-versus-1.0.0 measurements.
+- Included resource measurements: Udon sender 11.27 -> 0.457 ms (24.7x), receiver submission/callback 3.904 -> 0.791 ms (4.9x), paired CPU means 15.17 -> 1.248 ms. These historical resource measurements predate protected payload CRC and subsequent Refine recovery; they are not current whole-path costs. The baseline already had predicted/two-slot decoding; these are not direct 0.2.0-versus-1.0.0 measurements.
 - Two known 8-bit snapshots use 75% less texel storage. Native whole-Player median frame GC allocation fell from 3,686,964 B to 612 B in the measured 720p case. This does not imply zero allocations or a 75% total-memory reduction.
 - Finite native/Udon delivery tests passed at 30/60 Hz; the separate 30-FPS two-slot test received 1799/1799, with median application latency about 66.6 ms versus 33.3 ms with one slot. GPU Luma4 adds a small measured conversion-draw cost.
 - Native Windows Mono Player, full UdonSharp compile and SDK VM tests passed during the beta validation. Live VRChat, Quest and IL2CPP remain unverified; the legacy Linear harness limitation remains documented.

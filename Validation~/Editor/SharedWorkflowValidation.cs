@@ -127,7 +127,12 @@ public static class SharedWorkflowValidation
         Check(setup.GetComponentsInChildren<TSMPEncoder>(true).Length == 1 && setup.GetComponentsInChildren<TSMPDecoder>(true).Length == 1, "No duplicate encoder/decoder");
         var encoder = (TSMPEncoder)setup.encoder;
         var decoder = (TSMPDecoder)setup.decoder;
-        Check(encoder.selectedCodec != null && decoder.codecHandlers.Length == 1, "Real Luma4 automatically discovered and instantiated");
+        var expectedCodecs = setup.codecPrefabs.Where(codec => codec != null).Select(codec => codec.codecId).OrderBy(id => id).ToArray();
+        Check(encoder.selectedCodec != null && expectedCodecs.Length > 0, "An installed codec is selected automatically");
+        Check(decoder.codecHandlers != null && decoder.codecHandlers.All(codec => codec != null), "Every decoder handler is instantiated");
+        Check(expectedCodecs.SequenceEqual(decoder.codecHandlers.Select(codec => codec.codecId).OrderBy(id => id)),
+            "Decoder handlers match all discovered codecs (" + expectedCodecs.Length + ")");
+        Check(decoder.codecHandlers.Any(codec => codec.codecId == encoder.selectedCodec.codecId), "Selected encoder codec has a decoder handler");
         Check(setup.autoDiscoverCodecs, "Codec discovery remains enabled");
         Check(decoder.sourceTexture == encoder.output && setup.decoderSourceTexture == null, "Common sample loopback settings preserved");
         Check(encoder.bindingTargets != null && encoder.bindingTargets.Length > 0, "Bindings prepared automatically");

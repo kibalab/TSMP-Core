@@ -25,7 +25,7 @@ Native 코덱은 기본값이 false인 `SupportsGpuLuma4Encoding`으로 명시�
 | `output` | Encoded frame이 기록되는 RenderTexture. Texture size가 최종 frame size가 됩니다. |
 | `frameRate` | `autoEncode`가 켜져 있을 때 자동 encode 최대 rate. |
 | `autoEncode` | Component update loop에서 encode합니다. 다른 script가 `EncodeNow()`를 호출한다면 끄세요. |
-| `clearAfterEncode` | 현재 frame 작성 후 사용하지 않는 pixel을 clear합니다. Codec 또는 payload size를 자주 바꿀 때 켜는 것이 좋습니다. |
+| `clearAfterEncode` | Udon Writer: 출력 성공 후 작업 중인 프레임을 초기화합니다(기본 `true`). 출력 통계는 남습니다. 일반 Unity는 시도마다 payload를 다시 구성합니다. |
 | `selectedCodec` | Payload bytes를 pixel로 변환하는 codec component. 기본 codec은 Luma4입니다. |
 | `useBlockSymbolTexture` | 선택 codec이 지원하면 block texture path를 사용합니다. |
 | `networkBehaviours` | `[TransSync]` data와 TSMP RPC message를 만들 수 있는 bound behaviours. |
@@ -49,8 +49,10 @@ Native 코덱은 기본값이 false인 `SupportsGpuLuma4Encoding`으로 명시�
 | `variableMessageCount` | Variable state message 수. |
 | `rpcMessageCount` | RPC message 수. |
 | `FrameIndex` / `frameIndex` | Header에 기록되는 frame counter. |
-| `lastEncodeStage` | 마지막 encode stage text. |
+| `lastEncodeStage` | Udon 정수 단계: 0 초기, 1 준비, 2 자동 필드, 3 패킷/헤더, 4 텍스처 쓰기, 5 출력/반영, 6 완료. 오류가 나면 앞 단계에서 멈출 수 있습니다. |
 | `LastError` / `lastError` | 마지막 encoder error. 중요한 runtime failure는 log로도 표시됩니다. |
+
+Udon 출력에 성공하면 자동 정리 후에도 `payloadBytes`, `messageCount`, `variableMessageCount`, `rpcMessageCount`가 남아 Inspector와 디버그 화면에서 읽을 수 있습니다. 최근 시도의 통계이며 마지막 성공을 영구 보관하는 값은 아닙니다. `BeginFrame()`, 명시적 `ClearFrame()`, 빈 시도 또는 실패 시에는 초기화됩니다. 출력 성공은 `frameIndex`, 실패 이유는 `lastError`로 확인하세요. Writer 정리는 출력 픽셀이나 패킷 버퍼 내용을 지우지 않습니다.
 
 ## `EncodeNow()`
 
@@ -109,10 +111,10 @@ Queue된 RPC는 `transRpcRepeatFrames`에 따라 다음 frame들에도 기록되
 
 ## Raw variable writer API
 
-Advanced tool이나 generated code용 API입니다.
+Udon의 advanced tool이나 generated code용 Writer API입니다.
 
 ```csharp
-public bool BeginFrame()
+public void BeginFrame()
 public void ClearFrame()
 public bool BeginVariableState(int networkId)
 public bool WriteRawBytesVariable(uint variableHash, byte[] value)
@@ -127,8 +129,8 @@ public void CancelCurrentMessage()
 Custom variable message flow:
 
 ```csharp
-if (encoder.BeginFrame() &&
-    encoder.BeginVariableState(networkId) &&
+encoder.BeginFrame();
+if (encoder.BeginVariableState(networkId) &&
     encoder.WriteRawBytesVariable(variableHash, payload))
 {
     encoder.EndVariableState();

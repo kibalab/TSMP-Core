@@ -82,6 +82,7 @@ namespace K13A.TSMP
             header.CodecOption4 = buffer[offset + FrameHeader.CodecOptionsOffset + 4];
             header.PayloadType = (PayloadType)Binary.ReadUInt16LE(buffer, offset + FrameHeader.PayloadTypeOffset);
             header.PayloadSize = Binary.ReadUInt16LE(buffer, offset + FrameHeader.PayloadSizeOffset);
+            header.PayloadCrc32 = Binary.ReadUInt32LE(buffer, offset + FrameHeader.PayloadCrc32Offset);
             header.DecodeSampleSize = buffer[offset + FrameHeader.DecodeSampleSizeOffset];
             header.QuantizationMode = buffer[offset + FrameHeader.QuantizationModeOffset];
             header.HeaderCrc32 = Binary.ReadUInt32LE(buffer, offset + FrameHeader.CrcOffset);
@@ -167,6 +168,60 @@ namespace K13A.TSMP
         public static int ReadSymbolMode(byte[] buffer, int offset)
         {
             return buffer[offset + FrameHeader.SymbolModeOffset];
+        }
+
+        // Validate the header prefix and header CRC separately with TryValidate
+        // before calling this payload check. Only the declared payload length is covered.
+        public static bool TryValidatePayload(byte[] header, int offset, byte[] payload, int payloadLength,
+            bool requireChecksum, uint[] crcTable, out bool present, out uint expected, out uint actual, out string error)
+        {
+            present = false;
+            expected = 0u;
+            actual = 0u;
+            error = null;
+            if (header == null || offset < 0 || offset > header.Length - FrameHeader.Size)
+            {
+                error = "Payload integrity header buffer is invalid.";
+                return false;
+            }
+            present = (Binary.ReadUInt16LE(header, offset + FrameHeader.FlagsOffset) & (int)FrameFlags.PayloadCrc32) != 0;
+            if (present)
+                expected = Binary.ReadUInt32LE(header, offset + FrameHeader.PayloadCrc32Offset);
+            if (payload == null || payloadLength < 0 || payloadLength > payload.Length)
+            {
+                error = "Payload integrity length exceeds buffer bounds.";
+                return false;
+            }
+            if (!present)
+            {
+                if (requireChecksum)
+                {
+                    error = "Payload CRC is required; legacy frame discarded.";
+                    return false;
+                }
+                // Legacy decoders may intentionally override the header payload
+                // length; checksum-bearing frames must use the declared length.
+                return true;
+            }
+            if (payloadLength != Binary.ReadUInt16LE(header, offset + FrameHeader.PayloadSizeOffset))
+            {
+                error = "Payload integrity length does not match the header.";
+                return false;
+            }
+            if (header[offset + FrameHeader.VersionMinorOffset] < ProtocolConstants.PayloadCrcVersionMinor)
+            {
+                error = "Payload CRC flag requires protocol minor 2 or newer.";
+                return false;
+            }
+
+            uint[] table = Crc32Runtime.EnsureTable(crcTable);
+            actual = Crc32Runtime.Compute(payload, 0, payloadLength, table);
+            if (expected != actual)
+            {
+                error = "Payload CRC mismatch. expected=" + expected + " actual=" + actual + " frame discarded.";
+                return false;
+            }
+            return true;
         }
 
         public static ushort ReadBlockSize(byte[] buffer, int offset)
