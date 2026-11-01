@@ -11,6 +11,22 @@ TSMP ランタイム コードを変更する場合、ネットワーク動作�
 - Unity インポートと UdonSharp コンパイルの健全性。
 - 実際のテクスチャ パスを介したランタイム フレームの動作。
 
+## 再現可能な自動検証
+
+リポジトリのルートから `Validation~/Run-Suite.ps1` を使用します。検査対象の Core と Luma4 ソースを入れた専用 Native プロジェクトと Worlds SDK プロジェクトを別々に用意してください。
+
+```powershell
+$unity = 'C:/Program Files/Unity/Hub/Editor/2022.3.22f1/Editor/Unity.exe'
+& './Validation~/Run-Suite.ps1' -UnityEditor $unity -Project '<Native project>' -Results '<evidence root>' -Profile Native
+& './Validation~/Run-Suite.ps1' -UnityEditor $unity -Project '<SDK project>' -Results '<evidence root>' -Profile Sdk
+```
+
+Suite はプロジェクトを準備し、元のログを保存し、前提条件の失敗で実行できなかった項目を `NOTRUN` と記録します。パーサーや送信スケジューリングを変更した場合は、各プロファイルで `-Steps FrameStructure,PayloadBudget` を指定して追加実行します。同じ入口から既存の専用 runner に委譲し、SDK プロジェクトではコンパイル済み client VM を検査します。この 2 段階は任意であり、既定の実テクスチャ loopback の代わりにはなりません。
+
+現在の結果とコマンドの索引は `Validation~/README.md` です。WorkloadFollowup、BindingCost、RpcBurst、Color256Followup、NextImprovements は検査した revision、失敗した対照実験と検証範囲を示します。長時間測定とソースを入れ替える A/B controller は別コマンドで明示的に実行します。有効な受信更新頻度、元の値の経過時間、RPC 適用遅延を記録してください。パケット受理率だけで有効な配信を判断したり、別実験の改善率を足したり、Editor VM 時間から実際の FPS を推定したりしないでください。
+
+Editor/Player/VM の自動検証は、新しい VPM ダウンロードからのインストール、Quest、混雑した VRChat ワールド、長時間の OBS–VRCDN 転送を保証しません。リリース範囲に含める場合は個別に検査してください。開発ブランチの結果は、公開パッケージにも同じ変更が入っているという意味ではありません。
+
 ## 静的チェック
 
 プロジェクト ファイルが利用可能な場所で Unity C# ビルドを実行します。
@@ -49,6 +65,8 @@ dotnet build .\K13A.TSMP.Core.Editor.csproj --no-restore
 
 - 有効なフレーム ヘッダーは CRC 検証に合格します。
 - 変更されたヘッダー バイトは CRC 検証に失敗します。
+- 変更されたペイロードは state/RPC の適用前に CRC 検証で拒否されます。
+- CRC が有効でも後続メッセージの構造が不正なら state/RPC の適用前に拒否し、修正したイベントの再送は正常に処理されます。
 - 空の `VariableState` メッセージはカウントされません。
 - RPC 専用フレームはエンコードされます。
 - ペイロード コピー/FEC 参照は再導入されません。

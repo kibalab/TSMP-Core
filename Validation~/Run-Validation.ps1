@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory = $true)][string]$UnityEditor,
     [Parameter(Mandatory = $true)][string]$Project,
     [Parameter(Mandatory = $true)][string]$Results,
-    [Parameter(Mandatory = $true)][ValidateSet('Import', 'Play', 'Build', 'Player', 'Inspect', 'InitializeSdk', 'PrepareSdk', 'Udon', 'World', 'Workflow', 'ArrayCache', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'RpcQueueVm', 'Configuration', 'TimelineVm', 'TimelineRegression', 'TransSync', 'TransSyncVm', 'ReceivePolicies', 'ReceivePoliciesVm', 'PayloadIntegrity')][string]$Step,
+    [Parameter(Mandatory = $true)][ValidateSet('Import', 'Play', 'Build', 'Player', 'Inspect', 'InitializeSdk', 'PrepareSdk', 'Udon', 'World', 'Workflow', 'ArrayCache', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'RpcQueueVm', 'Configuration', 'TimelineVm', 'TimelineRegression', 'TransSync', 'TransSyncVm', 'ReceivePolicies', 'ReceivePoliciesVm', 'PayloadIntegrity', 'FrameStructure', 'PayloadBudget')][string]$Step,
     [ValidateRange(30, 3600)][int]$TimeoutSeconds = 900,
     [ValidateSet('Windowed', 'Batch')][string]$PlayerMode = 'Windowed'
 )
@@ -20,6 +20,18 @@ if (-not $sdk -and $Step -in $sdkOnly) { throw "Scope mismatch: $Step requires a
 New-Item -ItemType Directory -Path $Results -Force | Out-Null
 $Results = (Resolve-Path -LiteralPath $Results).Path
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
+if ($Step -in @('FrameStructure', 'PayloadBudget')) {
+    # Reuse the dedicated runners and their evidence format; no fixture copy here.
+    $targetedParameters = @{
+        UnityEditor = $UnityEditor
+        Project = $Project
+        Results = Join-Path $Results "$stamp-$Step"
+        Vm = $sdk
+        TimeoutSeconds = $TimeoutSeconds
+    }
+    & (Join-Path $PSScriptRoot "$Step/Run-Validation.ps1") @targetedParameters
+    return
+}
 $log = Join-Path $Results "$stamp-$Step.log"
 $result = Join-Path $Results "$stamp-$Step-result.txt"
 $build = Join-Path $Project 'Build/Mono/TSMPValidation.exe'

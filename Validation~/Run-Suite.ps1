@@ -17,12 +17,13 @@ $sdk = (Test-Path -LiteralPath (Join-Path $Project 'Packages/com.vrchat.worlds/p
 if (($Profile -eq 'Sdk') -ne $sdk) { throw 'Profile does not match the project SDK packages. Use separate dedicated Native and SDK projects.' }
 
 [string[]]$preparation = if ($Profile -eq 'Sdk') { @('Import', 'InitializeSdk', 'PrepareSdk', 'Udon') } else { @('Import') }
-$allowed = if ($Profile -eq 'Sdk') {
+$defaultSteps = if ($Profile -eq 'Sdk') {
     @('Workflow', 'UdonArrays', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'RpcQueueVm', 'Configuration', 'TimelineVm', 'TransSync', 'TransSyncVm', 'ReceivePoliciesVm', 'World')
 } else {
     @('Workflow', 'ArrayCache', 'EditorEncoding', 'NetworkEdges', 'RpcDelivery', 'Configuration', 'TransSync', 'TimelineRegression', 'ReceivePolicies', 'PayloadIntegrity', 'Play', 'Build', 'Player', 'Inspect')
 }
-if (-not $Steps) { $Steps = @($allowed | Where-Object { $_ -notin @('World', 'Inspect') }) }
+$allowed = @($defaultSteps + @('FrameStructure', 'PayloadBudget'))
+if (-not $Steps) { $Steps = @($defaultSteps | Where-Object { $_ -notin @('World', 'Inspect') }) }
 foreach ($step in $Steps) {
     if ($step -notin $allowed) { throw "Step $step is not a $Profile suite step. Preparation is inserted automatically." }
 }
