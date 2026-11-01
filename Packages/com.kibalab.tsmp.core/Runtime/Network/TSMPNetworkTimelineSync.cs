@@ -224,7 +224,7 @@ namespace K13A.TSMP.Udon
 
         private bool CanUseDirector()
         {
-            if (director == null || !director.isActiveAndEnabled)
+            if (director == null || !director.enabled || !director.gameObject.activeInHierarchy)
                 return false;
 #if !COMPILER_UDONSHARP
             if (director.playableAsset == null)

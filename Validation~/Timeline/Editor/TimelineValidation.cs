@@ -34,6 +34,7 @@ public static class TimelineValidation
         Test("None cancels pending corrections without stopping playback", None);
         Test("Packet size and version are validated", PacketShape);
         Test("Disabled receivers cancel interpolation", Disabled);
+        Test("Disabled Directors and inactive parents reject capture and receive", DirectorAvailability);
         Test("Asset replacement clears the received timeline", AssetReplacement);
         Test("Seek preserves playback state and clamps time", Seek);
         Test("Captured timeline drives an actual animation track", AnimationTrack);
@@ -265,6 +266,33 @@ public static class TimelineValidation
         sync.director.gameObject.SetActive(false);
         Receive(sync, 2, 5);
         Check(sync.director.time != 5, "Inactive Director accepted a packet");
+        sync.director.Stop();
+    }
+
+    private static void DirectorAvailability()
+    {
+        var sync = Create();
+        var parent = new GameObject("Director Parent");
+        sync.director.transform.SetParent(parent.transform);
+        for (int mode = 0; mode < 2; mode++)
+        {
+            Receive(sync, 1, 2);
+            sync.TSMPBeforeEncode();
+            Check(sync.encodedTimelineBytes == 10, "Active Director did not capture");
+            if (mode == 0) sync.director.enabled = false;
+            else parent.SetActive(false);
+            Check(sync.director.gameObject.activeSelf, "Parent case changed the child's own active state");
+            Receive(sync, 1, 5);
+            Check(sync.director.time != 5, "Unavailable Director accepted a packet");
+            sync.Seek(7);
+            Check(sync.director.time != 7, "Unavailable Director accepted Seek");
+            sync.TSMPBeforeEncode();
+            Check(sync.timelineBytes == null && sync.encodedTimelineBytes == 0, "Unavailable Director retained captured bytes");
+            if (mode == 0) sync.director.enabled = true;
+            else parent.SetActive(true);
+            Receive(sync, 1, 3);
+            Check(sync.director.time == 3, "Reactivated Director did not recover");
+        }
         sync.director.Stop();
     }
 

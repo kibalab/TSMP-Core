@@ -211,6 +211,29 @@ public static class ConfigurationValidation
         Check(vm.Interpret() == 0 && director.state == PlayState.Playing, "Explicit Udon Play did not recover after the Director ended outside the component");
         director.Stop();
         Results.Add("PASS Udon VM Continuous update and v1 capture");
+        program.Heap.SetHeapVariable(program.SymbolTable.GetAddressFromSymbol("receiveInterpolation"), (int)ReceiveInterpolationMode.Discrete, typeof(int));
+        var parent = new GameObject("Timeline VM Director Parent");
+        director.transform.SetParent(parent.transform);
+        for (int mode = 0; mode < 2; mode++)
+        {
+            ReceiveTimelineVm(vm, program, 1, 2);
+            if (mode == 0) director.enabled = false;
+            else parent.SetActive(false);
+            Check(director.gameObject.activeSelf, "VM parent case changed child activeSelf");
+            ReceiveTimelineVm(vm, program, 1, 5);
+            Check(director.time != 5, "Unavailable VM Director accepted a packet");
+            vm.SetProgramCounter(program.EntryPoints.GetAddressFromSymbol("TSMPBeforeEncode"));
+            Check(vm.Interpret() == 0, "Unavailable VM Director capture failed");
+            Check(program.Heap.GetHeapVariable(program.SymbolTable.GetAddressFromSymbol("timelineBytes")) == null &&
+                (int)program.Heap.GetHeapVariable(program.SymbolTable.GetAddressFromSymbol("encodedTimelineBytes")) == 0,
+                "Unavailable VM Director retained captured bytes");
+            if (mode == 0) director.enabled = true;
+            else parent.SetActive(true);
+            ReceiveTimelineVm(vm, program, 1, 3);
+            Check(director.time == 3, "Reactivated VM Director did not recover");
+        }
+        director.Stop();
+        Results.Add("PASS Udon VM disabled Director and inactive parent capture/receive guards with recovery");
     }
 
     private static void ReceiveTimelineVm(IUdonVM vm, IUdonProgram program, byte state, float time)
