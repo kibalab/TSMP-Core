@@ -1,5 +1,47 @@
 # Workload follow-up, 2026-11-01
 
+## Latest optimization implementation round
+
+The follow-up on codex/tsmp-optimization measures the proposed changes but
+ships **no new sender/receiver Runtime optimization**. Core Encoder/Decoder
+helpers are restored byte for byte after failed adoption guards. The recent
+Color256 calibration-row change is reverted by `2fe5026`; the older palette,
+block-index, CRC, snapshot, callback-group and diagnostic fixes remain.
+
+- Color256's repeated 5KB tail measurements improve, but its 60-second case
+  applies only 1,798/1,800 measured updates. This does not prove the row copy
+  caused the losses. The complete-delivery gate fails and the small change is
+  conservatively withdrawn. All accepted bytes remain correct.
+- Encoder target-validation reuse passes correctness but primary mean gains
+  are only 1.154% / 0.892%, below the frozen 2% threshold, with a control-tail
+  failure. The original source is retained.
+- Decoder eligibility reuse improves primary means about 19–21%, but the
+  first experiment and one separately frozen larger-control confirmation each
+  fail a different upper-tail guard. Both complete datasets remain. The final
+  observed p99 reversal is 26.0607 to 29.1918 ms (96 samples, hence its maximum).
+  Its product causation is not established; no third timing attempt is made.
+- Float32 BitConverter APIs compile and execute in the current client VM.
+  Prototype helper savings per 128 ordinary values are 0.140905 ms write and
+  0.076444 ms read, not whole-Encoder reductions. The selected 114-edge corpus
+  reveals ten existing writer VM errors and 23 finite wire-bit differences.
+  Product Binary.cs remains unchanged; minimum-SDK compatibility and explicit
+  special-value behavior need separate work before a product change.
+
+Retained changes are validation improvements: protected Decode timing in the
+existing matrix, three receive-policy callback/cache controls, and a Float32
+API/edge/helper probe. The restored product passes 50 Native / 51 VM receive
+policy cases and fresh 16-program client compilation with Bindings=True.
+Candidate array, structural preflight and Native GPU loopback regressions also
+pass; correctness PASS is kept distinct from performance/adoption FAIL.
+
+Evidence: `F:/Unity/TSMP/Validation-Results/optimization-implementation-20261101`.
+See [Color256 decisions](../Color256Performance/RESULTS.md),
+[sender/receiver experiments](../BindingCost/RESULTS.md),
+[receive controls](../ReceivePolicies/README.md) and
+[Float32 feasibility](../OptimizationFeasibility/README.md).
+All work remains on the optimization branches; main refs, remote refs, package
+versions, assets and GUIDs are preserved. No push, release or live-client claim.
+
 ## Product finishing follow-up
 
 After the architecture/overdevelopment review, the next work fixes installation
