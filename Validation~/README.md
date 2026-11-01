@@ -46,6 +46,8 @@ Use this short index for the current development-branch evidence. Each linked re
 | --- | --- |
 | Latest state, limits and aggregate audit | [Workload follow-up](WorkloadFollowup/RESULTS.md) |
 | Many-binding callback semantics and paired Encoder cost | [BindingCost](BindingCost/RESULTS.md), [runner and `-SemanticsOnly`](BindingCost/README.md) |
+| Sender/receiver duplicate-check trials and failed adoption guards | [BindingCost follow-ups](BindingCost/RESULTS.md#receive-target-experiment-not-adopted) |
+| Actual Float32 bitcast APIs, legacy edge behavior and helper cost | [Float32 feasibility](OptimizationFeasibility/README.md#float32-api-and-helper-feasibility-2026-11-01) |
 | Finite RPC burst latency and delivery through the GPU path | [RpcBurst](RpcBurst/RESULTS.md), [runner](RpcBurst/README.md) |
 | Current Color256 pacing and observer controls | [Color256Followup](Color256Followup/RESULTS.md), [runner](Color256Followup/README.md) |
 | Color256 calibration-row trial, repeated delivery gate and rollback | [Color256Performance](Color256Performance/RESULTS.md#current-decision-after-repeat-verification) |

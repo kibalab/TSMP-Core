@@ -1,5 +1,58 @@
 # Indexed BeforeEncode target cache, 2026-11-01
 
+## Receive-target experiment: not adopted
+
+A separate two-helper candidate retained the eligibility check before decoding
+each value, then used an internal apply path without repeating that same check.
+The public Apply guards stayed intact. It introduced no buffers or state and
+reduced Decoder client bytecode **138,380 to 138,260 B** (-120 B). Native 50 / VM
+51 policy cases, including three new public-guard/callback/cache regressions,
+passed, as did array ownership, structural preflight, Native GPU loopback and
+16 product client programs with automatic bindings.
+
+Both complete performance experiments are retained. The first six-process
+AB/BA/AB matrix measured 128-field mean reductions of **21.465%** for one target
+and **20.552%** for distinct targets. However, a 32-field single-target control's
+pooled p99 rose **3.2350 to 4.2440 ms**, failing the frozen 105% limit. With 96
+measured calls/variant, that nearest-rank p99 is its observed maximum. The
+initial experiment is not reclassified as an adoption PASS.
+
+One separately frozen confirmation increased only that control to 512 measured
+calls/process, retaining the other eleven cases and all six AB/BA/AB processes.
+The enlarged control pools **1,536 calls/variant** and improves p99
+**3.2361 to 2.7477 ms**. But a different 128-field single-target condition,
+still pooling 96 calls, now fails its p99 gate:
+
+| Confirmation workload | Original mean | Candidate mean | Reduction | Original / candidate p99 |
+| --- | ---: | ---: | ---: | ---: |
+| 32 fields / one target | 2.953939 ms | 2.523082 ms | 14.586% | 3.2361 / 2.7477 ms |
+| 128 fields / one target | 25.018689 ms | 19.883050 ms | 20.527% | **26.0607 / 29.1918 ms** |
+| 128 fields / distinct targets | 27.266496 ms | 22.131336 ms | 18.833% | 28.8048 / 26.6048 ms |
+
+The second p99 reversal exceeds 105%. Its cause is not established as a product
+regression, but the confirmation's predeclared decision requires restoring the
+original helpers and no third timing attempt. **The candidate is not adopted.**
+No timing sample is removed; the positive means and failed upper-tail guards
+are both reported. Product Decoder sources are restored byte for byte.
+
+The confirmation independently verifies **5,760 EncodeNow calls, 4,416 measured
+Decode calls, 4,824 protected packet/header pairs, 191,520 Float32 values and
+2,412 identical corresponding payload pairs**. The 768 measured no-output rows
+have zero Decode ticks and are excluded from Decode statistics. Only the two
+Decoder helpers/program vary; 390 other sources, four other loaded programs and
+23 configurations remain unchanged. Timed Decoder Update includes extraction,
+CRC, structural preflight, field dispatch and receiver callbacks; it does not
+include receiver GPU requests or establish live-client/frame/FPS improvement.
+
+Evidence under
+`F:/Unity/TSMP/Validation-Results/optimization-implementation-20261101`:
+`decoder-active` retains the first failed-tail experiment and all candidate
+regressions; `decoder-tail-confirmation` retains the enlarged-control plan,
+every run, performance-analysis.json and independent-confirmation-audit.json.
+The original code then passes the retained new policy tests (50 Native / 51 VM)
+and fresh 16-program client compilation again. Frozen candidate sources remain
+available for later evaluation without shipping the change.
+
 ## Later target-validation experiment: not adopted
 
 A separate optimization-branch experiment reused the existing resolved-target
