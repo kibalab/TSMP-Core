@@ -1,5 +1,71 @@
 # Workload follow-up, 2026-11-01
 
+## Product finishing follow-up
+
+After the architecture/overdevelopment review, the next work fixes installation
+and observability contracts and joins existing validation entry points. It adds
+no transport/recovery feature or new validation framework. The measurements
+below remain historical evidence for their recorded source revisions.
+
+- Udon automatic clearing now resets only the private frame builder after
+  successful output. Public payload/message counters remain available to the
+  Inspector/debug canvas; BeginFrame, explicit ClearFrame, empty attempts and
+  failures retain their reset behavior. The Runtime change is one file,
+  **9 added/4 removed lines**. CRC, packet format, sending defaults and finite
+  RPC repeats are unchanged. Native encoding is unchanged.
+- Color256, RGB16 and RGB20 now declare the required Luma4 header codec in UPM
+  and VPM. Their installation guides explain the complete package set and
+  explicit project sources needed for local/Git UPM installs. Metadata checks
+  enforce the required dependency rather than accepting its omission.
+- English/Korean/Japanese codec selection distinguishes the Luma4 starting
+  point, conditional Color256/RGB16 paths and the RGB20 H.264/NV12 limitation.
+  Current development-branch recovery results are distinguished from published
+  packages. The Encoder API now documents integer stages and the actual void
+  Udon BeginFrame signature, alongside counter lifetimes.
+- The existing suite exposes opt-in FrameStructure/PayloadBudget steps by
+  delegating to their existing runners. Its default workload is unchanged.
+  The README indexes current evidence and preserves the historical reports.
+
+Automatic verification uses Unity 2022.3.22f1 / Windows / D3D11:
+
+| Check | Result |
+| --- | --- |
+| Original Encoder with isolated diagnostic fixture | Expected FAIL: successful output loses its protected payload length |
+| Modified Encoder/client VM and compiled debug canvas | **240 assertions PASS**; three protected outputs, exactly two finite RPC copies, CRC/content checks, byte accounting, reset/empty/failure/opt-out controls |
+| Native payload budget / prior output parity | **336 assertions PASS**, including 64 byte-identical frozen-builder inputs |
+| Native / compiled Udon structural preflight | **1,256 / 3,857 assertions PASS** |
+| Native real GPU texture loopback | PASS: Transform, humanoid pose, Timeline, int/Unicode state and finite RPC dedup/recovery |
+| Fresh product client compilation / automatic bindings | **16 programs, Bindings=True PASS** |
+| Package contract fixtures | PASS: one valid fixture plus **15 intentionally rejected cases**, actual installed VPM SemanticVersioning assembly; no fresh installation |
+| Entry-point parsing/routing/default preservation | **20 stub checks PASS**, plus actual Native suite and SDK targeted runs |
+| Website | English, Korean and Japanese production builds PASS |
+| Ownership/configuration audit | **600** frozen files, **46** configurations preserved, **708** Runtime/Editor source comparisons, **320** existing GUIDs preserved |
+
+Encoder client bytecode changes from 138,324 to **138,368 B** (+44 B). This is a
+diagnostic correction, with no new performance improvement claimed. Canvas
+accounting is checked once per output; its existing estimate when it misses
+multiple outputs is not promoted to exact byte measurement. Native/SDK source
+copies match Runtime/Editor code; optional package metadata in those existing
+projects intentionally remains the prior installation, so these checks do not
+claim a fresh VCC/VPM download or resolver installation.
+
+The initial new fixture reused GetRealProgram's shared heap and failed its
+default assertion after an earlier test changed that heap. That harness failure
+is retained. Retrieving an independent serialized program per fixture fixes the
+isolation, then the unchanged original Encoder reproduces the actual defect.
+The initial metadata controller's encoding error is also retained; explicitly
+using UTF-8 fixes that controller without changing the package manifests.
+
+Evidence: `F:/Unity/TSMP/Validation-Results/product-finish-20261101`, including
+`root-final-audit.json`, before/after logs, metadata fixtures and routing checks.
+Implementation commits: Core `6dc3750`, `4118998`, `628f584`; Color256 `3eaa706`,
+RGB16 `6ad1c58`, RGB20 `2794219`. All remain on codex/tsmp-reliability without
+main merge, push or release. The separate old local Core main history remains
+untouched. Actual VRChat, Quest, populated worlds and prolonged OBS/VRCDN
+validation remain outside these automated checks.
+
+## Earlier measured workload improvement
+
 The product change removes repeated Udon BeforeEncode target searches. Stable
 bindings cache each target's group during the existing send-state rebuild, then
 use indexed visited flags per attempt. The Runtime change is **one file,
