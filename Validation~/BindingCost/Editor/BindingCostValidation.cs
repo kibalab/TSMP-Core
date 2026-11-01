@@ -30,7 +30,7 @@ public static class BindingCostValidation
     static readonly List<Object> owned = new List<Object>();
     static readonly List<Program> programs = new List<Program>();
     static readonly List<string> notes = new List<string>();
-    static readonly List<string> samples = new List<string> { "case,sample,measured,frame,clock,startTicks,endTicks,encodeMs,fields,targets,expectedFields,encodedFields,payloadBytes,beforeCallbacks,usedGpu,packet,header" };
+    static readonly List<string> samples = new List<string> { "case,sample,measured,frame,clock,startTicks,endTicks,encodeMs,fields,targets,expectedFields,encodedFields,payloadBytes,beforeCallbacks,usedGpu,packet,header,decodeStartTicks,decodeEndTicks,decodeMs" };
     static readonly List<string> helper = new List<string> { "targets,sample,method,startTicks,endTicks,milliseconds" };
     static readonly List<string> semantics = new List<string> { "case,round,startTicks,endTicks,encodeMs,expectedOrder,actualOrder,expectedFields,encodedFields,actualCallbacks" };
     static readonly List<string> hashes = new List<string> { "kind,path,bytes,sha256" };
@@ -208,14 +208,15 @@ public static class BindingCostValidation
         }
         Check(cursor == packet.Length && found == expectedCount, "Packet field count/tail"); return found;
     }
-    static void Deliver(Program decoder, byte[] packet, byte[] header, uint frame)
+    static void Deliver(Program decoder, byte[] packet, byte[] header, uint frame, out long decodeStart, out long decodeStop)
     {
         int padded = (packet.Length + 3) / 4 * 4; var raw = new byte[padded]; Array.Copy(packet, raw, packet.Length);
         decoder.Set("_slotHead", 0); decoder.Set("pendingDecodeCount", 1); decoder.Set("_slotStates", new[] { 2, 0 }); decoder.Set("_slotStages", new[] { 2, 0 });
         decoder.Set("_slotReadbackBytes", new[] { raw, (byte[])null }); decoder.Set("_slotHeaders", new[] { header, (byte[])null });
         decoder.Set("_slotPayloads", new[] { new byte[packet.Length], (byte[])null }); decoder.Set("_slotPayloadCounts", new[] { packet.Length, 0 }); decoder.Set("_slotReadCounts", new[] { padded / 4, 0 });
         decoder.Set("_slotRequirePayloadCrc32", new[] { true, false }); decoder.Set("_slotSafetyModes", new[] { 0, 0 }); decoder.Set("_slotHeaderValid", new[] { true, false });
-        decoder.Set("_slotStreamIds", new uint[] { 1, 0 }); decoder.Set("_slotFrameIndices", new[] { frame, 0u }); decoder.Set("lastFrameValid", false); decoder.Call("_update");
+        decoder.Set("_slotStreamIds", new uint[] { 1, 0 }); decoder.Set("_slotFrameIndices", new[] { frame, 0u }); decoder.Set("lastFrameValid", false);
+        decoder.Timed("_update", out decodeStart, out decodeStop);
         Check(decoder.Get<bool>("lastFrameValid") && decoder.Get<bool>("lastPayloadCrcVerified"), "Protected Decoder completion failed: " + decoder.Get<string>("lastError"));
     }
     static IEnumerator Validate()
@@ -253,20 +254,20 @@ public static class BindingCostValidation
             Check(e.Get<int>("autoVariableCount") == emitted, "Encoder field diagnostic mismatch");
             int[] callbackDeltas = senders.Select((s, i) => s.Get<int>("beforeCount") - previous[i]).ToArray();
             Check(callbackDeltas.All(n => n == 1), "BeforeEncode not exactly once per target");
-            string packetPath = "", headerPath = ""; bool gpu = false; int payloadCount = 0;
+            string packetPath = "", headerPath = ""; bool gpu = false; int payloadCount = 0; long decodeStart = 0, decodeStop = 0;
             if (emitted > 0)
             {
                 byte[] header = e.Get<byte[]>("_headerBytes").ToArray();
-                payloadCount = header[42] | header[43] << 8; // successful ClearFrame resets the public count, not the protected header
+                payloadCount = header[42] | header[43] << 8; // Use the protected packet length for the capture.
                 byte[] packet = e.Get<byte[]>("_payloadBytes").Take(payloadCount).ToArray();
                 VerifyPacket(packet, expected, item.targets, emitted); gpu = e.Get<bool>("lastFrameUsedGpuLuma4"); Check(gpu, "GPU Luma4 path not used");
                 packetPath = "packets/" + item.name + "/" + iteration.ToString("D3") + ".bin"; headerPath = packetPath + ".header";
                 File.WriteAllBytes(Path.Combine(Root, packetPath), packet); File.WriteAllBytes(Path.Combine(Root, headerPath), header);
-                Deliver(decoder, packet, header, sequence);
+                Deliver(decoder, packet, header, sequence, out decodeStart, out decodeStop);
                 Check(decoder.Get<int>("lastAppliedVariableCount") == emitted, "Decoder count mismatch");
                 for (int i = 0; i < item.fields; i++) Check(receivers[i % item.targets].Get<float>(Field(i, item.targets)) == expected[i], "Receiver value mismatch " + i);
             }
-            samples.Add(Row(item.name, iteration, iteration >= item.warm, Time.frameCount, clock, start, stop, Ms(stop - start), item.fields, item.targets, emitted, e.Get<int>("autoVariableCount"), payloadCount, callbackDeltas.Sum(), gpu, packetPath, headerPath));
+            samples.Add(Row(item.name, iteration, iteration >= item.warm, Time.frameCount, clock, start, stop, Ms(stop - start), item.fields, item.targets, emitted, e.Get<int>("autoVariableCount"), payloadCount, callbackDeltas.Sum(), gpu, packetPath, headerPath, decodeStart, decodeStop, Ms(decodeStop - decodeStart)));
             yield return null;
         }
         if (item.regime == "changing")
