@@ -30,18 +30,19 @@ public static class SustainedCostValidation
     static readonly List<Program> programs = new List<Program>();
     static readonly List<string> notes = new List<string>();
     static readonly List<string> hashes = new List<string>();
+    static readonly Dictionary<string, string> bytecodeSizes = new Dictionary<string, string>();
     static readonly Dictionary<string, string> sourceBefore = new Dictionary<string, string>();
     static readonly List<VmSample> events = new List<VmSample>(100000);
     struct VmSample
     {
         public string name, owner, label;
-        public int eventId, frame, pendingBefore, pendingAfter, callbackSlot, callbackSource, slot0Source, slot1Source, latestSource, retries, duplicates, applied;
+        public int eventId, frame, pendingBefore, pendingAfter, callbackSlot, callbackSource, slot0Source, slot1Source, latestSource, retries, duplicates, applied, receiverCountBefore, receiverCountAfter;
         public long start, stop, nestedObservationTicks, callbackRequest, slot0Request, slot1Request;
         public double time, observationMs;
         public bool valid;
-        public string Csv() => Row(name, eventId, owner, label, frame, time, start, stop, Ms(stop - start - nestedObservationTicks), pendingBefore, pendingAfter, callbackSlot, callbackRequest, callbackSource, slot0Request, slot1Request, slot0Source, slot1Source, latestSource, retries, duplicates, applied, valid, observationMs, Ms(stop - start), Ms(nestedObservationTicks));
+        public string Csv() => Row(name, eventId, owner, label, frame, time, start, stop, Ms(stop - start - nestedObservationTicks), pendingBefore, pendingAfter, callbackSlot, callbackRequest, callbackSource, slot0Request, slot1Request, slot0Source, slot1Source, latestSource, retries, duplicates, applied, valid, observationMs, Ms(stop - start), Ms(nestedObservationTicks), receiverCountBefore, receiverCountAfter, nestedObservationTicks);
     }
-    const string EventHeader = "case,eventId,owner,event,frame,time,startTicks,endTicks,vmMs,pendingBefore,pendingAfter,callbackSlot,callbackRequest,callbackSource,slot0Request,slot1Request,slot0Source,slot1Source,latestSource,retryTotal,duplicateTotal,lastAppliedVariables,lastFrameValid,observationMs,grossVmMs,nestedObservationMs";
+    const string EventHeader = "case,eventId,owner,event,frame,time,startTicks,endTicks,vmMs,pendingBefore,pendingAfter,callbackSlot,callbackRequest,callbackSource,slot0Request,slot1Request,slot0Source,slot1Source,latestSource,retryTotal,duplicateTotal,lastAppliedVariables,lastFrameValid,observationMs,grossVmMs,nestedObservationMs,receiverCountBefore,receiverCountAfter,nestedObservationTicks";
     static readonly List<string> frames = new List<string>();
     static readonly List<string> publications = new List<string>();
     static readonly List<string> applications = new List<string>();
@@ -145,6 +146,7 @@ public static class SustainedCostValidation
     {
         File.WriteAllLines(Path.Combine(Root, "vm-events.csv"), new[] { EventHeader }.Concat(events.Select(e => e.Csv()))); File.WriteAllLines(Path.Combine(Root, "frames.csv"), frames);
         File.WriteAllLines(Path.Combine(Root, "publications.csv"), publications); File.WriteAllLines(Path.Combine(Root, "applications.csv"), applications); File.WriteAllLines(Path.Combine(Root, "summary.csv"), summaries);
+        File.WriteAllLines(Path.Combine(Root, "bytecode-sizes.csv"), new[] { "path,bytes,sha256" }.Concat(bytecodeSizes.OrderBy(pair => pair.Key).Select(pair => pair.Value)));
     }
     sealed class Program : IDisposable
     {
@@ -158,7 +160,12 @@ public static class SustainedCostValidation
             Check(asset != null, "Missing program " + path);
             Code = asset.SerializedProgramAsset.RetrieveProgram();
             Check(Code != null && Code.ByteCode.Length > 0, "Missing bytecode " + path);
-            hashes.Add(Row("bytecode", path, H(Code.ByteCode)));
+            string programHash = H(Code.ByteCode);
+            hashes.Add(Row("bytecode", path, programHash));
+            string sizeReceipt = Row(path, Code.ByteCode.Length, programHash);
+            string previousReceipt;
+            if (bytecodeSizes.TryGetValue(path, out previousReceipt)) Check(previousReceipt == sizeReceipt, "Loaded bytecode changed within one run: " + path);
+            else bytecodeSizes.Add(path, sizeReceipt);
             var vm = UdonEditorManager.Instance.ConstructUdonVM(); Check(vm.LoadProgram(Code), "VM load failed.");
             Backing = new GameObject(asset.name + " refine cost VM").AddComponent<UdonBehaviour>();
             Type type = typeof(UdonBehaviour);
@@ -200,6 +207,7 @@ public static class SustainedCostValidation
             bool top = depth++ == 0; string label; if (!labels.TryGetValue(inner.GetProgramCounter(), out label)) label = "unknown";
             bool record = top && collecting && activeDecoder != null;
             int pendingBefore = record ? activeDecoder.Get<int>("pendingDecodeCount") : 0;
+            int receiverCountBefore = record ? activeReceiver.Get<int>("count") : 0;
             int[] oldStates = record ? (int[])activeDecoder.Get<int[]>("_slotStates").Clone() : null;
             object[] oldRequests = record ? ReadRequests(activeDecoder) : null;
             int frame = Time.frameCount; double stamp = Time.realtimeSinceStartupAsDouble;
@@ -236,7 +244,8 @@ public static class SustainedCostValidation
                 var sample = new VmSample { name = caseName, eventId = ++eventSequence, owner = owner.role, label = label, frame = frame, time = stamp,
                     start = before, stop = after, nestedObservationTicks = nestedTicks, pendingBefore = pendingBefore, pendingAfter = activeDecoder.Get<int>("pendingDecodeCount"), callbackSlot = callbackSlot, callbackRequest = callbackRequest, callbackSource = callbackSource,
                     slot0Request = requests[0], slot1Request = requests[1], slot0Source = requestSources[0], slot1Source = requestSources[1], latestSource = latestId,
-                    retries = activeDecoder.Get<int>("payloadRecoveryAttemptCount"), duplicates = activeDecoder.Get<int>("skippedDuplicateFrameCount"), applied = activeDecoder.Get<int>("lastAppliedVariableCount"), valid = activeDecoder.Get<bool>("lastFrameValid") };
+                    retries = activeDecoder.Get<int>("payloadRecoveryAttemptCount"), duplicates = activeDecoder.Get<int>("skippedDuplicateFrameCount"), applied = activeDecoder.Get<int>("lastAppliedVariableCount"), valid = activeDecoder.Get<bool>("lastFrameValid"),
+                    receiverCountBefore = receiverCountBefore, receiverCountAfter = activeReceiver.Get<int>("count") };
                 sample.observationMs = Ms(Stopwatch.GetTimestamp() - observationStart - (after - before)); events.Add(sample);
             }
             instrumentationTicks += (before - observationStart) + (Stopwatch.GetTimestamp() - after);
@@ -308,10 +317,11 @@ public static class SustainedCostValidation
         notes.Add("Actual client Encoder/Decoder/codec/probe EditorVMs and real VRC GPU callbacks; no live VRChat/CDN/FPS result.");
         notes.Add("Clean changing-ID delivery and damaged fixed-ID repeated processing are separate regimes. Top-level VM events include nested work once; gross Interpret time and nested host observations are retained; net VM time subtracts measured nested receiver host checks. Render-frame counts are Time.frameCount, target rate is not achieved rate.");
         notes.Add("Logical request identity is assigned only on proven idle-to-pending transitions; callback object replacement retains that identity. Occupied-slot request replacement in _update is ambiguous and markedID/source=-1. Proven admissions is a lower bound, notexactcaptures. Sourceage is independent received-ID evidence. Repeated rejected frames can invalidate prediction. Frozen clean packets contain one bound variable; no event/RPC delivery claim.");
+        notes.Add("Receiver frames are recorded inside each actual OnTSMPVariableReceived callback. Clean packets have exactly one RawBytes binding, so each receiver count increment is one accepted packet completion. Top-level receiver count intervals link those completions to Decoder dispatches; pending-count changes and GPU callback counts are separate observations.");
         foreach (var pair in Sources()) sourceBefore.Add(pair.Key, pair.Value);
         File.WriteAllLines(Path.Combine(Root, "source-before.csv"), new[] { "path,sha256" }.Concat(sourceBefore.Select(pair => Row(pair.Key, pair.Value))));
         frames.Add("case,frame,time,measured,latestSource,latestApplied,sourceAgeMs,pending,busy,gc0,gc1,gc2,ageSampleTime,latestSentTime");
-        publications.Add("case,id,sent,published,measured"); applications.Add("case,id,applied,sent,measured,latencyMs");
+        publications.Add("case,id,sent,published,measured"); applications.Add("case,id,applied,sent,measured,latencyMs,frame,ordinal");
         summaries.Add("case,codec,regime,schedule,budget,sourceTarget,renderTarget,seconds,begin,end,renderTicks,published,senderMisses,provenAdmissions,busyTicks,appliedInWindow,receivedAfterDrain,duplicates,retries,corrupt,ambiguousAssociations,busyDecodeSkips");
         hashes.Add("kind,path,sha256"); string planPath = Resolve(Environment.GetEnvironmentVariable("TSMP_SUSTAINED_PLAN")); var planBytes = File.ReadAllBytes(planPath);
         File.WriteAllBytes(Path.Combine(Root, "plan-used.json"), planBytes); hashes.Add(Row("plan", planPath, H(planBytes)));
@@ -331,7 +341,7 @@ public static class SustainedCostValidation
         WarmGraphics(lumaNative, source, output); if (native != lumaNative) WarmGraphics(native, source, output);
         var codec = new Program("Packages/com.kibalab.tsmp.codec." + item.codec.ToLowerInvariant() + "/Runtime/Scripts/TSMPCodec" + item.codec + ".asset", native);
         var luma = codec; if (item.codec != "Luma4") luma = new Program("Packages/com.kibalab.tsmp.codec.luma4/Runtime/Scripts/TSMPCodecLuma4.asset", lumaNative);
-        var receiver = new Program(ProbePath, role: "Receiver"); activeReceiver = receiver; receiver.Set("networkId", (ushort)1); receiver.Set("ids", new int[32768]); receiver.Set("times", new float[32768]);
+        var receiver = new Program(ProbePath, role: "Receiver"); activeReceiver = receiver; receiver.Set("networkId", (ushort)1); receiver.Set("ids", new int[32768]); receiver.Set("times", new float[32768]); receiver.Set("frames", new int[32768]);
         var decoder = new Program("Packages/com.kibalab.tsmp.core/Runtime/Decoder/TSMPDecoder.asset", role: "Decoder"); activeDecoder = decoder;
         decoder.Set<Texture>("sourceTexture", source); decoder.Set("payloadByteTexture", output); decoder.Set("readbackPackMaterial", Resources.Load<Material>("TSMPReadbackPack"));
         decoder.Set("codecHandlers", codec == luma ? new[] { luma.Backing } : new[] { luma.Backing, codec.Backing }); Bind(decoder, receiver);
@@ -410,12 +420,12 @@ public static class SustainedCostValidation
         if (!item.stress)
         {
             for (int i = 1; i <= latestId; i++) if (sent[i] >= begin && sent[i] < end) sends++;
-            int[] ids = receiver.Get<int[]>("ids"); float[] times = receiver.Get<float[]>("times");
+            int[] ids = receiver.Get<int[]>("ids"); float[] times = receiver.Get<float[]>("times"); int[] applicationFrames = receiver.Get<int[]>("frames");
             for (int i = 0; i < receiver.Get<int>("count"); i++)
             {
                 int id = ids[i]; Check(id > previous && id <= latestId && unique.Add(id), "Invalid duplicate/out-of-order application."); previous = id;
                 bool measured = sent[id] >= begin && sent[id] < end; if (measured) { received++; if (times[i] < end) inWindow++; }
-                applications.Add(Row(caseName, id, times[i], sent[id], measured, (times[i] - sent[id]) * 1000));
+                applications.Add(Row(caseName, id, times[i], sent[id], measured, (times[i] - sent[id]) * 1000, applicationFrames[i], i + 1));
             }
             Check(receiver.Get<int>("corrupt") == 0 && received > 0, "Corrupt/no application.");
         }

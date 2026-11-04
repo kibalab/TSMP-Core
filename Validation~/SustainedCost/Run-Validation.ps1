@@ -10,6 +10,8 @@ $ErrorActionPreference='Stop'
 $costProject=(Resolve-Path -LiteralPath $Project).Path
 $costPlan=(Resolve-Path -LiteralPath $Plan).Path
 if(-not(Test-Path -LiteralPath (Join-Path $costProject 'Packages/com.vrchat.worlds/package.json'))){throw 'Use a dedicated Worlds SDK project'}
+$costActive=@(Get-CimInstance Win32_Process -Filter "Name='Unity.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Replace('/','\').Contains($costProject) })
+if($costActive.Count){throw 'Dedicated validation project is already open'}
 if((Test-Path -LiteralPath $Results) -and @(Get-ChildItem -LiteralPath $Results -Force).Count){throw 'Use a fresh empty results directory'}
 $costAssets=Join-Path $costProject 'Assets/Validation/SustainedCost'
 New-Item -ItemType Directory -Path $costAssets,$Results -Force|Out-Null
@@ -38,7 +40,11 @@ try{
     $costProcess.Refresh()
     $costResult=Join-Path $costResults 'result.txt'
     $costCompilerErrors=if(Test-Path -LiteralPath $costLog){@(Select-String -LiteralPath $costLog -Pattern '(?i)(\berror\s+CS\d+\b|scripts have compiler errors|script compilation failed)'|ForEach-Object Line)}else{@('Unity log missing')}
-    if($costCompilerErrors.Count){@('FAIL','CompilerOrLaunchFailure')+$costCompilerErrors|Set-Content -LiteralPath $costResult -Encoding utf8;throw "Sustained cost compilation failed: $costLog"}
+    if($costCompilerErrors.Count){
+        if(Test-Path -LiteralPath $costResult){Copy-Item -LiteralPath $costResult -Destination (Join-Path $costResults 'fixture-result-before-controller.txt')}
+        @('FAIL','CompilerOrLaunchFailure')+$costCompilerErrors|Set-Content -LiteralPath $costResult -Encoding utf8
+        throw "Sustained cost compilation failed: $costLog"
+    }
     if(Test-Path -LiteralPath $costResult){Get-Content -LiteralPath $costResult}
     if($costProcess.ExitCode -ne 0 -or -not(Test-Path -LiteralPath $costResult) -or (Get-Content -LiteralPath $costResult -First 1) -ne 'PASS'){throw "Sustained cost failed: $costLog"}
 }finally{
