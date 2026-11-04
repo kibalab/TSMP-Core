@@ -42,6 +42,26 @@ measured Update frame IDs and timestamp-eligible VM event frame IDs; boundary
 events can add a frame, and both frame counts are reported. `busyTicks` is observed occupancy before `_update`; actual rejected
 admissions use the existing `skippedBusyDecodeCount` delta.
 
+New completion traces record `Time.frameCount` inside the actual receiver
+callback in a fixed-size array. `applications.csv` adds that frame and a
+per-case receive ordinal; `vm-events.csv` adds receiver counters before/after
+the outer dispatch plus integer nested-observation ticks. For each eligible
+Decoder dispatch, the analyzer maps its before/after ordinal range to receiver
+applications and checks their frames, preserving pending-slot counts and the
+callback event. `completion-frames.csv` reports frames with zero,
+one or two-plus actual packet applications and GPU callback counts;
+`completion-dispatches.csv` distinguishes two completions in one dispatch from
+separate callbacks sharing a frame. Arrival-window applications determine the
+completion distribution; published-cohort delivery remains a separate metric.
+Frames include measured Updates, eligible VM events and actual arrivals.
+Old evidence without these columns reports the counters as unavailable.
+
+The one-RawBytes-field probe receives once per packet; multiple field callbacks
+must not be counted as multiple completed packets. The extra frame recording is
+validation work included identically in both source variants. It is not a new
+product counter or zero-overhead instrumentation. `bytecode-sizes.csv` records
+the actual loaded program length/hash and checks consistency on repeated loads.
+
 Logical request IDs are assigned only when a slot changes from idle to pending.
 Callback replacement of a readback request retains the logical ID. Occupied-slot
 request replacement during `_update` is ambiguous and gets ID/source `-1`.

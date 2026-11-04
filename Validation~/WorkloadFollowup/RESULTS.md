@@ -1,5 +1,38 @@
 # Workload follow-up, 2026-11-01
 
+## Packed pose and natural completion follow-up, 2026-11-04
+
+Representative shipped packed component timing is much smaller than the earlier
+128-independent-field workload. On unchanged Runtime, two fresh SDK processes
+pool 1,024 measurements per case: eight changing Transforms have Encode/Decode
+p99 **1.2751/1.2516 ms**, four generated 17-bone Humanoids **1.3748/1.5566 ms**,
+and one Humanoid plus four Transforms **1.2014/1.0990 ms**. Combined maxima are
+3.3864, 3.1212 and 2.8255 ms respectively. These include actual capture/application
+bytecode but inject completed receiver bytes, excluding receiver GPU waits.
+First-process Encode remains 54.0674-55.2803 ms in this fixture and is separate
+from steady-state. Full player API/avatar/skinning/production pacing is untested.
+
+Actual GPU receiver frame/ordinal traces inspect 28,641 VM events. Across 8,641
+measured frame observations, only one frame has two accepted packets; they occur
+in separate callbacks, with total TSMP net CPU 5.6387 ms. No individual Decoder
+dispatch drains two accepted packets. This does not support adding a completion
+cap as a current maximum-latency fix. Natural video jitter/many-decoder bursts
+remain outside these clean local observations.
+
+A separate two-loop fixed56B header bulk-copy candidate passes Native/client
+prediction+overlap correctness and shrinks Decoder bytecode248B. However, actual
+GPU ABBA timing fails nine frozen guards: normal5KB p99 rises 1.9198->2.0840ms,
+maximum2.1211->3.1599ms; normal1KB candidate applies719/720 published IDs;
+stress sender misses rise10->102 while published count falls1430->1338.
+This does not prove the source change caused host pacing or every spike, but
+favorable CPU averages cannot justify adoption. Original Decoder is preserved
+in all four locations; no timing retry occurs.
+
+The retained changes are validation and reports, in work-unit commits on
+codex/tsmp-optimization. Native GPU11/current16/minimumSDK13 fresh final checks
+pass. No main merge/push or live VRChat claim. See
+[full results, evidence and remaining scope](../PackedPose/RESULTS.md).
+
 ## Maximum-latency implementation and guarded decision
 
 This round retains a lower-interference validation harness, calibrated opt-in
