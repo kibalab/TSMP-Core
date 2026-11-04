@@ -5,6 +5,14 @@
 <p align="center"><strong>VRChat의 상태와 움직임을 텍스처 스트림으로 전송합니다.</strong></p>
 
 <p align="center">
+  <a href=".github/assets/tsmp-showcase.mp4"><img src=".github/assets/tsmp-showcase.gif" alt="TSMP 송신 클라이언트, 인코딩 프레임, 수신 결과를 한 화면에서 보여주는 데모" width="100%"></a>
+</p>
+<p align="center">
+  <a href=".github/assets/tsmp-showcase.mp4"><strong>▶ 16초 데모 영상 보기</strong></a><br>
+  <sub>독립된 Native Unity 클라이언트 2개 · 로컬 무압축 프레임 연결 · 일시 정지와 복구</sub>
+</p>
+
+<p align="center">
   <a href="https://github.com/kibalab/TSMP-Core/blob/main/LICENSE.md"><img src="https://img.shields.io/github/license/kibalab/TSMP-Core?style=flat-square&amp;label=license&amp;color=555&amp;labelColor=171717" alt="License"></a>
   <a href="https://github.com/kibalab/TSMP-Core/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/kibalab/TSMP-Core/release.yml?event=push&amp;label=release%20build&amp;style=flat-square&amp;labelColor=171717" alt="Release build"></a>
   <a href="https://github.com/kibalab/TSMP-Core/releases/latest"><img src="https://img.shields.io/github/v/release/kibalab/TSMP-Core?label=release&amp;style=flat-square&amp;color=555&amp;labelColor=171717" alt="Latest stable release"></a>

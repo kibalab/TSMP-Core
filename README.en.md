@@ -5,6 +5,14 @@
 <p align="center"><strong>Send VRChat state and motion through texture streams.</strong></p>
 
 <p align="center">
+  <a href=".github/assets/tsmp-showcase.mp4"><img src=".github/assets/tsmp-showcase.gif" alt="TSMP sender client, encoded video frames and decoded receiver shown together" width="100%"></a>
+</p>
+<p align="center">
+  <a href=".github/assets/tsmp-showcase.mp4"><strong>▶ Watch the 16-second demo</strong></a><br>
+  <sub>Two independent Native Unity clients · local uncompressed frame link · pause and resume</sub>
+</p>
+
+<p align="center">
   <a href="https://github.com/kibalab/TSMP-Core/blob/main/LICENSE.md"><img src="https://img.shields.io/github/license/kibalab/TSMP-Core?style=flat-square&amp;label=license&amp;color=555&amp;labelColor=171717" alt="License"></a>
   <a href="https://github.com/kibalab/TSMP-Core/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/kibalab/TSMP-Core/release.yml?event=push&amp;label=release%20build&amp;style=flat-square&amp;labelColor=171717" alt="Release build"></a>
   <a href="https://github.com/kibalab/TSMP-Core/releases/latest"><img src="https://img.shields.io/github/v/release/kibalab/TSMP-Core?label=release&amp;style=flat-square&amp;color=555&amp;labelColor=171717" alt="Latest stable release"></a>
