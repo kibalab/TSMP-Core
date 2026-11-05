@@ -1,8 +1,11 @@
 #if !UDONSHARP && !COMPILER_UDONSHARP
 using System;
 using System.Collections.Generic;
+using K13A.TSMP;
 using K13A.TSMP.Udon;
 using UnityEngine;
+using UnityEngine.Animations;
+using UnityEngine.Playables;
 using Object = UnityEngine.Object;
 
 // Recording-only stage. Receiver bones/cube are written only by TSMP; visual
@@ -16,6 +19,11 @@ public sealed class ShowcaseActors : IDisposable
     readonly List<Link> links = new List<Link>();
     readonly List<Joint> joints = new List<Joint>();
     readonly Avatar avatar;
+    readonly List<Mesh> importedMeshes = new List<Mesh>();
+    readonly bool imported;
+    readonly Animator importedAnimator;
+    PlayableGraph danceGraph;
+    AnimationClipPlayable dancePlayable;
     readonly Transform headVisual, visor;
     public readonly TSMPNetworkTransformSync transformSync;
     public readonly TSMPNetworkHumanoidPoseSync humanoidSync;
@@ -27,10 +35,12 @@ public sealed class ShowcaseActors : IDisposable
     struct Link { public Transform a, b, mesh; public float radius; }
     struct Joint { public Transform bone, mesh; public float radius; }
 
-    public ShowcaseActors(Shader shader, string role)
+    public ShowcaseActors(Shader shader, string role, GameObject avatarPrefab = null, AnimationClip danceClip = null)
     {
         if (shader == null) throw new ArgumentNullException(nameof(shader));
         sender = string.Equals(role, "sender", StringComparison.OrdinalIgnoreCase);
+        imported = avatarPrefab != null;
+        if (imported && (danceClip == null || !danceClip.humanMotion)) throw new InvalidOperationException("Imported showcase avatar needs a Humanoid dance clip");
         root = new GameObject("Showcase stage - " + role) { layer = Layer };
         try
         {
@@ -52,6 +62,8 @@ public sealed class ShowcaseActors : IDisposable
                 lineZ.localScale = new Vector3(3.4f, .004f, .006f);
             }
 
+            if (!imported)
+            {
             var rig = new GameObject("Humanoid demo rig") { layer = Layer };
             rig.transform.SetParent(root.transform, false);
             Bone(HumanBodyBones.Hips, rig.transform, new Vector3(0, 1, 0));
@@ -121,6 +133,53 @@ public sealed class ShowcaseActors : IDisposable
             headVisual.localScale = Vector3.one * .28f;
             visor = Primitive(PrimitiveType.Cube, "Visor", blue);
             visor.localScale = new Vector3(.19f, .055f, .04f);
+            }
+            else
+            {
+                var rig = Object.Instantiate(avatarPrefab, root.transform, false);
+                rig.name = role + " private Humanoid";
+                foreach (Transform part in rig.GetComponentsInChildren<Transform>(true)) part.gameObject.layer = Layer;
+                importedAnimator = rig.GetComponent<Animator>();
+                if (importedAnimator == null || importedAnimator.avatar == null || !importedAnimator.avatar.isValid || !importedAnimator.isHuman)
+                    throw new InvalidOperationException("Imported showcase avatar is not a valid Humanoid");
+                importedAnimator.runtimeAnimatorController = null;
+                importedAnimator.applyRootMotion = false;
+                importedAnimator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+                for (int id = 0; id < (int)HumanBodyBones.LastBone; id++)
+                {
+                    var bone = importedAnimator.GetBoneTransform((HumanBodyBones)id);
+                    if (bone != null) bones.Add((HumanBodyBones)id, bone);
+                }
+                foreach (var renderer in rig.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                {
+                    renderer.updateWhenOffscreen = true;
+                    var mesh = renderer.sharedMesh;
+                    if (mesh == null) continue;
+                    var a = mesh.uv2; var b = mesh.uv3;
+                    if (a.Length != mesh.vertexCount || b.Length != mesh.vertexCount) continue;
+                    var copy = Object.Instantiate(mesh); importedMeshes.Add(copy);
+                    var tangents = new Vector4[copy.vertexCount];
+                    for (int i = 0; i < tangents.Length; i++) tangents[i] = new Vector4(a[i].x, a[i].y, b[i].x, b[i].y);
+                    copy.SetTangents(tangents); renderer.sharedMesh = copy;
+                }
+                humanoidSync = rig.AddComponent<TSMPNetworkHumanoidPoseSync>();
+                humanoidSync.networkId = 502; humanoidSync.animator = importedAnimator;
+                humanoidSync.includeFingerBones = true;
+                humanoidSync.receiveInterpolation = ReceiveInterpolationMode.Discrete;
+                humanoidSync.ResolveBones();
+                if (humanoidSync.validBoneCount < 17) throw new InvalidOperationException("Imported showcase humanoid bones unresolved");
+                if (sender)
+                {
+                    importedAnimator.Rebind(); importedAnimator.Update(0);
+                    danceGraph = PlayableGraph.Create("Sender-only Humanoid dance");
+                    danceGraph.SetTimeUpdateMode(DirectorUpdateMode.Manual);
+                    dancePlayable = AnimationClipPlayable.Create(danceGraph, danceClip);
+                    dancePlayable.SetApplyFootIK(false); dancePlayable.SetApplyPlayableIK(false);
+                    var animationOutput = AnimationPlayableOutput.Create(danceGraph, "Sender dance", importedAnimator);
+                    animationOutput.SetSourcePlayable(dancePlayable); danceGraph.Play(); danceGraph.Evaluate(0);
+                }
+                else importedAnimator.enabled = false;
+            }
 
             cube = Primitive(PrimitiveType.Cube, "Synced cube", blue);
             cube.localPosition = new Vector3(.9f, .45f, -.25f);
@@ -148,6 +207,19 @@ public sealed class ShowcaseActors : IDisposable
             camera.orthographic = true; camera.orthographicSize = 1.47f;
             camera.transform.position = new Vector3(3.45f, 2.3f, -6f);
             camera.transform.LookAt(new Vector3(.25f, .97f, 0));
+            if (imported)
+            {
+                camera.orthographicSize = 1.05f;
+                camera.transform.position = new Vector3(1.8f, 1.05f, 4f);
+                camera.transform.LookAt(new Vector3(.35f, .78f, 0));
+                key.transform.rotation = Quaternion.Euler(35, -135, 0);
+                keyLight.color = Color.white;
+                keyLight.intensity = .65f;
+                fillLight.color = new Color(.8f, .85f, 1f);
+                fillLight.intensity = .15f;
+                RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+                RenderSettings.ambientLight = new Color(.4f, .4f, .4f);
+            }
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = new Color(11f / 255f, 21f / 255f, 35f / 255f);
             camera.cullingMask = 1 << Layer; camera.nearClipPlane = .1f; camera.farClipPlane = 30f;
@@ -164,6 +236,12 @@ public sealed class ShowcaseActors : IDisposable
     public void Animate(float seconds)
     {
         if (!sender) throw new InvalidOperationException("Receiver stage must be animated only by decoded TSMP data");
+        if (imported)
+        {
+            dancePlayable.SetTime(seconds); danceGraph.Evaluate(0);
+        }
+        else
+        {
         foreach (Transform bone in bones.Values) bone.localRotation = Quaternion.identity;
         bones[HumanBodyBones.Hips].localPosition = new Vector3(.25f * Mathf.Sin(seconds), 1f + .04f * Mathf.Sin(2f * seconds), .12f * Mathf.Cos(seconds));
         bones[HumanBodyBones.Hips].localRotation = Quaternion.Euler(0, 8f * Mathf.Sin(seconds * .7f), 0);
@@ -175,6 +253,7 @@ public sealed class ShowcaseActors : IDisposable
         bones[HumanBodyBones.RightLowerArm].localRotation = Quaternion.Euler(0, 0, 18f + 6f * Mathf.Sin(seconds * 1.3f));
         bones[HumanBodyBones.LeftUpperLeg].localRotation = Quaternion.Euler(2f * Mathf.Sin(seconds), 0, 2f * Mathf.Sin(seconds * 1.6f));
         bones[HumanBodyBones.RightUpperLeg].localRotation = Quaternion.Euler(-2f * Mathf.Sin(seconds), 0, -2f * Mathf.Sin(seconds * 1.6f));
+        }
         cube.localPosition = new Vector3(.92f + .27f * Mathf.Sin(seconds * 1.2f), .48f + .17f * Mathf.Sin(seconds * 1.7f), -.3f + .25f * Mathf.Cos(seconds));
         cube.localRotation = Quaternion.Euler(seconds * 38f, seconds * 55f, seconds * 23f);
         cube.localScale = Vector3.one * (.28f + .035f * Mathf.Sin(seconds * 2.2f));
@@ -184,6 +263,7 @@ public sealed class ShowcaseActors : IDisposable
 
     void UpdateMeshes()
     {
+        if (imported) return;
         foreach (Link link in links)
         {
             Vector3 delta = link.b.position - link.a.position;
@@ -201,6 +281,31 @@ public sealed class ShowcaseActors : IDisposable
         headVisual.rotation = head.rotation;
         visor.position = head.position + head.rotation * new Vector3(0, .04f, -.13f);
         visor.rotation = head.rotation;
+    }
+
+    // Check decoded pose application without evaluating the dance on the receiver.
+    // Non-Humanoid clothing and hair remain the local PhysBone solver's responsibility.
+    public void VerifyImportedPose()
+    {
+        if (!imported) return;
+        var data = humanoidSync.poseBytes;
+        if (data == null || data.Length < 21 || data[0] != 4 || (data[1] & 4) == 0)
+            throw new InvalidOperationException("Imported showcase expected version4 animator-space pose");
+        int count = Binary.ReadUInt16LE(data, 2);
+        if (data.Length != 4 + count * 6 + 17 || count != humanoidSync.validBoneCount)
+            throw new InvalidOperationException("Imported showcase pose length/bone count differs");
+        int cursor = 4;
+        for (int i = 0; i < count; i++)
+        {
+            var id = (HumanBodyBones)data[cursor++];
+            var rotation = Binary.ReadPackedQuaternion12LE(data, cursor); cursor += 5;
+            if (!bones.TryGetValue(id, out var bone) || Quaternion.Angle(bone.rotation, importedAnimator.transform.rotation * rotation) > .6f)
+                throw new InvalidOperationException("Decoded imported humanoid rotation differs: " + id);
+        }
+        var position = Binary.ReadVector3Float32LE(data, cursor);
+        var expected = importedAnimator.transform.position + importedAnimator.transform.rotation * position;
+        if (Vector3.Distance(bones[HumanBodyBones.Hips].position, expected) > .006f)
+            throw new InvalidOperationException("Decoded imported humanoid root differs");
     }
 
     void Bone(HumanBodyBones id, Transform parent, Vector3 localPosition)
@@ -230,10 +335,12 @@ public sealed class ShowcaseActors : IDisposable
     }
     public void Dispose()
     {
+        if (danceGraph.IsValid()) danceGraph.Destroy();
         if (camera != null) camera.targetTexture = null;
         if (view != null) { view.Release(); Object.Destroy(view); }
         if (root != null) Object.Destroy(root);
         if (avatar != null) Object.Destroy(avatar);
+        foreach (var mesh in importedMeshes) if (mesh != null) Object.Destroy(mesh);
         foreach (Material material in materials) if (material != null) Object.Destroy(material);
         materials.Clear();
     }

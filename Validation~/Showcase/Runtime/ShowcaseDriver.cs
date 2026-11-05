@@ -17,6 +17,8 @@ public sealed class ShowcaseDriver : MonoBehaviour
     public GameObject codecPrefab;
     public Material expandMaterial, encodeMaterial;
     public Shader stageShader;
+    public GameObject avatarPrefab;
+    public AnimationClip danceClip;
     ShowcaseActors actors;
     ShowcasePipe pipe;
     ShowcaseState state;
@@ -33,6 +35,8 @@ public sealed class ShowcaseDriver : MonoBehaviour
     float duration;
     int sequence, lastAppliedSequence, encodedSeen, applied, captures, heldFrames;
     bool sender, finishing, holdingSeen, resumedSeen, everVerified;
+    bool pendingSourceFrame;
+    float pendingSourceSeconds;
     double maxHoldingSeconds;
     readonly List<string> trace = new List<string>{"wallSeconds,encodedFrame,appliedState,headerAtApply,sourceSeconds,crcAtApply,holding,cubeX,cubeY,cubeZ,message"};
     static double Now => Stopwatch.GetTimestamp()/(double)Stopwatch.Frequency;
@@ -48,7 +52,8 @@ public sealed class ShowcaseDriver : MonoBehaviour
             root=Arg("--capture-root",Application.persistentDataPath);Directory.CreateDirectory(root);startPath=Path.Combine(root,"start-ticks.txt");
             output=Arg("--output",Path.Combine(root,"showcase.mp4"));duration=float.Parse(Arg("--duration","16"),CultureInfo.InvariantCulture);
             Application.runInBackground=true;Application.targetFrameRate=30;QualitySettings.vSyncCount=0;
-            actors=new ShowcaseActors(stageShader,role);
+            actors=new ShowcaseActors(stageShader,role,avatarPrefab,danceClip);
+            File.WriteAllText(Path.Combine(root,role+"-actor.txt"),"Avatar="+(avatarPrefab==null?"Generated":avatarPrefab.name)+"\nHumanoidBones="+actors.humanoidSync.validBoneCount+"\nLocalDance="+(sender&&danceClip!=null?danceClip.name:"None")+"\n");
             var owner=new GameObject("TSMP "+role+" runtime");owner.SetActive(false);
             state=owner.AddComponent<ShowcaseState>();state.networkId=503;
             var codec=Instantiate(codecPrefab).GetComponent<TSMPCodec>();CloneMaterials(codec);
@@ -79,7 +84,8 @@ public sealed class ShowcaseDriver : MonoBehaviour
             owner.SetActive(true);
             pipe=new ShowcasePipe(sender,int.Parse(Arg("--port","59837"),CultureInfo.InvariantCulture));
             File.WriteAllText(Path.Combine(root,role+"-ready.txt"),Process.GetCurrentProcess().Id.ToString());
-            if(!sender)StartCoroutine(Record());
+            if(sender)StartCoroutine(PublishAfterPhysics());
+            else StartCoroutine(Record());
         }
         catch(Exception e){Fail(e);}
     }
@@ -116,19 +122,9 @@ public sealed class ShowcaseDriver : MonoBehaviour
             if(sender)
             {
                 if(Now-lastSend<1.0/30)return;lastSend=Now;
-                float motion=(float)Math.Max(0,t);actors.Animate(motion);actors.RenderView();
-                state.sequence=++sequence;state.seconds=motion;state.message=motion<4?"HELLO TSMP":motion<6.5f?"STILL MOVING":"SYNC RESTORED";
-                uint seed=(uint)sequence*2654435761u;for(int i=0;i<state.bytes.Length;i++){seed^=seed<<13;seed^=seed>>17;seed^=seed<<5;state.bytes[i]=(byte)seed;}
-                uint before=encoder.frameIndex;encoder.EncodeNow();
-                if(encoder.frameIndex!=before+1||!encoder.lastFrameUsedGpuLuma4||!string.IsNullOrEmpty(encoder.lastError))throw new InvalidOperationException("Actual GPU encode failed: "+encoder.lastError);
-                if(encoder.autoVariableCount!=6)throw new InvalidOperationException("Showcase needs all six fields in each frame; got "+encoder.autoVariableCount);
-                if(sequence<=3)File.AppendAllText(Path.Combine(root,"sender-fields.txt"),"Frame="+before+" Fields="+encoder.autoVariableCount+" Payload="+encoder.payloadBytes+" Hips="+actors.bones[HumanBodyBones.Hips].localPosition+" Time="+state.seconds+"\n");
-                Read(actors.view,previewRead,previewBytes);
-                bool pause=t>=4&&t<6.5;
-                if(!pause)Read(streamRender,streamRead,streamBytes);
-                if(sequence==2){File.WriteAllBytes(Path.Combine(root,"source-preview.png"),previewRead.EncodeToPNG());File.WriteAllBytes(Path.Combine(root,"source-stream.png"),streamRead.EncodeToPNG());}
-                pipe.Publish(previewBytes,pause?null:streamBytes,(int)before);
-                if(t>duration+5)Application.Quit();
+                pendingSourceSeconds=(float)Math.Max(0,t);
+                actors.Animate(pendingSourceSeconds);
+                pendingSourceFrame=true;
             }
             else
             {
@@ -142,13 +138,13 @@ public sealed class ShowcaseDriver : MonoBehaviour
                     if(state.sequence<lastAppliedSequence)throw new InvalidOperationException("State order regressed");
                     uint seed=(uint)state.sequence*2654435761u;for(int i=0;i<state.bytes.Length;i++){seed^=seed<<13;seed^=seed>>17;seed^=seed<<5;if(state.bytes[i]!=(byte)seed)throw new InvalidOperationException("Decoded bytes differ");}
                     float s=state.seconds;var expected=new Vector3(.25f*Mathf.Sin(s),1+.04f*Mathf.Sin(2*s),.12f*Mathf.Cos(s));
-                    if(Vector3.Distance(actors.bones[HumanBodyBones.Hips].localPosition,expected)>.006f)throw new InvalidOperationException("Decoded Humanoid root differs: actual="+actors.bones[HumanBodyBones.Hips].localPosition+" expected="+expected+" seq="+state.sequence+" seconds="+s+" header="+state.headerAtApply+" applied="+decoder.lastAppliedVariableCount+" poseBytes="+(actors.humanoidSync.poseBytes==null?-1:actors.humanoidSync.poseBytes.Length));
+                    if(avatarPrefab!=null)actors.VerifyImportedPose();
+                    else if(Vector3.Distance(actors.bones[HumanBodyBones.Hips].localPosition,expected)>.006f)throw new InvalidOperationException("Decoded Humanoid root differs: actual="+actors.bones[HumanBodyBones.Hips].localPosition+" expected="+expected+" seq="+state.sequence+" seconds="+s+" header="+state.headerAtApply+" applied="+decoder.lastAppliedVariableCount+" poseBytes="+(actors.humanoidSync.poseBytes==null?-1:actors.humanoidSync.poseBytes.Length));
                     var expectedCube=new Vector3(.92f+.27f*Mathf.Sin(s*1.2f),.48f+.17f*Mathf.Sin(s*1.7f),-.3f+.25f*Mathf.Cos(s));
                     if(Vector3.Distance(actors.cube.localPosition,expectedCube)>.006f||Quaternion.Angle(actors.cube.localRotation,Quaternion.Euler(s*38f,s*55f,s*23f))>.6f)throw new InvalidOperationException("Decoded cube pose differs");
                     lastAppliedSequence=state.sequence;lastAppliedTime=Now;applied++;everVerified=true;
                     if(holdingSeen)resumedSeen=true;
                 }
-                actors.RenderView();
                 bool holding=everVerified&&Now-lastAppliedTime>.3;
                 if(t>=0&&holding){holdingSeen=true;heldFrames++;maxHoldingSeconds=Math.Max(maxHoldingSeconds,Now-lastAppliedTime);}
                 if(t>=0)
@@ -157,6 +153,35 @@ public sealed class ShowcaseDriver : MonoBehaviour
             }
         }
         catch(Exception e){Fail(e);}
+    }
+    IEnumerator PublishAfterPhysics()
+    {
+        while(!finishing)
+        {
+            // The SDK completes PhysBone jobs around PreLateUpdate. Render and
+            // encode the same pose only after its post-simulation stage.
+            yield return new WaitForEndOfFrame();
+            if(finishing||!pendingSourceFrame)continue;
+            pendingSourceFrame=false;
+            try
+            {
+                float motion=pendingSourceSeconds;
+                state.sequence=++sequence;state.seconds=motion;state.message=motion<4?"HELLO TSMP":motion<6.5f?"STILL MOVING":"SYNC RESTORED";
+                uint seed=(uint)sequence*2654435761u;for(int i=0;i<state.bytes.Length;i++){seed^=seed<<13;seed^=seed>>17;seed^=seed<<5;state.bytes[i]=(byte)seed;}
+                actors.RenderView();
+                uint before=encoder.frameIndex;encoder.EncodeNow();
+                if(encoder.frameIndex!=before+1||!encoder.lastFrameUsedGpuLuma4||!string.IsNullOrEmpty(encoder.lastError))throw new InvalidOperationException("Actual GPU encode failed: "+encoder.lastError);
+                if(encoder.autoVariableCount!=6)throw new InvalidOperationException("Showcase needs all six fields in each frame; got "+encoder.autoVariableCount);
+                if(sequence<=3)File.AppendAllText(Path.Combine(root,"sender-fields.txt"),"Frame="+before+" Fields="+encoder.autoVariableCount+" Payload="+encoder.payloadBytes+" Hips="+actors.bones[HumanBodyBones.Hips].localPosition+" Time="+state.seconds+"\n");
+                Read(actors.view,previewRead,previewBytes);
+                bool pause=motion>=4&&motion<6.5f;
+                if(!pause)Read(streamRender,streamRead,streamBytes);
+                if(sequence==2){File.WriteAllBytes(Path.Combine(root,"source-preview.png"),previewRead.EncodeToPNG());File.WriteAllBytes(Path.Combine(root,"source-stream.png"),streamRead.EncodeToPNG());}
+                pipe.Publish(previewBytes,pause?null:streamBytes,(int)before);
+                if(motion>duration+5)Application.Quit();
+            }
+            catch(Exception e){Fail(e);}
+        }
     }
     static void Read(RenderTexture source,Texture2D texture,byte[] bytes)
     {
@@ -168,17 +193,19 @@ public sealed class ShowcaseDriver : MonoBehaviour
         while(!everVerified&&Now<deadline)yield return null;
         if(!everVerified){Fail(new InvalidOperationException("No verified frame before recording"));yield break;}
         // Prepare render resources before the demo clock and capture.
-        presentation.RenderFrame();
+        yield return new WaitForEndOfFrame();
+        actors.RenderView();presentation.RenderFrame();
         yield return new WaitForSecondsRealtime(1.5f);
         beginTicks=Stopwatch.GetTimestamp()+Stopwatch.Frequency;File.WriteAllText(startPath,beginTicks.ToString(CultureInfo.InvariantCulture));
         while(Stopwatch.GetTimestamp()<beginTicks)yield return null;
         holdingSeen=false;resumedSeen=false;heldFrames=0;maxHoldingSeconds=0;
-        try{presentation.RenderFrame();var target=presentation.RecordingTarget;recorder=new ShowcaseRecorder(Arg("--ffmpeg","C:/Windows/ffmpeg.exe"),output,target.width,target.height,30);recordStarted=Now;}
+        yield return new WaitForEndOfFrame();
+        try{actors.RenderView();presentation.RenderFrame();var target=presentation.RecordingTarget;recorder=new ShowcaseRecorder(Arg("--ffmpeg","C:/Windows/ffmpeg.exe"),output,target.width,target.height,30);recordStarted=Now;}
         catch(Exception e){Fail(e);yield break;}
         while(Now-recordStarted<duration&&!finishing)
         {
             yield return new WaitForEndOfFrame();
-            try{presentation.RenderFrame();recorder.Capture(presentation.RecordingTarget);captures++;}catch(Exception e){Fail(e);}
+            try{actors.RenderView();presentation.RenderFrame();recorder.Capture(presentation.RecordingTarget);captures++;}catch(Exception e){Fail(e);}
         }
         if(finishing)yield break;
         finishing=true;
