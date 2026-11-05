@@ -9,7 +9,8 @@
 </p>
 <p align="center">
   <a href=".github/assets/tsmp-showcase.mp4"><strong>▶ 16초 데모 영상 보기</strong></a><br>
-  <sub>왼쪽부터 송신 화면 · 프레임 스트림 · 수신 화면 — Native Unity 로컬 데모</sub>
+  <sub>왼쪽부터 송신 화면 · 프레임 스트림 · 수신 화면 — Native Unity 로컬 데모, 치마 PhysBone 적용</sub><br>
+  <sub>아바타: <a href="https://booth.pm/ja/items/5405703">Hayakawa Aoi © 2024 WARPSTORE</a> · 모션: <a href="https://kevdev.itch.io/human-dance-animations-free">Kevin Iglesias</a></sub>
 </p>
 
 <p align="center">
