@@ -9,7 +9,7 @@
 </p>
 <p align="center">
   <a href=".github/assets/tsmp-showcase.mp4"><strong>▶ 16초 데모 영상 보기</strong></a><br>
-  <sub>독립된 Native Unity 클라이언트 2개 · 로컬 무압축 프레임 연결 · 일시 정지와 복구</sub>
+  <sub>왼쪽부터 송신 화면 · 프레임 스트림 · 수신 화면 — Native Unity 로컬 데모</sub>
 </p>
 
 <p align="center">

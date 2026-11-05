@@ -9,7 +9,7 @@
 </p>
 <p align="center">
   <a href=".github/assets/tsmp-showcase.mp4"><strong>▶ 16 秒のデモを見る</strong></a><br>
-  <sub>独立した Native Unity クライアント 2 つ · ローカル非圧縮フレーム接続 · 一時停止と復帰</sub>
+  <sub>左から送信画面 · フレームストリーム · 受信画面 — Native Unity のローカルデモ</sub>
 </p>
 
 <p align="center">

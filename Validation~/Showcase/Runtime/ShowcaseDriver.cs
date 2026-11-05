@@ -31,7 +31,7 @@ public sealed class ShowcaseDriver : MonoBehaviour
     long beginTicks;
     double lastSend, lastAppliedTime, recordStarted;
     float duration;
-    int sequence, lastAppliedSequence, encodedSeen, sourceEncodedSeen, applied, captures, heldFrames;
+    int sequence, lastAppliedSequence, encodedSeen, applied, captures, heldFrames;
     bool sender, finishing, holdingSeen, resumedSeen, everVerified;
     double maxHoldingSeconds;
     readonly List<string> trace = new List<string>{"wallSeconds,encodedFrame,appliedState,headerAtApply,sourceSeconds,crcAtApply,holding,cubeX,cubeY,cubeZ,message"};
@@ -73,7 +73,6 @@ public sealed class ShowcaseDriver : MonoBehaviour
                 previewInput.filterMode=streamInput.filterMode=FilterMode.Point;
                 presentation=gameObject.AddComponent<ShowcasePresentation>();presentation.sourceView=previewInput;
                 presentation.streamView=streamInput;presentation.receiverView=actors.view;
-                presentation.receiverPid=Process.GetCurrentProcess().Id;
                 var screen=new GameObject("Showcase framebuffer").AddComponent<Camera>();screen.cullingMask=0;screen.clearFlags=CameraClearFlags.SolidColor;screen.backgroundColor=new Color(.025f,.045f,.075f);
                 Screen.SetResolution(1066,600,false);
             }
@@ -134,7 +133,7 @@ public sealed class ShowcaseDriver : MonoBehaviour
             else
             {
                 pipe.TryConsume((preview,stream,frame)=>{
-                    previewInput.LoadRawTextureData(preview);previewInput.Apply(false,false);sourceEncodedSeen=frame;
+                    previewInput.LoadRawTextureData(preview);previewInput.Apply(false,false);
                     if(stream!=null){streamInput.LoadRawTextureData(stream);streamInput.Apply(false,false);Graphics.Blit(streamInput,streamRender);encodedSeen=frame;}
                 });
                 if(state.sequence!=lastAppliedSequence&&state.receivedCallbacks>0)
@@ -152,13 +151,6 @@ public sealed class ShowcaseDriver : MonoBehaviour
                 actors.RenderView();
                 bool holding=everVerified&&Now-lastAppliedTime>.3;
                 if(t>=0&&holding){holdingSeen=true;heldFrames++;maxHoldingSeconds=Math.Max(maxHoldingSeconds,Now-lastAppliedTime);}
-                presentation.senderPid=pipe.RemoteProcessId;presentation.holding=holding;presentation.crcVerified=everVerified&&state.crcAtApply;
-                presentation.senderDetails="ENCODED #"+sourceEncodedSeen+"  ·  Humanoid + Transform + values";
-                presentation.streamDetails="640 × 360  ·  Luma4  ·  sample 4\nFRAME #"+encodedSeen+"  ·  local raw pixels";
-                presentation.receiverDetails="APPLIED STATE #"+state.sequence+"  ·  "+(everVerified?"CRC32 VERIFIED":"WAITING FOR VALID FRAME");
-                presentation.senderState="LIVE SOURCE MOTION";presentation.receiverState=state.message;
-                presentation.headline=holding?"The stream pauses. The receiver holds.":holdingSeen?"Streaming resumes. State catches up.":"Motion and state, carried by pixels.";
-                presentation.status=holding?"HOLDING LAST VALID STATE":"LIVE SYNC";
                 if(t>=0)
                 {var p=actors.cube.localPosition;trace.Add(string.Join(",",t.ToString("F4",CultureInfo.InvariantCulture),encodedSeen,state.sequence,state.headerAtApply,state.seconds.ToString("F4",CultureInfo.InvariantCulture),state.crcAtApply,holding,p.x.ToString("F4",CultureInfo.InvariantCulture),p.y.ToString("F4",CultureInfo.InvariantCulture),p.z.ToString("F4",CultureInfo.InvariantCulture),state.message));}
                 if(!string.IsNullOrEmpty(pipe.Error))throw new InvalidOperationException(pipe.Error);
@@ -175,13 +167,13 @@ public sealed class ShowcaseDriver : MonoBehaviour
         double deadline=Now+45;
         while(!everVerified&&Now<deadline)yield return null;
         if(!everVerified){Fail(new InvalidOperationException("No verified frame before recording"));yield break;}
-        // Prepare font/shader/UI resources before the demo clock and capture.
+        // Prepare render resources before the demo clock and capture.
         presentation.RenderFrame();
         yield return new WaitForSecondsRealtime(1.5f);
         beginTicks=Stopwatch.GetTimestamp()+Stopwatch.Frequency;File.WriteAllText(startPath,beginTicks.ToString(CultureInfo.InvariantCulture));
         while(Stopwatch.GetTimestamp()<beginTicks)yield return null;
         holdingSeen=false;resumedSeen=false;heldFrames=0;maxHoldingSeconds=0;
-        try{presentation.RenderFrame();recorder=new ShowcaseRecorder(Arg("--ffmpeg","C:/Windows/ffmpeg.exe"),output,1600,900,30);recordStarted=Now;}
+        try{presentation.RenderFrame();var target=presentation.RecordingTarget;recorder=new ShowcaseRecorder(Arg("--ffmpeg","C:/Windows/ffmpeg.exe"),output,target.width,target.height,30);recordStarted=Now;}
         catch(Exception e){Fail(e);yield break;}
         while(Now-recordStarted<duration&&!finishing)
         {
