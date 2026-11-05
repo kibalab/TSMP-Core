@@ -10,9 +10,9 @@ The three panels show the sender camera, the actual received encoded texture
 and the receiver camera. The sender camera is a presentation sidecar; its pixels
 are never used to update receiver objects. Pose, Transform, sequence, time,
 message and seeded data bytes travel only inside TSMP frames. Receiver motion
-has no local animation driver. The picture contains only the three live views,
-without titles, cards, badges, counters or other overlays. Process identities,
-frame counters and CRC diagnostics stay in the recording logs. The decoded time
+has no local animation driver. A plain monochrome label row reads
+`Sender --> Frame stream --> Receiver` above the three live views. Process
+identities, frame counters and CRC diagnostics stay in the recording logs. The decoded time
 is used only for checking expected root/cube positions and rotation, not for
 animating the receiver.
 
@@ -39,7 +39,8 @@ logs and trace. Existing validation projects and recordings are left in place.
 ./Validation~/Showcase/Run-Recording.ps1 -TemplateProject '<Native validation project>' -WorkDirectory '<new empty destination>' -UnityEditor '<Unity.exe>' -Ffmpeg '<ffmpeg.exe>'
 ```
 
-The renderer places the three views side by side in a dedicated 1440x480 texture.
+The renderer places the three views side by side in a dedicated 1440x528 texture,
+with a 48-pixel label row at the top.
 The sender and receiver cameras each occupy 480x480; the complete 640x360 encoded
 frame fits in the middle 480x270 area, preserving its aspect ratio with black
 space above and below. Capture does not include other desktop windows or depend
@@ -61,9 +62,9 @@ preparing the media on the working branch.
 
 ## Recorded media, 2026-11-05
 
-The retained take is 16.033333 seconds, 1440x480 H.264/yuv420p at30fps, with
-481 captured frames and a 4,369,747-byte MP4. The 960x320 GIF preview runs for
-8.5 seconds at10fps and is 3,121,624 bytes. A static poster is also included in
+The retained take is 16.033333 seconds, 1440x528 H.264/yuv420p at30fps, with
+481 captured frames and a 4,286,550-byte MP4. The 960x352 GIF preview runs for
+8.5 seconds at10fps and is 3,130,647 bytes. A static poster is also included in
 `.github/assets`. English, Korean and Japanese README headers link the preview
 to the MP4.
 
@@ -76,7 +77,7 @@ recompute per-packet CRC from archived raw payloads; full byte/pose checks run i
 the Native fixture. The recording makes no throughput or delivery-rate claim.
 
 The recording, build logs, trace, keyframes and independent audit are kept
-under `F:/Unity/TSMP/Validation-Results/readme-showcase-simple-20261105`.
-The previous presentation and its capture diagnostics remain under
-`F:/Unity/TSMP/Validation-Results/readme-showcase-20261104`; they are superseded
-by this plain three-view recording. Product code and defaults are unchanged.
+under `F:/Unity/TSMP/Validation-Results/readme-showcase-labels-20261105`.
+Previous recordings remain under `readme-showcase-20261104` and
+`readme-showcase-simple-20261105` in the same evidence directory. Product code
+and defaults are unchanged.

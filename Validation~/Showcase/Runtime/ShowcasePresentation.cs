@@ -2,15 +2,16 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-// Three live views only: sender, encoded frame, receiver. Preserve each aspect ratio.
+// Three live views with a plain label row. Preserve each view's aspect ratio.
 public sealed class ShowcasePresentation : MonoBehaviour
 {
     public Texture sourceView, streamView, receiverView;
-    const int Width = 1440, Height = 480, UiLayer = 10;
+    const int Width = 1440, Height = 528, UiLayer = 10;
     Camera uiCamera;
     Canvas canvas;
     RenderTexture recordingTarget;
     RawImage sourceImage, streamImage, receiverImage;
+    Font font;
 
     public RenderTexture RecordingTarget { get { Prepare(); return recordingTarget; } }
 
@@ -50,9 +51,15 @@ public sealed class ShowcasePresentation : MonoBehaviour
         canvasObject.layer = UiLayer; canvasObject.transform.SetParent(transform, false);
         canvas = canvasObject.GetComponent<Canvas>(); canvas.renderMode = RenderMode.ScreenSpaceCamera;
         canvas.worldCamera = uiCamera; canvas.planeDistance = 1; canvas.sortingOrder = 100;
-        sourceImage = View("Sender", new Rect(0, 0, 480, 480));
-        streamImage = View("Encoded frame", new Rect(480, 105, 480, 270));
-        receiverImage = View("Receiver", new Rect(960, 0, 480, 480));
+        font = Font.CreateDynamicFontFromOSFont(new[] { "Consolas", "Arial" }, 24);
+        Label("Sender", new Rect(0, 0, 480, 48));
+        Label("Frame stream", new Rect(480, 0, 480, 48));
+        Label("Receiver", new Rect(960, 0, 480, 48));
+        Label("-->", new Rect(452, 0, 56, 48));
+        Label("-->", new Rect(932, 0, 56, 48));
+        sourceImage = View("Sender", new Rect(0, 48, 480, 480));
+        streamImage = View("Encoded frame", new Rect(480, 153, 480, 270));
+        receiverImage = View("Receiver", new Rect(960, 48, 480, 480));
     }
 
     RawImage View(string name, Rect rectangle)
@@ -64,11 +71,23 @@ public sealed class ShowcasePresentation : MonoBehaviour
         var image = item.GetComponent<RawImage>(); image.raycastTarget = false; return image;
     }
 
+    void Label(string value, Rect rectangle)
+    {
+        var item = new GameObject(value, typeof(RectTransform), typeof(Text)); item.layer = UiLayer;
+        var rt = item.GetComponent<RectTransform>(); rt.SetParent(canvas.transform, false);
+        rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0, 1);
+        rt.anchoredPosition = new Vector2(rectangle.x, -rectangle.y); rt.sizeDelta = rectangle.size;
+        var text = item.GetComponent<Text>(); text.font = font; text.fontSize = 24;
+        text.text = value; text.color = new Color(.85f, .85f, .85f);
+        text.alignment = TextAnchor.MiddleCenter; text.supportRichText = false; text.raycastTarget = false;
+    }
+
     void OnDestroy()
     {
         if (uiCamera != null) { uiCamera.targetTexture = null; Destroy(uiCamera.gameObject); }
         if (canvas != null) Destroy(canvas.gameObject);
         if (recordingTarget != null) { recordingTarget.Release(); Destroy(recordingTarget); }
+        if (font != null) Destroy(font);
     }
 }
 #endif
