@@ -9,7 +9,7 @@
 </p>
 <p align="center">
   <a href=".github/assets/tsmp-showcase.mp4"><strong>▶ 16 秒のデモを見る</strong></a><br>
-  <sub>左から送信画面 · フレームストリーム · 受信画面 — スカート PhysBone を使った Native Unity ローカルデモ</sub><br>
+  <sub>左から送信画面 · フレームストリーム · 受信画面 — 落下するキューブとスカート PhysBone の Native Unity ローカルデモ</sub><br>
   <sub>アバター: <a href="https://booth.pm/ja/items/5405703">Hayakawa Aoi © 2024 WARPSTORE</a> · モーション: <a href="https://kevdev.itch.io/human-dance-animations-free">Kevin Iglesias</a></sub>
 </p>
 

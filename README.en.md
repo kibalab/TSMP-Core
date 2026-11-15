@@ -9,7 +9,7 @@
 </p>
 <p align="center">
   <a href=".github/assets/tsmp-showcase.mp4"><strong>▶ Watch the 16-second demo</strong></a><br>
-  <sub>Left to right: sender · frame stream · receiver — local Native Unity demo with skirt PhysBones</sub><br>
+  <sub>Left to right: sender · frame stream · receiver — local Native Unity demo with falling cubes and skirt PhysBones</sub><br>
   <sub>Avatar: <a href="https://booth.pm/ja/items/5405703">Hayakawa Aoi © 2024 WARPSTORE</a> · Motion: <a href="https://kevdev.itch.io/human-dance-animations-free">Kevin Iglesias</a></sub>
 </p>
 
