@@ -38,6 +38,8 @@ public sealed class ShowcaseDriver : MonoBehaviour
     bool pendingSourceFrame;
     float pendingSourceSeconds;
     StreamWriter cubePoseWriter;
+    StreamWriter pauseVisibilityWriter;
+    uint resumeRequiredFrame;
     bool physicsEvidenceWritten;
     bool receiverPhysicsEvidenceWritten;
     double maxHoldingSeconds;
@@ -86,6 +88,8 @@ public sealed class ShowcaseDriver : MonoBehaviour
                 previewInput.filterMode=streamInput.filterMode=FilterMode.Point;
                 presentation=gameObject.AddComponent<ShowcasePresentation>();presentation.sourceView=previewInput;
                 presentation.streamView=streamInput;presentation.receiverView=actors.view;
+                pauseVisibilityWriter=new StreamWriter(Path.Combine(root,"pause-visibility.csv"),false);
+                pauseVisibilityWriter.WriteLine("videoSeconds,wallSeconds,captureIndex,streamPaused,receiverPaused,appliedState,headerAtApply,encodedSeen,resumeRequiredFrame");
                 var screen=new GameObject("Showcase framebuffer").AddComponent<Camera>();screen.cullingMask=0;screen.clearFlags=CameraClearFlags.SolidColor;screen.backgroundColor=new Color(.025f,.045f,.075f);
                 Screen.SetResolution(1066,600,false);
             }
@@ -139,7 +143,17 @@ public sealed class ShowcaseDriver : MonoBehaviour
             {
                 pipe.TryConsume((preview,stream,frame)=>{
                     previewInput.LoadRawTextureData(preview);previewInput.Apply(false,false);
-                    if(stream!=null){streamInput.LoadRawTextureData(stream);streamInput.Apply(false,false);Graphics.Blit(streamInput,streamRender);encodedSeen=frame;}
+                    if(stream!=null)
+                    {
+                        streamInput.LoadRawTextureData(stream);streamInput.Apply(false,false);Graphics.Blit(streamInput,streamRender);encodedSeen=frame;
+                        presentation.streamPaused=false;
+                        if(presentation.receiverPaused&&resumeRequiredFrame==0)resumeRequiredFrame=(uint)frame;
+                    }
+                    else
+                    {
+                        // Preview-only packets mark the recording's deliberate link pause.
+                        presentation.streamPaused=true;presentation.receiverPaused=true;resumeRequiredFrame=0;
+                    }
                 });
                 if(state.sequence!=lastAppliedSequence&&state.receivedCallbacks>0)
                 {
@@ -151,6 +165,9 @@ public sealed class ShowcaseDriver : MonoBehaviour
                     else if(Vector3.Distance(actors.bones[HumanBodyBones.Hips].localPosition,expected)>.006f)throw new InvalidOperationException("Decoded Humanoid root differs: actual="+actors.bones[HumanBodyBones.Hips].localPosition+" expected="+expected+" seq="+state.sequence+" seconds="+s+" header="+state.headerAtApply+" applied="+decoder.lastAppliedVariableCount+" poseBytes="+(actors.humanoidSync.poseBytes==null?-1:actors.humanoidSync.poseBytes.Length));
                     VerifyDecodedCubes();
                     WriteCubePoses(state.sequence,state.headerAtApply,state.seconds);
+                    // In-flight pre-pause GPU readbacks must not clear the status.
+                    if(presentation.receiverPaused&&resumeRequiredFrame!=0&&state.headerAtApply>=resumeRequiredFrame)
+                        presentation.receiverPaused=false;
                     lastAppliedSequence=state.sequence;lastAppliedTime=Now;applied++;everVerified=true;
                     if(holdingSeen)resumedSeen=true;
                 }
@@ -276,7 +293,16 @@ public sealed class ShowcaseDriver : MonoBehaviour
         while(Now-recordStarted<duration&&!finishing)
         {
             yield return new WaitForEndOfFrame();
-            try{actors.RenderView();presentation.RenderFrame();recorder.Capture(presentation.RecordingTarget);captures++;}catch(Exception e){Fail(e);}
+            try
+            {
+                actors.RenderView();presentation.RenderFrame();recorder.Capture(presentation.RecordingTarget);captures++;
+                // This index counts capture calls, not FFmpeg's duplicated CFR frames.
+                double wall=(Stopwatch.GetTimestamp()-beginTicks)/(double)Stopwatch.Frequency;
+                pauseVisibilityWriter.WriteLine(string.Join(",",(Now-recordStarted).ToString("F4",CultureInfo.InvariantCulture),
+                    wall.ToString("F4",CultureInfo.InvariantCulture),captures,presentation.streamPaused,presentation.receiverPaused,
+                    state.sequence,state.headerAtApply,encodedSeen,resumeRequiredFrame));
+            }
+            catch(Exception e){Fail(e);}
         }
         if(finishing)yield break;
         finishing=true;
@@ -287,6 +313,7 @@ public sealed class ShowcaseDriver : MonoBehaviour
             if(!holdingSeen||!resumedSeen||maxHoldingSeconds<1)throw new InvalidOperationException("Pause/resume not observed");
             File.WriteAllLines(Path.Combine(root,"receiver-trace.csv"),trace);
             cubePoseWriter.Flush();
+            pauseVisibilityWriter.Flush();
             File.WriteAllText(Path.Combine(root,"recording-result.txt"),"PASS\nScope=Two Native Unity processes, localhost uncompressed texture link; presentation preview is not a state transport.\nSenderPID="+pipe.RemoteProcessId+"\nReceiverPID="+Process.GetCurrentProcess().Id+"\nAppliedStates="+applied+"\nCubeCount="+actors.cubes.Length+"\nExpectedFields="+(actors.cubes.Length+5)+"\nCapturedFrames="+captures+"\nWallSeconds="+(Now-recordStarted).ToString("F4",CultureInfo.InvariantCulture)+"\nHoldingObserved="+holdingSeen+"\nResumedObserved="+resumedSeen+"\nMaxHoldSeconds="+maxHoldingSeconds.ToString("F4",CultureInfo.InvariantCulture)+"\nVideo="+output+"\n");
             Application.Quit(0);
         }
@@ -298,6 +325,6 @@ public sealed class ShowcaseDriver : MonoBehaviour
         if(!string.IsNullOrEmpty(root)){File.WriteAllLines(Path.Combine(root,role+"-failure-trace.csv"),trace);File.WriteAllText(Path.Combine(root,role+"-result.txt"),"FAIL\n"+e);}
         try{recorder?.Dispose();}catch{}Application.Quit(1);
     }
-    void OnDestroy(){cubePoseWriter?.Dispose();pipe?.Dispose();actors?.Dispose();}
+    void OnDestroy(){pauseVisibilityWriter?.Dispose();cubePoseWriter?.Dispose();pipe?.Dispose();actors?.Dispose();}
 }
 #endif

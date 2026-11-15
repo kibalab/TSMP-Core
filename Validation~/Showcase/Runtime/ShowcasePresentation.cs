@@ -6,12 +6,14 @@ using UnityEngine.UI;
 public sealed class ShowcasePresentation : MonoBehaviour
 {
     public Texture sourceView, streamView, receiverView;
+    public bool streamPaused, receiverPaused;
     const int Width = 1440, Height = 528, UiLayer = 10;
     Camera uiCamera;
     Canvas canvas;
     RenderTexture recordingTarget;
     RawImage sourceImage, streamImage, receiverImage;
     Font font;
+    Text streamLabel, receiverLabel, pauseNote;
 
     public RenderTexture RecordingTarget { get { Prepare(); return recordingTarget; } }
 
@@ -24,6 +26,9 @@ public sealed class ShowcasePresentation : MonoBehaviour
         sourceImage.enabled = sourceView != null;
         streamImage.enabled = streamView != null;
         receiverImage.enabled = receiverView != null;
+        streamLabel.text = streamPaused ? "Frame stream [PAUSED]" : "Frame stream";
+        receiverLabel.text = receiverPaused ? "Receiver [PAUSED]" : "Receiver";
+        pauseNote.enabled = streamPaused || receiverPaused;
         Canvas.ForceUpdateCanvases();
         uiCamera.Render();
     }
@@ -53,13 +58,16 @@ public sealed class ShowcasePresentation : MonoBehaviour
         canvas.worldCamera = uiCamera; canvas.planeDistance = 1; canvas.sortingOrder = 100;
         font = Font.CreateDynamicFontFromOSFont(new[] { "Consolas", "Arial" }, 24);
         Label("Sender", new Rect(0, 0, 480, 48));
-        Label("Frame stream", new Rect(480, 0, 480, 48));
-        Label("Receiver", new Rect(960, 0, 480, 48));
+        streamLabel = Label("Frame stream", new Rect(480, 0, 480, 48));
+        receiverLabel = Label("Receiver", new Rect(960, 0, 480, 48));
         Label("-->", new Rect(452, 0, 56, 48));
         Label("-->", new Rect(932, 0, 56, 48));
         sourceImage = View("Sender", new Rect(0, 48, 480, 480));
         streamImage = View("Encoded frame", new Rect(480, 153, 480, 270));
         receiverImage = View("Receiver", new Rect(960, 48, 480, 480));
+        pauseNote = Label("PAUSED (recovery demo)", new Rect(480, 103, 480, 40));
+        pauseNote.fontSize = 22;
+        pauseNote.enabled = false;
     }
 
     RawImage View(string name, Rect rectangle)
@@ -71,7 +79,7 @@ public sealed class ShowcasePresentation : MonoBehaviour
         var image = item.GetComponent<RawImage>(); image.raycastTarget = false; return image;
     }
 
-    void Label(string value, Rect rectangle)
+    Text Label(string value, Rect rectangle)
     {
         var item = new GameObject(value, typeof(RectTransform), typeof(Text)); item.layer = UiLayer;
         var rt = item.GetComponent<RectTransform>(); rt.SetParent(canvas.transform, false);
@@ -80,6 +88,7 @@ public sealed class ShowcasePresentation : MonoBehaviour
         var text = item.GetComponent<Text>(); text.font = font; text.fontSize = 24;
         text.text = value; text.color = new Color(.18f, .21f, .25f);
         text.alignment = TextAnchor.MiddleCenter; text.supportRichText = false; text.raycastTarget = false;
+        return text;
     }
 
     void OnDestroy()
