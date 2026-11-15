@@ -384,6 +384,7 @@ public static partial class SustainedCostValidation
         scene.decoder = new Program("Packages/com.kibalab.tsmp.core/Runtime/Decoder/TSMPDecoder.asset", role: "Decoder");
         scene.decoder.Set<Texture>("sourceTexture", source); scene.decoder.Set("payloadByteTexture", output); scene.decoder.Set("readbackPackMaterial", Keep(new Material(Resources.Load<Material>("TSMPReadbackPack"))));
         scene.decoder.Set("codecHandlers", new[] { codec.Backing }); BindScene(scene.decoder, scene, false);
+        scene.decoder.Set("sampleSize", 4);
         scene.decoder.Set("applyEveryFrame", true); scene.decoder.Set("skipDuplicateFrames", true); scene.decoder.Set("requirePayloadCrc32", true); scene.decoder.Set("debugLog", false); scene.decoder.Set("flipY", true);
         scene.decoder.Set("recoverHeaderCrc", false); scene.decoder.Set("maxCrcRecoveryAttempts", item.budget); scene.decoder.Set("usePredictedReadback", true); scene.decoder.Set("useCombinedByteOutput", true); scene.decoder.Set("overlapReadbacks", true);
         scene.decoder.Set("decodeSafetyMode", item.safetyMode); scene.decoder.Call("_onEnable");

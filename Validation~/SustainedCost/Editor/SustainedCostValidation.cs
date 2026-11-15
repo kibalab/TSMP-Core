@@ -123,7 +123,13 @@ public static partial class SustainedCostValidation
     {
         bool failed = false; Application.LogCallback listener = (message, stack, type) => { if (type == LogType.Error || type == LogType.Exception || type == LogType.Assert) failed = true; };
         Application.logMessageReceived += listener;
-        try { UdonSharpCompilerV1.CompileSync(new UdonSharpCompileOptions { IsEditorBuild = false }); }
+        try
+        {
+            // Initialize this AssetDatabase-backed SDK cache on the main thread.
+            var compilerInterface = typeof(UdonSharpCompilerV1).Assembly.GetType("UdonSharp.Compiler.Udon.CompilerUdonInterface", true);
+            compilerInterface.GetProperty("UdonSharpAssemblyDefinitions", BindingFlags.Public | BindingFlags.Static).GetValue(null);
+            UdonSharpCompilerV1.CompileSync(new UdonSharpCompileOptions { IsEditorBuild = false });
+        }
         finally { Application.logMessageReceived -= listener; }
         Check(!failed, "Client Udon compilation failed.");
     }

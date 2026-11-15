@@ -1,5 +1,9 @@
 # Aoi and cube measurements, 2026-11-15
 
+See the [follow-up](FOLLOWUP-RESULTS.md) for CPU-placement diagnostics and the
+latest-codec prefix experiment. The historical runs below used an older Luma4
+UnitySupport source and are not the latest-codec baseline.
+
 No new Runtime optimization was retained from this investigation. A two-condition
 Transform candidate passed the scene's content checks but failed the frozen gates.
 Same-source process variance is larger than the candidate's proposed benefit.
