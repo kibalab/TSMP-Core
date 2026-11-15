@@ -10,7 +10,7 @@ public sealed class ShowcaseState : TSMPNetworkBehaviour
     [TransSync("showcase.sequence")] public int sequence;
     [TransSync("showcase.seconds")] public float seconds;
     [TransSync("showcase.message")] public string message = "HELLO TSMP";
-    [TransSync("showcase.bytes")] public byte[] bytes = new byte[1024];
+    [TransSync("showcase.bytes")] public byte[] bytes = new byte[256];
     [NonSerialized] public TSMPDecoder observer;
     [NonSerialized] public int receivedCallbacks;
     [NonSerialized] public bool crcAtApply;

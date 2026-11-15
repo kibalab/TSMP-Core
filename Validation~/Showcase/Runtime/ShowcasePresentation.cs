@@ -43,7 +43,7 @@ public sealed class ShowcasePresentation : MonoBehaviour
         uiCamera = cameraObject.GetComponent<Camera>();
         uiCamera.enabled = false; uiCamera.orthographic = true; uiCamera.orthographicSize = Height * .5f;
         uiCamera.aspect = Width / (float)Height; uiCamera.nearClipPlane = .01f; uiCamera.farClipPlane = 100;
-        uiCamera.clearFlags = CameraClearFlags.SolidColor; uiCamera.backgroundColor = Color.black;
+        uiCamera.clearFlags = CameraClearFlags.SolidColor; uiCamera.backgroundColor = new Color(.94f, .95f, .96f);
         uiCamera.cullingMask = 1 << UiLayer; uiCamera.allowHDR = false; uiCamera.allowMSAA = false;
         uiCamera.targetTexture = recordingTarget;
 
@@ -78,7 +78,7 @@ public sealed class ShowcasePresentation : MonoBehaviour
         rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0, 1);
         rt.anchoredPosition = new Vector2(rectangle.x, -rectangle.y); rt.sizeDelta = rectangle.size;
         var text = item.GetComponent<Text>(); text.font = font; text.fontSize = 24;
-        text.text = value; text.color = new Color(.85f, .85f, .85f);
+        text.text = value; text.color = new Color(.18f, .21f, .25f);
         text.alignment = TextAnchor.MiddleCenter; text.supportRichText = false; text.raycastTarget = false;
     }
 

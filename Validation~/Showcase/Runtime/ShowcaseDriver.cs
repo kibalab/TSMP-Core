@@ -37,6 +37,9 @@ public sealed class ShowcaseDriver : MonoBehaviour
     bool sender, finishing, holdingSeen, resumedSeen, everVerified;
     bool pendingSourceFrame;
     float pendingSourceSeconds;
+    StreamWriter cubePoseWriter;
+    bool physicsEvidenceWritten;
+    bool receiverPhysicsEvidenceWritten;
     double maxHoldingSeconds;
     readonly List<string> trace = new List<string>{"wallSeconds,encodedFrame,appliedState,headerAtApply,sourceSeconds,crcAtApply,holding,cubeX,cubeY,cubeZ,message"};
     static double Now => Stopwatch.GetTimestamp()/(double)Stopwatch.Frequency;
@@ -53,7 +56,9 @@ public sealed class ShowcaseDriver : MonoBehaviour
             output=Arg("--output",Path.Combine(root,"showcase.mp4"));duration=float.Parse(Arg("--duration","16"),CultureInfo.InvariantCulture);
             Application.runInBackground=true;Application.targetFrameRate=30;QualitySettings.vSyncCount=0;
             actors=new ShowcaseActors(stageShader,role,avatarPrefab,danceClip);
-            File.WriteAllText(Path.Combine(root,role+"-actor.txt"),"Avatar="+(avatarPrefab==null?"Generated":avatarPrefab.name)+"\nHumanoidBones="+actors.humanoidSync.validBoneCount+"\nLocalDance="+(sender&&danceClip!=null?danceClip.name:"None")+"\n");
+            File.WriteAllText(Path.Combine(root,role+"-actor.txt"),"Avatar="+(avatarPrefab==null?"Generated":avatarPrefab.name)+"\nHumanoidBones="+actors.humanoidSync.validBoneCount+"\nLocalDance="+(sender&&danceClip!=null?danceClip.name:"None")+"\nCubeCount="+actors.cubes.Length+"\nLocalCubePhysics="+sender+"\n");
+            cubePoseWriter=new StreamWriter(Path.Combine(root,role+"-cube-poses.csv"),false);
+            cubePoseWriter.WriteLine("sequence,encodedFrame,sourceSeconds,cube,x,y,z,qx,qy,qz,qw,sx,sy,sz");
             var owner=new GameObject("TSMP "+role+" runtime");owner.SetActive(false);
             state=owner.AddComponent<ShowcaseState>();state.networkId=503;
             var codec=Instantiate(codecPrefab).GetComponent<TSMPCodec>();CloneMaterials(codec);
@@ -64,8 +69,11 @@ public sealed class ShowcaseDriver : MonoBehaviour
                 encoder.output=streamRender;encoder.selectedCodec=codec;encoder.useGpuLuma4=true;
                 encoder.luma4EncodeMaterial=new Material(encodeMaterial);encoder.blockExpandMaterial=new Material(expandMaterial);
                 encoder.sampleSize=4;encoder.frameIndex=1;encoder.transSyncRefreshInterval=0;
-                actors.transformSync.sendMode=SendMode.Always;actors.humanoidSync.sendMode=SendMode.Always;state.sendMode=SendMode.Always;
-                encoder.networkBehaviours=new TSMPNetworkBehaviour[]{actors.transformSync,actors.humanoidSync,state};
+                foreach(var transform in actors.transformSyncs)transform.sendMode=SendMode.Always;
+                actors.humanoidSync.sendMode=SendMode.Always;state.sendMode=SendMode.Always;
+                var behaviours=new List<TSMPNetworkBehaviour>(actors.transformSyncs);
+                behaviours.Add(actors.humanoidSync);behaviours.Add(state);
+                encoder.networkBehaviours=behaviours.ToArray();
                 previewRead=new Texture2D(480,480,TextureFormat.RGBA32,false,true);streamRead=new Texture2D(640,360,TextureFormat.RGBA32,false,true);
             }
             else
@@ -73,7 +81,7 @@ public sealed class ShowcaseDriver : MonoBehaviour
                 decoder=owner.AddComponent<TSMPDecoder>();decoder.sourceTexture=streamRender;decoder.payloadByteTexture=Texture(512,4);
                 decoder.codecHandlers=new[]{codec};decoder.flipY=true;decoder.sampleSize=4;decoder.debugLog=false;
                 decoder.usePredictedReadback=true;decoder.useCombinedByteOutput=true;decoder.overlapReadbacks=true;decoder.applyEveryFrame=true;
-                Bind(decoder,actors.transformSync);state.observer=decoder;
+                Bind(decoder);state.observer=decoder;
                 previewInput=new Texture2D(480,480,TextureFormat.RGBA32,false,true);streamInput=new Texture2D(640,360,TextureFormat.RGBA32,false,true);
                 previewInput.filterMode=streamInput.filterMode=FilterMode.Point;
                 presentation=gameObject.AddComponent<ShowcasePresentation>();presentation.sourceView=previewInput;
@@ -89,9 +97,10 @@ public sealed class ShowcaseDriver : MonoBehaviour
         }
         catch(Exception e){Fail(e);}
     }
-    void Bind(TSMPDecoder target,TSMPNetworkTransformSync cube)
+    void Bind(TSMPDecoder target)
     {
-        var components=new Component[]{cube,actors.humanoidSync,state};
+        var components=new List<Component>(actors.transformSyncs);
+        components.Add(actors.humanoidSync);components.Add(state);
         var targets=new List<Component>();var ids=new List<ushort>();var hashes=new List<uint>();var types=new List<byte>();var names=new List<string>();
         foreach(var component in components)
         {
@@ -140,15 +149,15 @@ public sealed class ShowcaseDriver : MonoBehaviour
                     float s=state.seconds;var expected=new Vector3(.25f*Mathf.Sin(s),1+.04f*Mathf.Sin(2*s),.12f*Mathf.Cos(s));
                     if(avatarPrefab!=null)actors.VerifyImportedPose();
                     else if(Vector3.Distance(actors.bones[HumanBodyBones.Hips].localPosition,expected)>.006f)throw new InvalidOperationException("Decoded Humanoid root differs: actual="+actors.bones[HumanBodyBones.Hips].localPosition+" expected="+expected+" seq="+state.sequence+" seconds="+s+" header="+state.headerAtApply+" applied="+decoder.lastAppliedVariableCount+" poseBytes="+(actors.humanoidSync.poseBytes==null?-1:actors.humanoidSync.poseBytes.Length));
-                    var expectedCube=new Vector3(.92f+.27f*Mathf.Sin(s*1.2f),.48f+.17f*Mathf.Sin(s*1.7f),-.3f+.25f*Mathf.Cos(s));
-                    if(Vector3.Distance(actors.cube.localPosition,expectedCube)>.006f||Quaternion.Angle(actors.cube.localRotation,Quaternion.Euler(s*38f,s*55f,s*23f))>.6f)throw new InvalidOperationException("Decoded cube pose differs");
+                    VerifyDecodedCubes();
+                    WriteCubePoses(state.sequence,state.headerAtApply,state.seconds);
                     lastAppliedSequence=state.sequence;lastAppliedTime=Now;applied++;everVerified=true;
                     if(holdingSeen)resumedSeen=true;
                 }
                 bool holding=everVerified&&Now-lastAppliedTime>.3;
                 if(t>=0&&holding){holdingSeen=true;heldFrames++;maxHoldingSeconds=Math.Max(maxHoldingSeconds,Now-lastAppliedTime);}
                 if(t>=0)
-                {var p=actors.cube.localPosition;trace.Add(string.Join(",",t.ToString("F4",CultureInfo.InvariantCulture),encodedSeen,state.sequence,state.headerAtApply,state.seconds.ToString("F4",CultureInfo.InvariantCulture),state.crcAtApply,holding,p.x.ToString("F4",CultureInfo.InvariantCulture),p.y.ToString("F4",CultureInfo.InvariantCulture),p.z.ToString("F4",CultureInfo.InvariantCulture),state.message));}
+                {var p=actors.cubes[0].localPosition;trace.Add(string.Join(",",t.ToString("F4",CultureInfo.InvariantCulture),encodedSeen,state.sequence,state.headerAtApply,state.seconds.ToString("F4",CultureInfo.InvariantCulture),state.crcAtApply,holding,p.x.ToString("F4",CultureInfo.InvariantCulture),p.y.ToString("F4",CultureInfo.InvariantCulture),p.z.ToString("F4",CultureInfo.InvariantCulture),state.message));}
                 if(!string.IsNullOrEmpty(pipe.Error))throw new InvalidOperationException(pipe.Error);
             }
         }
@@ -171,13 +180,16 @@ public sealed class ShowcaseDriver : MonoBehaviour
                 actors.RenderView();
                 uint before=encoder.frameIndex;encoder.EncodeNow();
                 if(encoder.frameIndex!=before+1||!encoder.lastFrameUsedGpuLuma4||!string.IsNullOrEmpty(encoder.lastError))throw new InvalidOperationException("Actual GPU encode failed: "+encoder.lastError);
-                if(encoder.autoVariableCount!=6)throw new InvalidOperationException("Showcase needs all six fields in each frame; got "+encoder.autoVariableCount);
+                int expectedFields=actors.cubes.Length+5;
+                if(encoder.autoVariableCount!=expectedFields)throw new InvalidOperationException("Showcase needs all "+expectedFields+" fields in each frame; got "+encoder.autoVariableCount);
+                WriteCubePoses(state.sequence,before,state.seconds);
                 if(sequence<=3)File.AppendAllText(Path.Combine(root,"sender-fields.txt"),"Frame="+before+" Fields="+encoder.autoVariableCount+" Payload="+encoder.payloadBytes+" Hips="+actors.bones[HumanBodyBones.Hips].localPosition+" Time="+state.seconds+"\n");
                 Read(actors.view,previewRead,previewBytes);
                 bool pause=motion>=4&&motion<6.5f;
                 if(!pause)Read(streamRender,streamRead,streamBytes);
                 if(sequence==2){File.WriteAllBytes(Path.Combine(root,"source-preview.png"),previewRead.EncodeToPNG());File.WriteAllBytes(Path.Combine(root,"source-stream.png"),streamRead.EncodeToPNG());}
                 pipe.Publish(previewBytes,pause?null:streamBytes,(int)before);
+                if(motion>=duration&&!physicsEvidenceWritten)WritePhysicsEvidence(motion);
                 if(motion>duration+5)Application.Quit();
             }
             catch(Exception e){Fail(e);}
@@ -186,6 +198,65 @@ public sealed class ShowcaseDriver : MonoBehaviour
     static void Read(RenderTexture source,Texture2D texture,byte[] bytes)
     {
         var old=RenderTexture.active;RenderTexture.active=source;texture.ReadPixels(new Rect(0,0,source.width,source.height),0,0,false);RenderTexture.active=old;NativeArray<byte>.Copy(texture.GetRawTextureData<byte>(),bytes);
+    }
+    void VerifyDecodedCubes()
+    {
+        int kinematic=0,gravity=0,collisions=0;
+        for(int i=0;i<actors.cubes.Length;i++)
+        {
+            var sync=actors.transformSyncs[i];var data=sync.packedBytes;
+            // RotOnly stores exact float position/scale and a packed quaternion.
+            if(data==null||data.Length!=31||data[0]!=2||data[1]!=23||!sync.useLocalSpace||sync.syncRigidbody)
+                throw new InvalidOperationException("Unexpected decoded cube format: "+i);
+            var position=Binary.ReadVector3Float32LE(data,2);
+            var rotation=Binary.ReadPackedQuaternion12LE(data,14);
+            var scale=Binary.ReadVector3Float32LE(data,19);
+            var cube=actors.cubes[i];
+            if(!Finite(position)||!Finite(scale)||!Finite(cube.localPosition)||!Finite(cube.localScale)||
+                Vector3.Distance(cube.localPosition,position)>.0001f||Vector3.Distance(cube.localScale,scale)>.0001f||
+                !Finite(rotation)||!Finite(cube.localRotation)||Quaternion.Angle(cube.localRotation,rotation)>.1f)
+                throw new InvalidOperationException("Decoded cube transform differs from its TSMP payload: "+i);
+            var body=cube.GetComponent<Rigidbody>();
+            if(body==null||!body.isKinematic||body.useGravity||body.detectCollisions)
+                throw new InvalidOperationException("Receiver cube must not run an independent physics simulation: "+i);
+            if(body.isKinematic)kinematic++;
+            if(body.useGravity)gravity++;
+            if(body.detectCollisions)collisions++;
+        }
+        if(!receiverPhysicsEvidenceWritten)
+        {
+            File.WriteAllText(Path.Combine(root,"receiver-physics.txt"),"CubeCount="+actors.cubes.Length+
+                "\nKinematicCubeCount="+kinematic+"\nGravityEnabledCount="+gravity+"\nCollisionDetectionEnabledCount="+collisions+"\n");
+            receiverPhysicsEvidenceWritten=true;
+        }
+    }
+    static bool Finite(Vector3 value)=>Finite(value.x)&&Finite(value.y)&&Finite(value.z);
+    static bool Finite(Quaternion value)=>Finite(value.x)&&Finite(value.y)&&Finite(value.z)&&Finite(value.w);
+    static bool Finite(float value)=>!float.IsNaN(value)&&!float.IsInfinity(value);
+    static string Number(float value)=>value.ToString("R",CultureInfo.InvariantCulture);
+    void WriteCubePoses(int stateSequence,uint frame,float seconds)
+    {
+        // Evidence only. Neither role reads this journal to animate objects.
+        for(int i=0;i<actors.cubes.Length;i++)
+        {
+            var cube=actors.cubes[i];var p=cube.localPosition;var q=cube.localRotation;var s=cube.localScale;
+            if(!Finite(p)||!Finite(q)||!Finite(s))throw new InvalidOperationException("Non-finite cube pose: "+i);
+            cubePoseWriter.WriteLine(string.Join(",",stateSequence,frame,Number(seconds),i,
+                Number(p.x),Number(p.y),Number(p.z),Number(q.x),Number(q.y),Number(q.z),Number(q.w),Number(s.x),Number(s.y),Number(s.z)));
+        }
+    }
+    void WritePhysicsEvidence(float seconds)
+    {
+        physicsEvidenceWritten=true;
+        cubePoseWriter.Flush();
+        File.WriteAllText(Path.Combine(root,"sender-physics.txt"),"CubeCount="+actors.cubes.Length+
+            "\nSourceSeconds="+Number(seconds)+"\nDynamicCubeCount="+actors.DynamicCubeCount+
+            "\nFloorCollisionCount="+actors.FloorCollisionCount+"\nCubeCollisionCount="+actors.CubeCollisionCount+
+            "\nRespawnCount="+actors.RespawnCount+"\nReleasedCubeCount="+actors.ReleasedCubeCount+
+            "\nMaximumDownwardSpeed="+Number(actors.MaximumDownwardSpeed)+"\n");
+        if(actors.DynamicCubeCount!=actors.cubes.Length||actors.FloorCollisionCount<=0||actors.CubeCollisionCount<=0||
+            actors.ReleasedCubeCount<actors.cubes.Length||actors.MaximumDownwardSpeed<1)
+            throw new InvalidOperationException("Actual source cube physics contacts were not observed");
     }
     IEnumerator Record()
     {
@@ -215,7 +286,8 @@ public sealed class ShowcaseDriver : MonoBehaviour
             if(!string.IsNullOrEmpty(recorder.Error))throw new InvalidOperationException(recorder.Error);
             if(!holdingSeen||!resumedSeen||maxHoldingSeconds<1)throw new InvalidOperationException("Pause/resume not observed");
             File.WriteAllLines(Path.Combine(root,"receiver-trace.csv"),trace);
-            File.WriteAllText(Path.Combine(root,"recording-result.txt"),"PASS\nScope=Two Native Unity processes, localhost uncompressed texture link; presentation preview is not a state transport.\nSenderPID="+pipe.RemoteProcessId+"\nReceiverPID="+Process.GetCurrentProcess().Id+"\nAppliedStates="+applied+"\nCapturedFrames="+captures+"\nWallSeconds="+(Now-recordStarted).ToString("F4",CultureInfo.InvariantCulture)+"\nHoldingObserved="+holdingSeen+"\nResumedObserved="+resumedSeen+"\nMaxHoldSeconds="+maxHoldingSeconds.ToString("F4",CultureInfo.InvariantCulture)+"\nVideo="+output+"\n");
+            cubePoseWriter.Flush();
+            File.WriteAllText(Path.Combine(root,"recording-result.txt"),"PASS\nScope=Two Native Unity processes, localhost uncompressed texture link; presentation preview is not a state transport.\nSenderPID="+pipe.RemoteProcessId+"\nReceiverPID="+Process.GetCurrentProcess().Id+"\nAppliedStates="+applied+"\nCubeCount="+actors.cubes.Length+"\nExpectedFields="+(actors.cubes.Length+5)+"\nCapturedFrames="+captures+"\nWallSeconds="+(Now-recordStarted).ToString("F4",CultureInfo.InvariantCulture)+"\nHoldingObserved="+holdingSeen+"\nResumedObserved="+resumedSeen+"\nMaxHoldSeconds="+maxHoldingSeconds.ToString("F4",CultureInfo.InvariantCulture)+"\nVideo="+output+"\n");
             Application.Quit(0);
         }
         catch(Exception e){Fail(e);}
@@ -226,6 +298,6 @@ public sealed class ShowcaseDriver : MonoBehaviour
         if(!string.IsNullOrEmpty(root)){File.WriteAllLines(Path.Combine(root,role+"-failure-trace.csv"),trace);File.WriteAllText(Path.Combine(root,role+"-result.txt"),"FAIL\n"+e);}
         try{recorder?.Dispose();}catch{}Application.Quit(1);
     }
-    void OnDestroy(){pipe?.Dispose();actors?.Dispose();}
+    void OnDestroy(){cubePoseWriter?.Dispose();pipe?.Dispose();actors?.Dispose();}
 }
 #endif

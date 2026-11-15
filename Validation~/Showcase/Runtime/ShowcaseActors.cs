@@ -8,7 +8,7 @@ using UnityEngine.Animations;
 using UnityEngine.Playables;
 using Object = UnityEngine.Object;
 
-// Recording-only stage. Receiver bones/cube are written only by TSMP; visual
+// Recording-only stage. Receiver bones/cubes are written only by TSMP; visual
 // meshes follow those targets when RenderView is called.
 public sealed class ShowcaseActors : IDisposable
 {
@@ -25,10 +25,30 @@ public sealed class ShowcaseActors : IDisposable
     PlayableGraph danceGraph;
     AnimationClipPlayable dancePlayable;
     readonly Transform headVisual, visor;
-    public readonly TSMPNetworkTransformSync transformSync;
+    public const int CubeCount = 12;
+    public readonly TSMPNetworkTransformSync[] transformSyncs = new TSMPNetworkTransformSync[CubeCount];
     public readonly TSMPNetworkHumanoidPoseSync humanoidSync;
     public readonly RenderTexture view;
-    public readonly Transform cube;
+    public readonly Transform[] cubes = new Transform[CubeCount];
+    readonly Rigidbody[] cubeBodies = new Rigidbody[CubeCount];
+    readonly PhysicMaterial rainPhysicsMaterial;
+    int releaseOrdinal;
+    float nextReleaseTime;
+    float lastRainSeconds = -1;
+    public int FloorCollisionCount { get; private set; }
+    public int CubeCollisionCount { get; private set; }
+    public int RespawnCount { get; private set; }
+    public int ReleasedCubeCount { get; private set; }
+    public float MaximumDownwardSpeed { get; private set; }
+    public int DynamicCubeCount
+    {
+        get
+        {
+            int count = 0;
+            foreach (var body in cubeBodies) if (body != null && !body.isKinematic) count++;
+            return count;
+        }
+    }
     public readonly Dictionary<HumanBodyBones, Transform> bones = new Dictionary<HumanBodyBones, Transform>();
     public readonly Camera camera;
 
@@ -47,11 +67,19 @@ public sealed class ShowcaseActors : IDisposable
             var white = Material(shader, new Color(.83f, .9f, 1f));
             var blue = Material(shader, new Color(.18f, .58f, 1f), .15f);
             var purple = Material(shader, new Color(.55f, .37f, 1f), .12f);
-            var dark = Material(shader, new Color(.025f, .065f, .12f));
-            var grid = Material(shader, new Color(.055f, .115f, .18f), .15f);
-            var floor = Primitive(PrimitiveType.Cube, "Stage", dark);
+            var teal = Material(shader, new Color(.06f, .62f, .57f));
+            var dark = Material(shader, new Color(.72f, .77f, .82f));
+            var grid = Material(shader, new Color(.62f, .67f, .73f));
+            var floor = Primitive(PrimitiveType.Cube, "Stage", dark, true);
             floor.localPosition = new Vector3(.2f, -.06f, 0);
             floor.localScale = new Vector3(3.5f, .1f, 2.9f);
+            rainPhysicsMaterial = new PhysicMaterial("Showcase rain contact")
+            {
+                dynamicFriction = .5f, staticFriction = .65f, bounciness = .28f,
+                frictionCombine = PhysicMaterialCombine.Average, bounceCombine = PhysicMaterialCombine.Maximum
+            };
+            floor.GetComponent<Collider>().sharedMaterial = rainPhysicsMaterial;
+            floor.GetComponent<Collider>().enabled = sender;
             for (int n = -6; n <= 6; n++)
             {
                 var lineX = Primitive(PrimitiveType.Cube, "Floor grid X", grid);
@@ -181,15 +209,40 @@ public sealed class ShowcaseActors : IDisposable
                 else importedAnimator.enabled = false;
             }
 
-            cube = Primitive(PrimitiveType.Cube, "Synced cube", blue);
-            cube.localPosition = new Vector3(.9f, .45f, -.25f);
-            cube.localScale = Vector3.one * .28f;
-            transformSync = cube.gameObject.AddComponent<TSMPNetworkTransformSync>();
-            transformSync.networkId = 501;
-            transformSync.target = cube;
-            transformSync.syncRigidbody = false;
-            transformSync.compressionMode = CompressionMode.RotOnly;
-            transformSync.receiveInterpolation = ReceiveInterpolationMode.Discrete;
+            for (int i = 0; i < CubeCount; i++)
+            {
+                var cube = Primitive(PrimitiveType.Cube, "Rain cube " + i, i % 3 == 0 ? purple : i % 3 == 1 ? blue : teal, true);
+                cubes[i] = cube;
+                cube.localScale = Vector3.one * (.22f + .02f * (i % 3));
+                var collider = cube.GetComponent<Collider>();
+                collider.sharedMaterial = rainPhysicsMaterial;
+                collider.enabled = sender;
+                var body = cube.gameObject.AddComponent<Rigidbody>();
+                cubeBodies[i] = body;
+                body.mass = .8f;
+                body.drag = .025f;
+                body.angularDrag = .08f;
+                body.isKinematic = true;
+                body.useGravity = false;
+                body.detectCollisions = sender;
+                body.interpolation = RigidbodyInterpolation.None;
+                body.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+                ParkCube(i);
+                if (sender)
+                {
+                    var probe = cube.gameObject.AddComponent<ShowcaseRainCollisionProbe>();
+                    probe.owner = this; probe.index = i;
+                }
+                var sync = cube.gameObject.AddComponent<TSMPNetworkTransformSync>();
+                transformSyncs[i] = sync;
+                sync.networkId = (ushort)(600 + i);
+                sync.target = cube;
+                sync.targetRigidbody = body;
+                sync.useLocalSpace = true;
+                sync.syncRigidbody = false;
+                sync.compressionMode = CompressionMode.RotOnly;
+                sync.receiveInterpolation = ReceiveInterpolationMode.Discrete;
+            }
 
             var key = new GameObject("Stage key") { layer = Layer };
             key.transform.SetParent(root.transform, false);
@@ -209,19 +262,19 @@ public sealed class ShowcaseActors : IDisposable
             camera.transform.LookAt(new Vector3(.25f, .97f, 0));
             if (imported)
             {
-                camera.orthographicSize = 1.05f;
-                camera.transform.position = new Vector3(1.8f, 1.05f, 4f);
-                camera.transform.LookAt(new Vector3(.35f, .78f, 0));
+                camera.orthographicSize = 1.52f;
+                camera.transform.position = new Vector3(2.1f, 1.62f, 4f);
+                camera.transform.LookAt(new Vector3(.65f, 1.23f, 0));
                 key.transform.rotation = Quaternion.Euler(35, -135, 0);
                 keyLight.color = Color.white;
-                keyLight.intensity = .65f;
+                keyLight.intensity = .8f;
                 fillLight.color = new Color(.8f, .85f, 1f);
-                fillLight.intensity = .15f;
+                fillLight.intensity = .25f;
                 RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-                RenderSettings.ambientLight = new Color(.4f, .4f, .4f);
+                RenderSettings.ambientLight = new Color(.5f, .5f, .5f);
             }
             camera.clearFlags = CameraClearFlags.SolidColor;
-            camera.backgroundColor = new Color(11f / 255f, 21f / 255f, 35f / 255f);
+            camera.backgroundColor = new Color(.84f, .88f, .92f);
             camera.cullingMask = 1 << Layer; camera.nearClipPlane = .1f; camera.farClipPlane = 30f;
             camera.allowHDR = false; camera.enabled = false;
             view = new RenderTexture(480, 480, 24, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear)
@@ -254,9 +307,64 @@ public sealed class ShowcaseActors : IDisposable
         bones[HumanBodyBones.LeftUpperLeg].localRotation = Quaternion.Euler(2f * Mathf.Sin(seconds), 0, 2f * Mathf.Sin(seconds * 1.6f));
         bones[HumanBodyBones.RightUpperLeg].localRotation = Quaternion.Euler(-2f * Mathf.Sin(seconds), 0, -2f * Mathf.Sin(seconds * 1.6f));
         }
-        cube.localPosition = new Vector3(.92f + .27f * Mathf.Sin(seconds * 1.2f), .48f + .17f * Mathf.Sin(seconds * 1.7f), -.3f + .25f * Mathf.Cos(seconds));
-        cube.localRotation = Quaternion.Euler(seconds * 38f, seconds * 55f, seconds * 23f);
-        cube.localScale = Vector3.one * (.28f + .035f * Mathf.Sin(seconds * 2.2f));
+        AdvanceRain(seconds);
+    }
+
+    void AdvanceRain(float seconds)
+    {
+        if (seconds <= 0)
+        {
+            // The recording clock stays at zero during shader/transport warmup.
+            // Keep the real physics bodies parked until that clock starts.
+            if (lastRainSeconds > 0)
+            {
+                for (int i = 0; i < CubeCount; i++) ParkCube(i);
+                releaseOrdinal = 0; nextReleaseTime = 0;
+                FloorCollisionCount = CubeCollisionCount = RespawnCount = ReleasedCubeCount = 0;
+                MaximumDownwardSpeed = 0;
+            }
+            lastRainSeconds = seconds;
+            return;
+        }
+        while (seconds >= nextReleaseTime)
+        {
+            int index = releaseOrdinal % CubeCount;
+            int cycle = releaseOrdinal / CubeCount;
+            var body = cubeBodies[index];
+            body.isKinematic = false; body.useGravity = true;
+            // Recycle only at release. Every trajectory between releases comes
+            // from Unity's gravity, contact response and cube-to-cube collisions.
+            body.position = root.transform.TransformPoint(new Vector3(
+                .67f + .27f * (releaseOrdinal % 4),
+                2.43f + .10f * (releaseOrdinal % 3),
+                -.23f + .23f * ((releaseOrdinal / 4) % 3)));
+            body.rotation = root.transform.rotation * Quaternion.Euler(13 + index * 17, index * 31 + cycle * 13, 9 + index * 23);
+            body.velocity = new Vector3((index % 2 == 0 ? 1 : -1) * .045f, -.15f, ((index % 3) - 1) * .035f);
+            body.angularVelocity = new Vector3(1.1f + index * .13f, .7f - index * .09f, 1.4f - index * .11f);
+            body.WakeUp();
+            if (cycle > 0) RespawnCount++;
+            ReleasedCubeCount++; releaseOrdinal++;
+            nextReleaseTime += .23f;
+        }
+        foreach (var body in cubeBodies)
+            if (!body.isKinematic) MaximumDownwardSpeed = Mathf.Max(MaximumDownwardSpeed, -body.velocity.y);
+        lastRainSeconds = seconds;
+    }
+
+    void ParkCube(int index)
+    {
+        var body = cubeBodies[index];
+        body.isKinematic = true; body.useGravity = false;
+        body.position = root.transform.TransformPoint(new Vector3(.8f, 4.0f + index * .4f, 0));
+        body.rotation = root.transform.rotation;
+    }
+
+    public void RecordRainCollision(int index, Collision collision)
+    {
+        if (!sender) throw new InvalidOperationException("Receiver must not simulate rain contacts");
+        if (collision.collider.gameObject.name == "Stage") FloorCollisionCount++;
+        var other = collision.collider.GetComponent<ShowcaseRainCollisionProbe>();
+        if (other != null && index < other.index) CubeCollisionCount++;
     }
 
     public void RenderView() { UpdateMeshes(); camera.Render(); }
@@ -317,12 +425,12 @@ public sealed class ShowcaseActors : IDisposable
     {
         links.Add(new Link { a = bones[a], b = bones[b], radius = radius, mesh = Primitive(PrimitiveType.Capsule, a + " segment", material) });
     }
-    Transform Primitive(PrimitiveType type, string name, Material material)
+    Transform Primitive(PrimitiveType type, string name, Material material, bool keepCollider = false)
     {
         var value = GameObject.CreatePrimitive(type); value.name = name; value.layer = Layer;
         value.transform.SetParent(root.transform, false);
         value.GetComponent<Renderer>().sharedMaterial = material;
-        Collider collider = value.GetComponent<Collider>(); if (collider != null) Object.Destroy(collider);
+        Collider collider = value.GetComponent<Collider>(); if (collider != null && !keepCollider) Object.Destroy(collider);
         return value.transform;
     }
     Material Material(Shader shader, Color color, float emission = 0)
@@ -340,9 +448,17 @@ public sealed class ShowcaseActors : IDisposable
         if (view != null) { view.Release(); Object.Destroy(view); }
         if (root != null) Object.Destroy(root);
         if (avatar != null) Object.Destroy(avatar);
+        if (rainPhysicsMaterial != null) Object.Destroy(rainPhysicsMaterial);
         foreach (var mesh in importedMeshes) if (mesh != null) Object.Destroy(mesh);
         foreach (Material material in materials) if (material != null) Object.Destroy(material);
         materials.Clear();
     }
+}
+
+public sealed class ShowcaseRainCollisionProbe : MonoBehaviour
+{
+    public ShowcaseActors owner;
+    public int index;
+    void OnCollisionEnter(Collision collision) { owner.RecordRainCollision(index, collision); }
 }
 #endif

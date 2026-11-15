@@ -1,31 +1,38 @@
 # README showcase recording
 
 The short recording shows two separate Native Unity Player processes. The
-sender animates a Humanoid and a Transform, then the shipped TSMP
+sender animates a Humanoid and simulates12 Rigidbody cubes under gravity, with
+real floor and cube-to-cube contacts. The shipped TSMP
 Encoder produces a Luma4 texture. A recording-only localhost TCP bridge carries
 the complete uncompressed RGBA image to the receiver. The shipped Decoder reads
 that image through actual GPU readbacks and applies the pose and values.
 
 The three panels show the sender camera, the actual received encoded texture
 and the receiver camera. The sender camera is a presentation sidecar; its pixels
-are never used to update receiver objects. Pose, Transform, sequence, time,
+are never used to update receiver objects. Pose,12 cube Transforms, sequence, time,
 message and seeded data bytes travel only inside TSMP frames. Receiver motion
 has no local dance animation driver. Clothing and hair use the installed official
 VRChat SDK PhysBone solver independently in each Player. A plain monochrome label row reads
 `Sender --> Frame stream --> Receiver` above the three live views. Process
-identities, frame counters and CRC diagnostics stay in the recording logs. The decoded time
-is used only for checking the cube trajectory, not for animating the receiver.
+identities, frame counters and CRC diagnostics stay in the recording logs.
+Receiver cubes are kinematic with gravity and collision detection disabled;
+only decoded TSMP poses move them. Decoded time never drives receiver motion.
+Both roles journal actual cube positions, rotations and scales for independent
+comparison by sequence and object ID; neither role reads these journals.
 The imported avatar's applied bone rotations and hips position are checked
 against the actual decoded packed pose. The default generated 17-bone actor is
 still available when no private avatar is supplied.
 
 The sequence runs live, pauses the encoded-image link from seconds4 to6.5 while
 the sender continues moving, then resumes. During the pause the receiver retains
-its last valid pose. All six fields use the existing Always mode for coherent
+its last valid pose. All17 fields use the existing Always mode for coherent
 whole-state demo frames and reliable late connection. The Humanoid pose holds
 during the pause; local clothing and hair can continue settling. No product default or
 Runtime implementation is changed. Seeded data bytes are a real TransSync field
-that makes the encoded texture's activity visible.
+that makes the encoded texture's activity visible. The proof byte array is256B.
+Twelve cubes are released at0.23-second intervals and recycled through the same
+pool. Between releases, Unity Rigidbody gravity and contacts determine their
+motion; there is no scripted falling trajectory or independent receiver solver.
 
 The recording is a local Native Unity example. It does not depict VRChat login,
 Udon execution, OBS/Spout, a CDN, compressed-network transport or performance
@@ -46,17 +53,21 @@ logs and trace. Existing validation projects and recordings are left in place.
 The renderer places the three views side by side in a dedicated 1440x528 texture,
 with a 48-pixel label row at the top.
 The sender and receiver cameras each occupy 480x480; the complete 640x360 encoded
-frame fits in the middle 480x270 area, preserving its aspect ratio with black
-space above and below. Capture does not include other desktop windows or depend
+frame fits in the middle 480x270 area, preserving its aspect ratio with light gray
+space above and below. The scene background and floor also use light colors.
+Capture does not include other desktop windows or depend
 on the host display size. FFmpeg encodes H.264
 with wall-clock input timestamps and a constant30fps output; slow captures are
 duplicated rather than sped up. Readback/capture overhead is part of recording
 and is not a benchmark. The video is silent.
 
 `recording-result.txt` requires actual CRC-verified state application, exact
-seeded bytes and expected Humanoid/cube poses, plus a hold longer than one second
+seeded bytes and applied Humanoid/all12 cube poses, plus a hold longer than one second
 and subsequent resumption. `receiver-trace.csv` retains observed state/time/frame
-and holding flags. Build logs and process identities remain with each take.
+and holding flags. `sender-cube-poses.csv` and `receiver-cube-poses.csv` retain
+every cube pose by applied sequence. `sender-physics.txt` requires12 dynamic
+bodies, actual floor/cube contacts, repeated releases and downward speed above1m/s.
+Build logs and process identities remain with each take.
 Review extracted frames for visibility, layout, real motion, pause and resume
 before publishing. A successful data check alone cannot detect a black capture.
 
@@ -113,28 +124,33 @@ Model: [Hayakawa Aoi © 2024 WARPSTORE](https://booth.pm/ja/items/5405703).
 Motion: [Human Dance Animations FREE / Kevin Iglesias](https://kevdev.itch.io/human-dance-animations-free).
 The reviewed licenses allow rendered videos; raw assets are not redistributed.
 
-## Recorded Aoi media, 2026-11-05
+## Recorded cube rain media, 2026-11-15
 
 The retained take is 16.033333 seconds, 1440x528 H.264/yuv420p at30fps, with
-481 captured frames and a 6,328,300-byte MP4. The 960x352 GIF preview runs for
-8.5 seconds at10fps and is 4,962,814 bytes. A static poster is also included in
+481 encoded frames from480 capture calls and a5,624,569-byte MP4.
+The960x352 GIF preview runs for8.5 seconds at10fps and is3,875,588 bytes.
+A static poster is also included in
 `.github/assets`. English, Korean and Japanese README headers link the preview
 to the MP4.
 
-The independent recording audit passes20 checks: distinct sender/receiver
-processes, matching fixture/Core Runtime source copies,482 CRC-verified trace
-rows,175 distinct states in order, an independently recomputed cube trajectory
-(maximum error0.082mm), and a2.5667-second hold followed by resumed application.
+The independent recording audit passes17 checks: distinct sender/receiver
+processes, matching fixture/Core Runtime source copies,481 CRC-verified trace
+rows,217 distinct recorded states in order, and a2.6078-second hold followed by
+resumed application. It compares3,012 matching cube/state pairs across12 objects:
+position/scale error0 and maximum compressed rotation error0.051degrees.
+All12 cubes actually fall through more than1.5m in the visible scene, excluding
+parked bodies and offstage falls. Source physics records94 floor contacts,
+347 cube-to-cube contacts,70 releases and58 pool recycles by16.07 seconds.
+Receiver physics records12 kinematic bodies with gravity/collision detection off.
 The Native fixture checks all51 transmitted Humanoid bones, all seeded bytes
-and six fields. Both Players register16/16 official PhysBones and record real,
+and17 fields (the initial payload is1,240B). Both Players register16/16 official PhysBones and record real,
 finite motion of61 skirt transforms. During the pause the sender keeps dancing
-while the receiver holds its last received body pose and clothing settles.
+while the receiver holds its last received body/cube poses and clothing settles.
 The audit does not independently
 recompute per-packet CRC from archived raw payloads; full byte/pose checks run in
 the Native fixture. The recording makes no throughput or delivery-rate claim.
 
 The recording, build logs, trace, keyframes and independent audit are kept
-under `F:/Unity/TSMP/Validation-Results/aoi-skirt-physics-20261105`;
-the final capture is `showcase-take-01/capture-final-01`.
-Earlier procedural-actor recordings remain in their original evidence folders. Product code
+under `F:/Unity/TSMP/Validation-Results/readme-cube-rain-20261115/take-01`.
+Earlier recordings remain in their original evidence folders. Product code
 and defaults are unchanged.
