@@ -126,3 +126,5 @@ automatic Unity physics simulation is outside the VM timers. This is SDK Editor
 VM elapsed time, not live VRChat FPS or GPU execution time. Nonapply safety modes
 2/3 are diagnostic controls, with no application age/delivery claim; prediction
 fallback also changes their request path.
+
+Recorded measurements and the candidate decision: [scene results](SCENE-RESULTS.md).
