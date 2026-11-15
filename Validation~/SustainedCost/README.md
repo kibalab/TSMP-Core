@@ -128,3 +128,11 @@ VM elapsed time, not live VRChat FPS or GPU execution time. Nonapply safety mode
 fallback also changes their request path.
 
 Recorded measurements and the candidate decision: [scene results](SCENE-RESULTS.md).
+
+Windows scene plans may set `pinMainThread: true` with `mainThreadCpu` set to a
+logical processor index identified from the local CPU topology. By default the
+OS schedules the thread normally. The fixture restores the previous thread
+affinity after the case, including failure cleanup. Use the same core for A/B
+comparisons; this is a validation control, not a TSMP or OS tuning recommendation.
+`cpuBefore`/`cpuAfter` sample processor IDs outside each VM timer; matching endpoints
+do not prove no migration between them. Profiler/debug-logging state is also recorded.

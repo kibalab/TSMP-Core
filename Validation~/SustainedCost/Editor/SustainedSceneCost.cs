@@ -5,6 +5,9 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+#if UNITY_EDITOR_WIN
+using System.Runtime.InteropServices;
+#endif
 using K13A.TSMP;
 using K13A.TSMP.Udon;
 using UdonSharp;
@@ -23,10 +26,48 @@ public static partial class SustainedCostValidation
     const string SceneStatePath = "Assets/Validation/SustainedCost/SceneCostState.asset";
     const int SceneCubes = 12, SceneBones = 51, SceneFields = 17, PacketStride = 2048;
     static SceneSession sceneSession;
+#if UNITY_EDITOR_WIN
+    [DllImport("kernel32.dll")] static extern uint GetCurrentProcessorNumber();
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+    [DllImport("kernel32.dll")] static extern IntPtr GetCurrentThread();
+    [DllImport("kernel32.dll", SetLastError = true)] static extern UIntPtr SetThreadAffinityMask(IntPtr thread, UIntPtr mask);
+    static UIntPtr scenePreviousAffinity;
+    static uint scenePinnedThread;
+#endif
+    static int SceneCpu()
+    {
+#if UNITY_EDITOR_WIN
+        return (int)GetCurrentProcessorNumber();
+#else
+        return -1;
+#endif
+    }
+    static void PinSceneCpu(int cpu)
+    {
+        if (cpu < 0) return;
+#if UNITY_EDITOR_WIN
+        Check(cpu < SystemInfo.processorCount && cpu < IntPtr.Size * 8, "Invalid single-group CPU index");
+        Check(scenePreviousAffinity == UIntPtr.Zero, "Scene thread already pinned");
+        scenePinnedThread = GetCurrentThreadId();
+        scenePreviousAffinity = SetThreadAffinityMask(GetCurrentThread(), new UIntPtr(1UL << cpu));
+        Check(scenePreviousAffinity != UIntPtr.Zero, "Cannot pin validation thread: " + Marshal.GetLastWin32Error());
+#else
+        Check(false, "mainThreadCpu requires the Windows Editor");
+#endif
+    }
+    static void RestoreSceneCpu()
+    {
+#if UNITY_EDITOR_WIN
+        if (scenePreviousAffinity == UIntPtr.Zero) return;
+        Check(GetCurrentThreadId() == scenePinnedThread, "Restore must run on the pinned validation thread");
+        Check(SetThreadAffinityMask(GetCurrentThread(), scenePreviousAffinity) != UIntPtr.Zero, "Cannot restore validation thread affinity");
+        scenePreviousAffinity = UIntPtr.Zero;
+#endif
+    }
     struct SceneEvent
     {
         public string role, label;
-        public int frame, source, received, pendingBefore, pendingAfter, component, callbackSlot, requestAmbiguity;
+        public int frame, source, received, pendingBefore, pendingAfter, component, callbackSlot, requestAmbiguity, cpuBefore, cpuAfter;
         public bool top;
         public double clock;
         public long start, stop, nestedHost, callbackRequest, slot0Request, slot1Request, requestWaitLowerTicks, requestWaitUpperTicks;
@@ -123,10 +164,12 @@ public static partial class SustainedCostValidation
         Array requestArray = decoderEvent ? (Array)scene.decoder.Code.Heap.GetHeapVariable(scene.decoder.Code.SymbolTable.GetAddressFromSymbol("_slotRequests")) : null;
         object oldRequest0 = requestArray != null ? requestArray.GetValue(0) : null, oldRequest1 = requestArray != null ? requestArray.GetValue(1) : null;
         int frame = Time.frameCount; double clock = Time.realtimeSinceStartupAsDouble;
+        int cpuBefore = record ? SceneCpu() : -1;
         long nestedStart = scene.observationTicks, before = Stopwatch.GetTimestamp();
         uint result;
         try { result = vm.Interpret(); } finally { depth--; }
         long after = Stopwatch.GetTimestamp(), nested = scene.observationTicks - nestedStart;
+        int cpuAfter = record ? SceneCpu() : -1;
         if ((owner.role == "SceneTarget" || owner.role == "SceneState") && label == "OnTSMPVariableReceived")
             ObserveSceneField(scene, owner);
         int callbackSlot = -1, requestAmbiguity = 0; long callbackRequest = -1, requestWaitLower = -1, requestWaitUpper = -1;
@@ -156,6 +199,8 @@ public static partial class SustainedCostValidation
                 pendingAfter = scene.decoder.Get<int>("pendingDecodeCount"), start = before, stop = after, nestedHost = nested,
                 callbackSlot = callbackSlot, callbackRequest = callbackRequest, requestAmbiguity = requestAmbiguity, requestWaitLowerTicks = requestWaitLower, requestWaitUpperTicks = requestWaitUpper,
                 slot0Request = scene.requestIds[0], slot1Request = scene.requestIds[1] };
+            scene.events[scene.eventCount - 1].cpuBefore = cpuBefore;
+            scene.events[scene.eventCount - 1].cpuAfter = cpuAfter;
         }
         scene.observationTicks += before - observationStart + Stopwatch.GetTimestamp() - after;
         return result;
@@ -294,6 +339,7 @@ public static partial class SustainedCostValidation
         Check(item.codec == "Luma4" && !item.stress, "Scene mode currently requires clean Luma4");
         Check(item.sourceHz > 0 && item.renderHz > 0 && item.seconds > 0 && item.warmSeconds >= 0, "Invalid scene timing");
         Check(item.safetyMode == 0 || item.safetyMode == 2 || item.safetyMode == 3, "Invalid scene safety mode");
+        PinSceneCpu(item.pinMainThread ? item.mainThreadCpu : -1);
         int programStart = programs.Count, ownedStart = owned.Count;
         var scene = sceneSession = new SceneSession(item); Application.targetFrameRate = item.renderHz;
         scene.sentAnimator = SceneAvatar(item.avatarPath, true); scene.receivedAnimator = SceneAvatar(item.avatarPath, false);
@@ -336,7 +382,7 @@ public static partial class SustainedCostValidation
         scene.encoder.Set("blockExpandMaterial", Keep(new Material(AssetDatabase.LoadAssetAtPath<Material>("Packages/com.kibalab.tsmp.core/Shaders/TSMPEncoderBlockExpand.mat"))));
         scene.encoder.Set("transSyncRefreshInterval", 1f); scene.encoder.Set("targetPayloadBytes", 0); BindScene(scene.encoder, scene, true); scene.encoder.Call("_onEnable");
         scene.decoder = new Program("Packages/com.kibalab.tsmp.core/Runtime/Decoder/TSMPDecoder.asset", role: "Decoder");
-        scene.decoder.Set<Texture>("sourceTexture", source); scene.decoder.Set("payloadByteTexture", output); scene.decoder.Set("readbackPackMaterial", Resources.Load<Material>("TSMPReadbackPack"));
+        scene.decoder.Set<Texture>("sourceTexture", source); scene.decoder.Set("payloadByteTexture", output); scene.decoder.Set("readbackPackMaterial", Keep(new Material(Resources.Load<Material>("TSMPReadbackPack"))));
         scene.decoder.Set("codecHandlers", new[] { codec.Backing }); BindScene(scene.decoder, scene, false);
         scene.decoder.Set("applyEveryFrame", true); scene.decoder.Set("skipDuplicateFrames", true); scene.decoder.Set("requirePayloadCrc32", true); scene.decoder.Set("debugLog", false); scene.decoder.Set("flipY", true);
         scene.decoder.Set("recoverHeaderCrc", false); scene.decoder.Set("maxCrcRecoveryAttempts", item.budget); scene.decoder.Set("usePredictedReadback", true); scene.decoder.Set("useCombinedByteOutput", true); scene.decoder.Set("overlapReadbacks", true);
@@ -368,6 +414,7 @@ public static partial class SustainedCostValidation
         while (scene.decoder.Get<bool>("readbackInFlight") && Time.realtimeSinceStartupAsDouble < timeout) yield return null;
         Check(!scene.decoder.Get<bool>("readbackInFlight"), "Scene drain timeout"); VerifyScene(scene); FlushScene();
         scene.decoder.Call("_onDisable"); scene.encoder.Call("_onDisable"); if (scene.graph.IsValid()) scene.graph.Destroy(); sceneSession = null;
+        RestoreSceneCpu();
         foreach (var program in programs.Skip(programStart).ToArray()) { program.Dispose(); programs.Remove(program); }
         foreach (var value in owned.Skip(ownedStart).Reverse().ToArray()) { if (value is RenderTexture target) target.Release(); if (value != null) Object.DestroyImmediate(value); owned.Remove(value); }
         notes.Add("PASS scene " + item.name + "; publications=" + scene.publicationCount + "; complete 17-field applications=" + scene.applicationCount + "; source physics releases=" + scene.releases);
@@ -416,8 +463,8 @@ public static partial class SustainedCostValidation
         string prefix = Path.Combine(Root, scene.item.name + "-scene-");
         using (var writer = new StreamWriter(prefix + "vm.csv"))
         {
-            writer.WriteLine("role,event,frame,clock,source,received,pendingBefore,pendingAfter,startTicks,endTicks,netVmMs,grossVmMs,nestedHostMs,top,component,callbackSlot,callbackRequest,requestWaitLowerMs,requestWaitUpperMs,requestAmbiguity,slot0Request,slot1Request");
-            for (int i = 0; i < scene.eventCount; i++) { var e = scene.events[i]; writer.WriteLine(Row(e.role, e.label, e.frame, e.clock, e.source, e.received, e.pendingBefore, e.pendingAfter, e.start, e.stop, Ms(e.stop - e.start - e.nestedHost), Ms(e.stop - e.start), Ms(e.nestedHost), e.top, e.component, e.callbackSlot, e.callbackRequest, e.requestWaitLowerTicks >= 0 ? Ms(e.requestWaitLowerTicks) : -1, e.requestWaitUpperTicks >= 0 ? Ms(e.requestWaitUpperTicks) : -1, e.requestAmbiguity, e.slot0Request, e.slot1Request)); }
+            writer.WriteLine("role,event,frame,clock,source,received,pendingBefore,pendingAfter,startTicks,endTicks,netVmMs,grossVmMs,nestedHostMs,top,component,callbackSlot,callbackRequest,requestWaitLowerMs,requestWaitUpperMs,requestAmbiguity,slot0Request,slot1Request,cpuBefore,cpuAfter");
+            for (int i = 0; i < scene.eventCount; i++) { var e = scene.events[i]; writer.WriteLine(Row(e.role, e.label, e.frame, e.clock, e.source, e.received, e.pendingBefore, e.pendingAfter, e.start, e.stop, Ms(e.stop - e.start - e.nestedHost), Ms(e.stop - e.start), Ms(e.nestedHost), e.top, e.component, e.callbackSlot, e.callbackRequest, e.requestWaitLowerTicks >= 0 ? Ms(e.requestWaitLowerTicks) : -1, e.requestWaitUpperTicks >= 0 ? Ms(e.requestWaitUpperTicks) : -1, e.requestAmbiguity, e.slot0Request, e.slot1Request, e.cpuBefore, e.cpuAfter)); }
         }
         using (var writer = new StreamWriter(prefix + "frames.csv"))
         {
@@ -444,6 +491,10 @@ public static partial class SustainedCostValidation
             "begin=" + scene.begin.ToString("R", System.Globalization.CultureInfo.InvariantCulture), "end=" + scene.end.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
             "warmSeconds=" + scene.item.warmSeconds, "sourceTargetHz=" + scene.item.sourceHz, "renderTargetHz=" + scene.item.renderHz, "senderDeadlineMisses=" + scene.deadlineMisses,
             "safetyMode=" + scene.item.safetyMode, "sourcePhysicsReleases=" + scene.releases,
+            "mainThreadCpuRequested=" + (scene.item.pinMainThread ? scene.item.mainThreadCpu : -1),
+            "profilerEnabled=" + UnityEngine.Profiling.Profiler.enabled,
+            "udonManagerDebugLogging=" + UdonManager.Instance.DebugLogging,
+            "decoderVmDebugLogging=" + (scene.decoder != null ? ((IUdonVM)typeof(UdonBehaviour).GetField("_udonVM", Private).GetValue(scene.decoder.Backing)).DebugLogging.ToString() : "unavailable"),
             "sourceMaxBoneChangeDegrees=" + scene.maximumDanceChangeDegrees, "sourceMaxCubeTravel=" + scene.maximumCubeTravel,
             "sourceCube0DescendingSamples=" + scene.descendingCube0Samples, "sourceFinalDynamicGravityBodies=" + scene.finalDynamicBodies,
             "counterWholeSession.skippedBusyDecodeCount=" + (scene.decoder != null ? scene.decoder.Get<int>("skippedBusyDecodeCount") : -1),
@@ -467,6 +518,7 @@ public static partial class SustainedCostValidation
             "Only top=True Encoder/Decoder events may be summed for total VM CPU. Nested SceneSender TSMPBeforeEncode and SceneTarget/SceneState receive callbacks are component breakdowns included in their parent. Component0..11=cubes,12=Human,13=state.",
             "Request wait bounds are callback Interpret start minus the issuing Interpret end/start, when exactly one old request reference is observed replaced in that callback. They describe observed request-to-callback wall wait, not GPU execution. requestAmbiguity=1 excludes unproven associations. Slot request IDs identify request objects, not accepted packet/source identity.",
             "counterWholeSession values include preflight, warmup, measurement, tail and drain. Decoder exposes no aggregate corrupt-frame or accepted-admission counter; absent source sequences alone do not identify the skip/reject cause.",
+            "cpuBefore/cpuAfter sample the logical processor around each VM timer (Windows Editor only). Equal samples do not prove no migration between them. mainThreadCpu optionally pins only this owned validation thread and restores its previous affinity after the case; it is a diagnostic control, not a product or OS recommendation.",
             "Nonapply safety controls, when selected, have no application latency/age result. Binary packet archive: little endian version1, sourceCount, rxCount; each source then rx entry int32 id,int32 length,56 header bytes,length payload bytes."
         });
     }

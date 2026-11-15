@@ -76,6 +76,8 @@ public static partial class SustainedCostValidation
         public string avatarPath, dancePath;
         public double warmSeconds = 4;
         public int safetyMode;
+        public int mainThreadCpu = -1;
+        public bool pinMainThread;
     }
     static void Check(bool value, string message) { assertions++; if (!value) throw new InvalidOperationException(message); }
     static string H(byte[] data) { using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(data)).Replace("-", "").ToLowerInvariant(); }
@@ -136,6 +138,7 @@ public static partial class SustainedCostValidation
     {
         step = null; SustainedCostPump.FrameStep = null; collecting = false; EditorApplication.update -= Tick;
         try { FlushScene(); } catch (Exception flushError) { if (error == null) error = flushError; else notes.Add(flushError.ToString()); }
+        try { RestoreSceneCpu(); } catch (Exception affinityError) { if (error == null) error = affinityError; else notes.Add(affinityError.ToString()); }
         foreach (var program in programs) program.Dispose(); programs.Clear(); RenderTexture.active = null;
         foreach (Object item in owned.AsEnumerable().Reverse()) { if (item is RenderTexture texture) texture.Release(); if (item != null) Object.DestroyImmediate(item); } owned.Clear();
         try
