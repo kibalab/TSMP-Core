@@ -55,6 +55,14 @@ Before VM assertions or profile timers, the adapter draws cloned codec materials
 
 `prediction-regression` also checks that production Encoder headers carry a matching payload CRC32. It changes only encoded payload pixels, verifies rejection before either a field or RPC is applied, then retries the intact frame with the same frame/event identity. This coverage runs through Native and compiled Udon paths.
 
+`-Filter prediction-shrink` checks shrinking payloads, all four RGBA remainders,
+dirty retained tails, growth, codec/sample/resolution changes, CRC/RPC retry and
+both shrink/grow slot orders. It is excluded from unfiltered runs. The SDK VM
+counts actual readback callbacks; Native reports `-1` and checks content and
+public path counters. The default expects the retained exact-size prediction
+rule. `TSMP_EXPECT_SHRINK_PREDICTION=1` is only for the private, rejected Luma4
+prefix-reuse experiment; it does not enable that behavior in production.
+
 ## Interpretation
 
 Compare `txHz` with `applyHz`, not the configured target alone. `schedulerMisses` can indicate that the source itself could not sustain the requested rate. `busyPercent` counts render ticks at which occupied slots meet the configured admission limit; it is not GPU utilization or the percentage of ticks with any pending request. `captureCount` includes duplicate-image requests. `decoderErrorObservations` records failing decoder diagnostics observed between requests, independently of callback delivery gaps.

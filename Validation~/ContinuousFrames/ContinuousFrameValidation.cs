@@ -66,6 +66,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         int RpcCount { get; }
         RenderTexture Output { get; }
         byte[] ReceivedPacket { get; }
+        int ReadbackCallbacks { get; }
         void SetAutomatic(bool enabled);
         void TickAutomatic();
         Dictionary<string, Action> ProfileHelpers(int size, int width, int height);
@@ -192,6 +193,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         yield return new Case { Name = "profile-4k-small30", Width = 3840, Height = 2160, SendHz = 30, LoopHz = 30 };
         yield return new Case { Name = "profile-luma4-sample4", Width = 1280, Height = 720, Bytes = 4096, Sample = 4 };
         yield return new Case { Name = "prediction-regression", Width = 1280, Height = 720, Bytes = 4096 };
+        yield return new Case { Name = "prediction-shrink", Width = 1280, Height = 720, Bytes = 4096, Sample = 4 };
         yield return new Case { Name = "overlap-regression", Width = 1280, Height = 720, Bytes = 4096 };
         yield return new Case { Name = "sender-only-60", Baseline = true };
         foreach (int loop in new[] { 60, 90, 120, 144, 180, 240, -1 })
@@ -220,6 +222,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         foreach (Case test in Cases())
         {
             if (test.Name.StartsWith("profile-") && string.IsNullOrEmpty(filter)) continue;
+            if (test.Name == "prediction-shrink" && string.IsNullOrEmpty(filter)) continue;
             if (!string.IsNullOrEmpty(filter) && !filter.Split(',').Contains(test.Name)) continue;
             Application.targetFrameRate = test.LoopHz;
             using (ILoopback loop = UdonFactory != null ? UdonFactory(this, test) : CreateNative(test))
@@ -227,6 +230,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
                 yield return null;
                 var run = test.Name.StartsWith("profile-") ? Profile(test, loop) :
                     test.Name == "prediction-regression" ? Regression(loop) :
+                    test.Name == "prediction-shrink" ? PredictionShrink(loop) :
                     test.Name == "overlap-regression" ? OverlapRegression(loop) : Measure(test, loop);
                 while (run.MoveNext()) yield return run.Current;
             }
@@ -428,6 +432,146 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
     }
 
     static double Average(List<double> values) => values.Count == 0 ? 0 : values.Average();
+
+    IEnumerator ShrinkCapture(ILoopback loop, List<string> trace, string label, int codec, byte[] expected,
+        int predicted, int fallback, int callbacks, int rpcDelta = 0, bool reject = false, Action afterCapture = null, bool dirtyTail = false)
+    {
+        int beforeApplied = loop.AppliedCount, beforeRpc = loop.RpcCount, beforeCallbacks = loop.ReadbackCallbacks;
+        uint appliedAnchor = (uint)loop.ReadDecoder("_lastAppliedFrameIndex");
+        int beforePredicted = (int)loop.ReadDecoder("predictedReadbackCount"), beforeFallback = (int)loop.ReadDecoder("predictionFallbackCount");
+        int payload = loop.PayloadBytes;
+        byte[] header = (byte[])loop.ReadEncoder(UdonFactory == null ? "_header" : "_headerBytes");
+        uint frame = Binary.ReadUInt32LE(header, FrameHeader.FrameIndexOffset);
+        double started = Time.realtimeSinceStartupAsDouble;
+        loop.Decode(); afterCapture?.Invoke();
+        var wait = Drain(loop); while (wait.MoveNext()) yield return wait.Current;
+        int actualPredicted = (int)loop.ReadDecoder("predictedReadbackCount") - beforePredicted;
+        int actualFallback = (int)loop.ReadDecoder("predictionFallbackCount") - beforeFallback;
+        int actualCallbacks = beforeCallbacks < 0 ? -1 : loop.ReadbackCallbacks - beforeCallbacks;
+        bool crc = (bool)loop.ReadDecoder("lastPayloadCrcVerified");
+        if (loop.AppliedCount != beforeApplied + (reject ? 0 : 1) || loop.RpcCount != beforeRpc + rpcDelta || loop.CorruptCount != 0 ||
+            (!reject && ((uint)loop.ReadDecoder("lastFrameIndex") != frame || !(bool)loop.ReadDecoder("lastFrameValid") || !crc || !expected.SequenceEqual(loop.ReceivedPacket) ||
+                (int)loop.ReadDecoder("_payloadDataBytes") != payload)) ||
+            (reject && ((bool)loop.ReadDecoder("lastFrameValid") || crc || (uint)loop.ReadDecoder("_lastAppliedFrameIndex") != appliedAnchor)))
+            throw new InvalidOperationException("Shrink state/CRC/atomicity failure " + label + ": " + loop.Diagnostics);
+        if ((predicted >= 0 && actualPredicted != predicted) || (fallback >= 0 && actualFallback != fallback) ||
+            (callbacks >= 0 && actualCallbacks >= 0 && actualCallbacks != callbacks))
+            throw new InvalidOperationException("Shrink request path failure " + label + ": predicted=" + actualPredicted + ", fallback=" + actualFallback + ", callbacks=" + actualCallbacks);
+        bool hasDirtyTail = false;
+        if (dirtyTail)
+        {
+            byte[] retained = (byte[])loop.ReadDecoder("_payloadBytes");
+            for (int i = payload; i < Math.Min(retained.Length, payload + 64); i++) hasDirtyTail |= retained[i] != 0;
+            if (!hasDirtyTail) throw new InvalidOperationException("Shrink test did not retain a dirty payload tail: " + label);
+        }
+        trace.Add(string.Join(",", label, codec, payload, actualCallbacks, actualPredicted, actualFallback,
+            loop.AppliedCount - beforeApplied, loop.RpcCount - beforeRpc, crc, N((Time.realtimeSinceStartupAsDouble - started) * 1000), hasDirtyTail));
+    }
+
+    IEnumerator PredictionShrink(ILoopback loop)
+    {
+        // Callback counts are observed by the SDK VM wrapper. Native private
+        // callbacks are unavailable (-1), so Native checks public path counters.
+        bool candidate = Environment.GetEnvironmentVariable("TSMP_EXPECT_SHRINK_PREDICTION") == "1";
+        var trace = new List<string> { "case,codec,payloadBytes,completedReadbacks,predictedDelta,fallbackDelta,appliedDelta,rpcDelta,crcVerified,wallMs,dirtyTailPresent" };
+        int id = 0;
+        Func<int, byte[]> packet = size => { var value = Enumerable.Range(0, size).Select(i => (byte)(i * 37)).ToArray(); SetPacketId(value, ++id); return value; };
+        loop.SetAutomatic(false); loop.WriteDecoder("debugLog", false); loop.WriteDecoder("requirePayloadCrc32", true);
+        loop.WriteDecoder("recoverHeaderCrc", false); loop.WriteDecoder("maxCrcRecoveryAttempts", 0);
+        loop.WriteDecoder("usePredictedReadback", true); loop.WriteDecoder("useCombinedByteOutput", true); loop.WriteDecoder("overlapReadbacks", true);
+        foreach (int codec in new[] { 0, 1, 2, 3 })
+        foreach (int size in new[] { 32, 33, 34, 35 })
+        {
+            loop.SelectCodec(codec); loop.SetSample(4);
+            for (int pass = 0; pass < 2; pass++)
+            {
+                byte[] warm = packet(4096); loop.Publish(warm);
+                var w = ShrinkCapture(loop, trace, "warm-" + codec + "-" + size + "-" + pass, codec, warm, -1, -1, -1);
+                while (w.MoveNext()) yield return w.Current;
+            }
+            byte[] small = packet(size); loop.Publish(small);
+            bool reuse = candidate && codec == 0;
+            var run = ShrinkCapture(loop, trace, "shrink-" + size, codec, small, reuse ? 1 : 0, reuse ? 0 : 1, reuse ? 1 : 2,
+                afterCapture: () => loop.Publish(packet(64)), dirtyTail: true);
+            while (run.MoveNext()) yield return run.Current;
+        }
+        loop.SelectCodec(0); loop.SetSample(4);
+        for (int pass = 0; pass < 2; pass++)
+        {
+            byte[] warm = packet(32); loop.Publish(warm);
+            var w = ShrinkCapture(loop, trace, "grow-warm-" + pass, 0, warm, -1, -1, -1); while (w.MoveNext()) yield return w.Current;
+        }
+        byte[] growth = packet(33); loop.Publish(growth);
+        var growthRun = ShrinkCapture(loop, trace, "growth-with-RGBA-padding", 0, growth, 0, 1, 2);
+        while (growthRun.MoveNext()) yield return growthRun.Current;
+        byte[] optionWarm = packet(512); loop.Publish(optionWarm);
+        var warmRun = ShrinkCapture(loop, trace, "option-warm", 0, optionWarm, -1, -1, -1); while (warmRun.MoveNext()) yield return warmRun.Current;
+        loop.SetSample(1); byte[] option = packet(32); loop.Publish(option);
+        var optionRun = ShrinkCapture(loop, trace, "sample-mismatch", 0, option, 0, 1, 2); while (optionRun.MoveNext()) yield return optionRun.Current;
+        loop.Output.Release(); loop.Output.width = 1920; loop.Output.height = 1080;
+        if (!loop.Output.Create()) throw new InvalidOperationException("Resize control texture creation failed");
+        byte[] resized = packet(33); loop.Publish(resized);
+        var resizeRun = ShrinkCapture(loop, trace, "source-dimensions-mismatch", 0, resized, 0, 0, 2); while (resizeRun.MoveNext()) yield return resizeRun.Current;
+        loop.Output.Release(); loop.Output.width = 1280; loop.Output.height = 720; loop.Output.Create(); loop.SetSample(4);
+
+        foreach (bool damageHeader in new[] { true, false })
+        {
+            for (int pass = 0; pass < 2; pass++)
+            {
+                byte[] warm = packet(4096); loop.Publish(warm);
+                var w = ShrinkCapture(loop, trace, "crc-warm-" + damageHeader + "-" + pass, 0, warm, -1, -1, -1); while (w.MoveNext()) yield return w.Current;
+            }
+            loop.QueueRpc(); byte[] small = packet(32); loop.Publish(small);
+            var image = new Texture2D(loop.Output.width, loop.Output.height, TextureFormat.RGBA32, false, true);
+            var previous = RenderTexture.active; RenderTexture.active = loop.Output;
+            image.ReadPixels(new Rect(0, 0, image.width, image.height), 0, 0); RenderTexture.active = previous;
+            Color32[] intact = image.GetPixels32();
+            int valueByte = NetworkFrameProtocol.NetworkHeaderBytes + NetworkFrameProtocol.MessageHeaderBytes + NetworkFrameProtocol.VariableStateBodyHeaderBytes + NetworkFrameProtocol.VariableValueHeaderBytes + 20;
+            int block = (damageHeader ? 2 : Luma4Raster.PayloadStartRow) * (image.width / 8) + (damageHeader ? FrameHeader.CrcOffset : valueByte) * 2;
+            int x0 = block % (image.width / 8) * 8, y0 = block / (image.width / 8) * 8;
+            for (int y = y0; y < y0 + 8; y++) for (int x = x0; x < x0 + 8; x++)
+            { Color c = image.GetPixel(x, image.height - 1 - y); image.SetPixel(x, image.height - 1 - y, c.r > .5f ? Color.black : Color.white); }
+            image.Apply(false, false); Graphics.Blit(image, loop.Output);
+            var bad = ShrinkCapture(loop, trace, damageHeader ? "bad-header" : "bad-prefix-payload", 0, small, -1, -1, damageHeader || candidate ? 1 : 2, reject: true);
+            while (bad.MoveNext()) yield return bad.Current;
+            image.SetPixels32(intact); image.Apply(false, false); Graphics.Blit(image, loop.Output); Destroy(image);
+            var retry = ShrinkCapture(loop, trace, "intact-same-frame-retry-" + damageHeader, 0, small, 0, 0, 2, rpcDelta: 1);
+            while (retry.MoveNext()) yield return retry.Current;
+            // Consume remaining sender repetitions before queuing the next RPC.
+            // These images are deliberately not decoded; the intact retry above
+            // is the only application of this protected RPC in this scenario.
+            for (int repeat = 0; repeat < 16 && (int)loop.ReadEncoder("queuedRpcCount") > 0; repeat++) loop.Publish(packet(32));
+            if ((int)loop.ReadEncoder("queuedRpcCount") > 0) throw new InvalidOperationException("Shrink RPC repetition cleanup failed");
+        }
+
+        foreach (bool growFirst in new[] { false, true })
+        {
+            for (int pass = 0; pass < 2; pass++)
+            {
+                byte[] warm = packet(512); loop.Publish(warm);
+                var w = ShrinkCapture(loop, trace, "overlap-warm-" + growFirst + "-" + pass, 0, warm, -1, -1, -1); while (w.MoveNext()) yield return w.Current;
+            }
+            int beforeApplied = loop.AppliedCount, beforeRpc = loop.RpcCount, beforeCallbacks = loop.ReadbackCallbacks;
+            int beforePredicted = (int)loop.ReadDecoder("predictedReadbackCount"), beforeFallback = (int)loop.ReadDecoder("predictionFallbackCount");
+            byte[] first = packet(growFirst ? 4096 : 32); loop.Publish(first); loop.Decode();
+            byte[] second = packet(growFirst ? 32 : 4096); loop.Publish(second); loop.Decode();
+            if ((int)loop.ReadDecoder("pendingDecodeCount") != 2) throw new InvalidOperationException("Shrink/grow did not occupy both slots");
+            loop.Publish(packet(64)); var wait = Drain(loop); while (wait.MoveNext()) yield return wait.Current;
+            int callbacks = beforeCallbacks < 0 ? -1 : loop.ReadbackCallbacks - beforeCallbacks;
+            int predicted = (int)loop.ReadDecoder("predictedReadbackCount") - beforePredicted, fallback = (int)loop.ReadDecoder("predictionFallbackCount") - beforeFallback;
+            int firstId = first[0] | first[1] << 8 | first[2] << 16, secondId = second[0] | second[1] << 8 | second[2] << 16;
+            if (loop.AppliedCount != beforeApplied + 2 || loop.AppliedIds[beforeApplied] != firstId || loop.AppliedIds[beforeApplied + 1] != secondId ||
+                !second.SequenceEqual(loop.ReceivedPacket) || loop.RpcCount != beforeRpc || loop.CorruptCount != 0 ||
+                !(bool)loop.ReadDecoder("lastPayloadCrcVerified") || predicted != (candidate ? 1 : 0) || fallback != (candidate ? 1 : 2) ||
+                (callbacks >= 0 && callbacks != (candidate ? 3 : 4))) throw new InvalidOperationException("Shrink/grow slot isolation failure: " + loop.Diagnostics);
+            trace.Add(string.Join(",", "overlap-grow-first-" + growFirst, 0, -1, callbacks, predicted, fallback, 2, 0, true, -1, false));
+        }
+        File.WriteAllLines(Path.Combine(resultRoot, "prediction-shrink.csv"), trace);
+        File.WriteAllText(Path.Combine(resultRoot, "prediction-shrink.txt"), "PASS\nExpected shrink reuse=" + candidate +
+            "\nLuma4 plain shrink, RGBA remainders, retained dirty tails, growth, strict other codecs, metadata, CRC/RPC retry and both shrink/grow slot orders." +
+            "\ncompletedReadbacks=-1 means Native private callback count unavailable; SDK VM counts actual completed callback events. wallMs includes frame scheduling and is not GPU execution time.\n");
+        loop.Stop();
+    }
 
     IEnumerator Drain(ILoopback loop)
     {
@@ -934,6 +1078,7 @@ public sealed class ContinuousFrameValidation : MonoBehaviour
         public void WriteDecoder(string name, object value) => typeof(TSMPDecoder).GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).SetValue(decoder, value);
         public RenderTexture Output => encoder.output;
         public byte[] ReceivedPacket => receiver.packet;
+        public int ReadbackCallbacks => -1;
         public void SetSample(int sample) => encoder.sampleSize = sample;
         public int RpcCount => receiver.rpcCount;
         public void QueueRpc()

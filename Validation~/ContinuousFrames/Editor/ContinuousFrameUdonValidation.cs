@@ -38,7 +38,14 @@ public static class ContinuousFrameUdonValidation
             if (type == LogType.Error || type == LogType.Exception) failed = true;
         };
         Application.logMessageReceived += listener;
-        try { UdonSharpCompilerV1.CompileSync(new UdonSharpCompileOptions { IsEditorBuild = false }); }
+        try
+        {
+            // This SDK cache queries AssetDatabase, so initialize it before the
+            // compiler's worker thread can become its first caller.
+            var compilerInterface = typeof(UdonSharpCompilerV1).Assembly.GetType("UdonSharp.Compiler.Udon.CompilerUdonInterface", true);
+            compilerInterface.GetProperty("UdonSharpAssemblyDefinitions", BindingFlags.Public | BindingFlags.Static).GetValue(null);
+            UdonSharpCompilerV1.CompileSync(new UdonSharpCompileOptions { IsEditorBuild = false });
+        }
         finally { Application.logMessageReceived -= listener; }
         if (failed) throw new InvalidOperationException("Full client UdonSharp compilation failed");
         ValidateMaterialPreparation();
@@ -145,6 +152,7 @@ public static class ContinuousFrameUdonValidation
     {
         readonly IUdonProgram code;
         public readonly UdonBehaviour Backing;
+        public int ReadbackCallbacks;
 
         public Program(string path, TSMPCodec codec = null)
         {
@@ -158,7 +166,10 @@ public static class ContinuousFrameUdonValidation
                 throw new InvalidOperationException("Unresolved Udon heap");
             type.GetField("_program", Private).SetValue(Backing, code);
             bool profiling = (Environment.GetEnvironmentVariable("TSMP_CONTINUOUS_FILTER") ?? "").Contains("profile-");
-            type.GetField("_udonVM", Private).SetValue(Backing, profiling ? new TimedVm(vm, code, asset.name) : vm);
+            bool countReadbacks = path.EndsWith("/TSMPDecoder.asset") &&
+                (Environment.GetEnvironmentVariable("TSMP_CONTINUOUS_FILTER") ?? "").Split(',').Contains("prediction-shrink");
+            type.GetField("_udonVM", Private).SetValue(Backing, countReadbacks ?
+                new ReadbackCountingVm(vm, code, () => ReadbackCallbacks++) : profiling ? new TimedVm(vm, code, asset.name) : vm);
             type.GetField("_udonManager", Private).SetValue(Backing, UdonManager.Instance);
             type.GetField("_isReady", Private).SetValue(Backing, true);
             type.GetField("_hasDoneStart", Private).SetValue(Backing, true);
@@ -218,6 +229,23 @@ public static class ContinuousFrameUdonValidation
         }
     }
 
+    sealed class ReadbackCountingVm : IUdonVM
+    {
+        readonly IUdonVM inner;
+        readonly uint callback;
+        readonly Action observed;
+        public ReadbackCountingVm(IUdonVM vm, IUdonProgram program, Action observed)
+        { inner = vm; this.observed = observed; callback = program.EntryPoints.GetAddressFromSymbol("_onAsyncGpuReadbackComplete"); }
+        public bool DebugLogging { get => inner.DebugLogging; set => inner.DebugLogging = value; }
+        public bool LoadProgram(IUdonProgram program) => inner.LoadProgram(program);
+        public IUdonProgram RetrieveProgram() => inner.RetrieveProgram();
+        public void SetProgramCounter(uint counter) => inner.SetProgramCounter(counter);
+        public uint GetProgramCounter() => inner.GetProgramCounter();
+        public IUdonHeap InspectHeap() => inner.InspectHeap();
+        public uint Interpret()
+        { if (inner.GetProgramCounter() == callback) observed(); return inner.Interpret(); }
+    }
+
     sealed class Loopback : ContinuousFrameValidation.ILoopback
     {
         readonly List<Object> owned = new List<Object>();
@@ -254,13 +282,17 @@ public static class ContinuousFrameUdonValidation
             if (test.Codec != 0) WarmGraphics(runner.CloneCodec(0, owned), source, bytes);
             var expand = new Material(runner.expandMaterial);
             owned.Add(expand);
+            var lumaEncode = new Material(Resources.Load<Material>("TSMPEncodeLuma4"));
+            var readbackPack = new Material(Resources.Load<Material>("TSMPReadbackPack"));
+            owned.Add(lumaEncode);
+            owned.Add(readbackPack);
             encoder = Add("Packages/com.kibalab.tsmp.core/Runtime/Encoder/TSMPEncoder.asset");
             encoder.Set("output", source);
             encoder.Set("autoEncode", false);
             encoder.Set("sampleSize", test.Sample);
             encoder.Set("frameIndex", 1u);
             encoder.Set("blockExpandMaterial", expand);
-            encoder.Set("luma4EncodeMaterial", Resources.Load<Material>("TSMPEncodeLuma4"));
+            encoder.Set("luma4EncodeMaterial", lumaEncode);
             encoder.Set("useGpuLuma4", Environment.GetEnvironmentVariable("TSMP_DISABLE_GPU_LUMA4") != "1");
             encoder.Set("selectedCodecUdonTarget", codec.Backing);
             encoder.Set("debugLog", false);
@@ -273,7 +305,7 @@ public static class ContinuousFrameUdonValidation
             decoder = Add("Packages/com.kibalab.tsmp.core/Runtime/Decoder/TSMPDecoder.asset");
             decoder.Set<Texture>("sourceTexture", source);
             decoder.Set("payloadByteTexture", bytes);
-            decoder.Set("readbackPackMaterial", Resources.Load<Material>("TSMPReadbackPack"));
+            decoder.Set("readbackPackMaterial", readbackPack);
             decoder.Set("usePredictedReadback", Environment.GetEnvironmentVariable("TSMP_DISABLE_PREDICTION") != "1");
             decoder.Set("useCombinedByteOutput", Environment.GetEnvironmentVariable("TSMP_DISABLE_COMBINED_OUTPUT") != "1");
             decoder.Set("overlapReadbacks", Environment.GetEnvironmentVariable("TSMP_SINGLE_SLOT") != "1");
@@ -353,6 +385,7 @@ public static class ContinuousFrameUdonValidation
         public void WriteDecoder(string name, object value) => decoder.SetAny(name, value);
         public RenderTexture Output => source;
         public byte[] ReceivedPacket => receiver.Get<byte[]>("packet");
+        public int ReadbackCallbacks => decoder.ReadbackCallbacks;
         public void SetSample(int sample) => encoder.Set("sampleSize", sample);
         public int RpcCount => receiver.Get<int>("rpcCount");
         public void QueueRpc() => sender.Call("QueueProbeRpc");
