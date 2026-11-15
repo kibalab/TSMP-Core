@@ -5,11 +5,12 @@
 <p align="center"><strong>VRChat의 상태와 움직임을 텍스처 스트림으로 전송합니다.</strong></p>
 
 <p align="center">
-  <a href=".github/assets/tsmp-showcase.mp4"><img src=".github/assets/tsmp-showcase.gif" alt="TSMP 송신 클라이언트, 인코딩 프레임, 수신 결과를 한 화면에서 보여주는 데모" width="100%"></a>
+  <a href=".github/assets/tsmp-showcase.mp4"><img src=".github/assets/tsmp-showcase.gif" alt="아오이의 춤과 낙하 큐브를 TSMP 송신·프레임 스트림·수신 화면으로 보여주는 데모" width="100%"></a>
 </p>
 <p align="center">
   <a href=".github/assets/tsmp-showcase.mp4"><strong>▶ 16초 데모 영상 보기</strong></a><br>
   <sub>왼쪽부터 송신 화면 · 프레임 스트림 · 수신 화면 — Native Unity 로컬 데모, 낙하 큐브와 치마 PhysBone</sub><br>
+  <sub>약 4~6.5초의 PAUSED 구간은 수신 중단·복구 시연입니다. 송신은 계속 동작합니다.</sub><br>
   <sub>아바타: <a href="https://booth.pm/ja/items/5405703">Hayakawa Aoi © 2024 WARPSTORE</a> · 모션: <a href="https://kevdev.itch.io/human-dance-animations-free">Kevin Iglesias</a></sub>
 </p>
 

@@ -5,11 +5,12 @@
 <p align="center"><strong>Send VRChat state and motion through texture streams.</strong></p>
 
 <p align="center">
-  <a href=".github/assets/tsmp-showcase.mp4"><img src=".github/assets/tsmp-showcase.gif" alt="TSMP sender client, encoded video frames and decoded receiver shown together" width="100%"></a>
+  <a href=".github/assets/tsmp-showcase.mp4"><img src=".github/assets/tsmp-showcase.gif" alt="Aoi dancing and falling cubes shown through the TSMP sender, frame stream and receiver" width="100%"></a>
 </p>
 <p align="center">
   <a href=".github/assets/tsmp-showcase.mp4"><strong>▶ Watch the 16-second demo</strong></a><br>
   <sub>Left to right: sender · frame stream · receiver — local Native Unity demo with falling cubes and skirt PhysBones</sub><br>
+  <sub>The PAUSED interval at about 4–6.5 seconds demonstrates interrupted reception and recovery. The sender keeps running.</sub><br>
   <sub>Avatar: <a href="https://booth.pm/ja/items/5405703">Hayakawa Aoi © 2024 WARPSTORE</a> · Motion: <a href="https://kevdev.itch.io/human-dance-animations-free">Kevin Iglesias</a></sub>
 </p>
 

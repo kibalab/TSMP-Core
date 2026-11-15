@@ -5,11 +5,12 @@
 <p align="center"><strong>VRChat の状態と動きを、テクスチャストリームで伝送。</strong></p>
 
 <p align="center">
-  <a href=".github/assets/tsmp-showcase.mp4"><img src=".github/assets/tsmp-showcase.gif" alt="TSMP の送信クライアント、映像フレーム、受信結果を同時に表示するデモ" width="100%"></a>
+  <a href=".github/assets/tsmp-showcase.mp4"><img src=".github/assets/tsmp-showcase.gif" alt="アオイのダンスと落下するキューブを TSMP の送信・フレームストリーム・受信画面で示すデモ" width="100%"></a>
 </p>
 <p align="center">
   <a href=".github/assets/tsmp-showcase.mp4"><strong>▶ 16 秒のデモを見る</strong></a><br>
   <sub>左から送信画面 · フレームストリーム · 受信画面 — 落下するキューブとスカート PhysBone の Native Unity ローカルデモ</sub><br>
+  <sub>約 4〜6.5 秒の PAUSED 区間は、受信の中断と復旧を示すデモです。送信側は動き続けます。</sub><br>
   <sub>アバター: <a href="https://booth.pm/ja/items/5405703">Hayakawa Aoi © 2024 WARPSTORE</a> · モーション: <a href="https://kevdev.itch.io/human-dance-animations-free">Kevin Iglesias</a></sub>
 </p>
 
