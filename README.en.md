@@ -2,15 +2,13 @@
   <img src=".github/assets/tsmp-banner.png" alt="TSMP Core — Trans Sync Media Protocol" width="100%">
 </p>
 
-<p align="center"><strong>Send VRChat state and motion through texture streams.</strong></p>
-
 <p align="center">
-  <a href=".github/assets/tsmp-showcase.mp4"><img src=".github/assets/tsmp-showcase.gif" alt="Aoi dancing and falling cubes shown through the TSMP sender, frame stream and receiver" width="100%"></a>
+  <a href=".github/assets/tsmp-showcase.mp4"><img src=".github/assets/tsmp-showcase.gif" alt="TSMP sender, frame stream and receiver" width="100%"></a>
 </p>
 <p align="center">
-  <a href=".github/assets/tsmp-showcase.mp4"><strong>▶ Watch the 16-second demo</strong></a><br>
-  <sub>Left to right: sender · frame stream · receiver — local Native Unity demo with falling cubes and skirt PhysBones</sub><br>
-  <sub>The PAUSED interval at about 4–6.5 seconds demonstrates interrupted reception and recovery. The sender keeps running.</sub><br>
+  <a href=".github/assets/tsmp-showcase.mp4">Demo video (16 seconds)</a><br>
+  <sub>Sender → frame stream → receiver · local Unity demo</sub><br>
+  <sub>PAUSED demonstrates interrupted reception and recovery.</sub><br>
   <sub>Avatar: <a href="https://booth.pm/ja/items/5405703">Hayakawa Aoi © 2024 WARPSTORE</a> · Motion: <a href="https://kevdev.itch.io/human-dance-animations-free">Kevin Iglesias</a></sub>
 </p>
 
@@ -43,14 +41,12 @@
 
 ## What is TSMP?
 
-TSMP, the Trans Sync Media Protocol, is a communication protocol for sending runtime data through texture streams. TSMP Core is an open-source network framework that provides the runtime, synchronization components, and setup tools for using this protocol in VRChat worlds.
-
-The Encoder turns scene data into pixels; a capture or streaming path carries the image, and the Decoder applies the received data to matching objects.
+TSMP Core is a networking framework that sends VRChat world data through video. Its Encoder writes TSMP (Trans Sync Media Protocol) data into pixels; the Decoder reads the received image and updates objects.
 
 | Feature | What it provides |
 | --- | --- |
 | **Texture transport** | TSMP Encoder / Decoder for encoding and decoding runtime data |
-| **Multi-instance communication** | Build a synchronization solution across separate VRChat instances using an external capture or streaming path |
+| **Multi-instance communication** | Synchronize separate VRChat instances over an external video stream |
 | **State and events** | `[TransSync]` field synchronization and `SendTransRPC(methodName, target)` RPC |
 | **Motion and playback** | Transform, Rigidbody, Humanoid and VRChat Avatar Pose, BlendShape, Animator, Timeline |
 | **Scene setup** | Automatic `TSMPSetup` configuration, codec discovery and selection, component and binding updates |
@@ -105,7 +101,7 @@ Core provides the scene runtime and setup workflow. Separate codec packages prov
 
 [Latest stable release](https://github.com/kibalab/TSMP-Core/releases/latest) · [All releases](https://github.com/kibalab/TSMP-Core/releases)
 
-TSMP Core 1.0.0 is a stable release incorporating the features, fixes and optimizations from the betas since 0.2.0. Use it with Luma4 1.0.0.
+Use TSMP Core 1.0.0 with Luma4 1.0.0.
 
 Report bugs and suggest improvements in [Issues](https://github.com/kibalab/TSMP-Core/issues). For code and documentation contributions, see the [contributing guide](CONTRIBUTING.md).
 

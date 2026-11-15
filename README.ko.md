@@ -2,15 +2,13 @@
   <img src=".github/assets/tsmp-banner.png" alt="TSMP Core — Trans Sync Media Protocol" width="100%">
 </p>
 
-<p align="center"><strong>VRChat의 상태와 움직임을 텍스처 스트림으로 전송합니다.</strong></p>
-
 <p align="center">
-  <a href=".github/assets/tsmp-showcase.mp4"><img src=".github/assets/tsmp-showcase.gif" alt="아오이의 춤과 낙하 큐브를 TSMP 송신·프레임 스트림·수신 화면으로 보여주는 데모" width="100%"></a>
+  <a href=".github/assets/tsmp-showcase.mp4"><img src=".github/assets/tsmp-showcase.gif" alt="TSMP 송신·프레임 스트림·수신 화면" width="100%"></a>
 </p>
 <p align="center">
-  <a href=".github/assets/tsmp-showcase.mp4"><strong>▶ 16초 데모 영상 보기</strong></a><br>
-  <sub>왼쪽부터 송신 화면 · 프레임 스트림 · 수신 화면 — Native Unity 로컬 데모, 낙하 큐브와 치마 PhysBone</sub><br>
-  <sub>약 4~6.5초의 PAUSED 구간은 수신 중단·복구 시연입니다. 송신은 계속 동작합니다.</sub><br>
+  <a href=".github/assets/tsmp-showcase.mp4">데모 영상 (16초)</a><br>
+  <sub>송신 → 프레임 스트림 → 수신 · Unity 로컬 시연</sub><br>
+  <sub>PAUSED는 수신 중단·복구 시연입니다.</sub><br>
   <sub>아바타: <a href="https://booth.pm/ja/items/5405703">Hayakawa Aoi © 2024 WARPSTORE</a> · 모션: <a href="https://kevdev.itch.io/human-dance-animations-free">Kevin Iglesias</a></sub>
 </p>
 
@@ -43,14 +41,12 @@
 
 ## TSMP는 무엇인가요?
 
-TSMP(Trans Sync Media Protocol)는 런타임 데이터를 텍스처 스트림으로 전달하는 통신 프로토콜입니다. TSMP Core는 이 프로토콜을 VRChat 월드에서 활용할 수 있도록 런타임·동기화 컴포넌트·설정 도구를 제공하는 오픈소스 네트워크 프레임워크입니다.
-
-Encoder가 씬의 데이터를 픽셀로 인코딩하고, 캡처·스트리밍 경로를 거친 영상을 Decoder가 읽어 수신 오브젝트에 적용합니다.
+TSMP Core는 VRChat 월드의 데이터를 영상으로 전송하는 네트워크 프레임워크입니다. Encoder가 TSMP(Trans Sync Media Protocol) 형식의 데이터를 픽셀로 만들고, Decoder가 수신 영상을 읽어 오브젝트에 적용합니다.
 
 | 기능 | 지원 내용 |
 | --- | --- |
 | **텍스처 전송** | TSMP Encoder / Decoder로 런타임 데이터를 인코딩·디코딩 |
-| **멀티 인스턴스 통신** | 외부 캡처·스트리밍 경로와 결합해 서로 다른 VRChat 인스턴스 간 동기화 솔루션 구성 |
+| **멀티 인스턴스 통신** | 외부 영상 스트림을 통한 서로 다른 VRChat 인스턴스 간 동기화 |
 | **상태와 이벤트** | `[TransSync]` 필드 동기화, `SendTransRPC(methodName, target)` RPC |
 | **움직임과 재생** | Transform, Rigidbody, Humanoid·VRChat Avatar Pose, BlendShape, Animator, Timeline |
 | **씬 구성** | `TSMPSetup` 자동 설정, 코덱 검색·선택, 컴포넌트와 바인딩 자동 갱신 |
@@ -105,7 +101,7 @@ Core는 씬 런타임과 설정을, 별도 코덱 패키지는 픽셀 인코딩�
 
 [최신 정식 릴리즈](https://github.com/kibalab/TSMP-Core/releases/latest) · [전체 릴리즈](https://github.com/kibalab/TSMP-Core/releases)
 
-TSMP Core 1.0.0은 0.2.0 이후 베타의 기능, 수정 및 최적화를 통합한 정식 버전입니다. Luma4 1.0.0과 함께 사용하세요.
+TSMP Core 1.0.0과 Luma4 1.0.0을 함께 사용하세요.
 
 버그나 제안은 [Issues](https://github.com/kibalab/TSMP-Core/issues)에 남겨 주세요. 코드·문서 기여는 [기여 가이드](CONTRIBUTING.md)를 참고하세요.
 
