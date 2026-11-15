@@ -20,7 +20,7 @@ using VRC.Udon.Editor;
 using Object = UnityEngine.Object;
 
 // Validation only. Real compiled programs and VRC GPU readbacks, continuously admitted.
-public static class SustainedCostValidation
+public static partial class SustainedCostValidation
 {
     const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
     const string SessionKey = "TSMP.SustainedCost";
@@ -72,6 +72,10 @@ public static class SustainedCostValidation
         public int bytes = 1024, renderHz = 60, sourceHz = 30, budget = 2, measuredStartId;
         public double seconds = 12, decodePhaseSeconds, sourceJitterSeconds, holdStartSeconds, holdSeconds;
         public bool stress;
+        public bool scene;
+        public string avatarPath, dancePath;
+        public double warmSeconds = 4;
+        public int safetyMode;
     }
     static void Check(bool value, string message) { assertions++; if (!value) throw new InvalidOperationException(message); }
     static string H(byte[] data) { using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(data)).Replace("-", "").ToLowerInvariant(); }
@@ -110,6 +114,7 @@ public static class SustainedCostValidation
             asset.sourceCsScript = AssetDatabase.LoadAssetAtPath<MonoScript>("Assets/Validation/SustainedCost/Runtime/SustainedCostProbe.cs");
             Check(asset.sourceCsScript != null, "Probe missing."); AssetDatabase.CreateAsset(asset, ProbePath);
         }
+        EnsureSceneStateAsset();
         Compile(); AssetDatabase.SaveAssets(); SessionState.SetBool(SessionKey, true); Attach(); EditorApplication.EnterPlaymode();
     }
     static void Compile()
@@ -130,6 +135,7 @@ public static class SustainedCostValidation
     static void Finish(Exception error)
     {
         step = null; SustainedCostPump.FrameStep = null; collecting = false; EditorApplication.update -= Tick;
+        try { FlushScene(); } catch (Exception flushError) { if (error == null) error = flushError; else notes.Add(flushError.ToString()); }
         foreach (var program in programs) program.Dispose(); programs.Clear(); RenderTexture.active = null;
         foreach (Object item in owned.AsEnumerable().Reverse()) { if (item is RenderTexture texture) texture.Release(); if (item != null) Object.DestroyImmediate(item); } owned.Clear();
         try
@@ -153,6 +159,7 @@ public static class SustainedCostValidation
         public readonly IUdonProgram Code;
         public readonly UdonBehaviour Backing;
         public string role;
+        public int sceneIndex = -1;
         public Program(string path, TSMPCodec codec = null, string role = null)
         {
             this.role = role;
@@ -203,6 +210,7 @@ public static class SustainedCostValidation
         public IUdonHeap InspectHeap() => inner.InspectHeap();
         public uint Interpret()
         {
+            if (sceneSession != null) return InterpretScene(inner, owner, labels);
             long observationStart = Stopwatch.GetTimestamp();
             bool top = depth++ == 0; string label; if (!labels.TryGetValue(inner.GetProgramCounter(), out label)) label = "unknown";
             bool record = top && collecting && activeDecoder != null;
@@ -316,8 +324,8 @@ public static class SustainedCostValidation
         notes.Add("Unity=" + Application.unityVersion + "; GPU=" + SystemInfo.graphicsDeviceName + "; API=" + SystemInfo.graphicsDeviceType + "; ColorSpace=" + QualitySettings.activeColorSpace);
         notes.Add("Actual client Encoder/Decoder/codec/probe EditorVMs and real VRC GPU callbacks; no live VRChat/CDN/FPS result.");
         notes.Add("Clean changing-ID delivery and damaged fixed-ID repeated processing are separate regimes. Top-level VM events include nested work once; gross Interpret time and nested host observations are retained; net VM time subtracts measured nested receiver host checks. Render-frame counts are Time.frameCount, target rate is not achieved rate.");
-        notes.Add("Logical request identity is assigned only on proven idle-to-pending transitions; callback object replacement retains that identity. Occupied-slot request replacement in _update is ambiguous and markedID/source=-1. Proven admissions is a lower bound, notexactcaptures. Sourceage is independent received-ID evidence. Repeated rejected frames can invalidate prediction. Frozen clean packets contain one bound variable; no event/RPC delivery claim.");
-        notes.Add("Receiver frames are recorded inside each actual OnTSMPVariableReceived callback. Clean packets have exactly one RawBytes binding, so each receiver count increment is one accepted packet completion. Top-level receiver count intervals link those completions to Decoder dispatches; pending-count changes and GPU callback counts are separate observations.");
+        notes.Add("RawBytes mode only: logical request identity is assigned only on proven idle-to-pending transitions; callback object replacement retains that identity. Occupied-slot request replacement in _update is ambiguous and markedID/source=-1. Proven admissions is a lower bound, not exact captures. Source age is independent received-ID evidence. Repeated rejected frames can invalidate prediction. Frozen clean RawBytes packets contain one bound variable; no event/RPC delivery claim.");
+        notes.Add("RawBytes mode only: receiver frames are recorded inside each actual OnTSMPVariableReceived callback. Clean packets have exactly one RawBytes binding, so each receiver count increment is one accepted packet completion. Top-level receiver count intervals link those completions to Decoder dispatches; pending-count changes and GPU callback counts are separate observations. Scene mode uses its separate 17-field complete-cohort records and explicit scope files.");
         foreach (var pair in Sources()) sourceBefore.Add(pair.Key, pair.Value);
         File.WriteAllLines(Path.Combine(Root, "source-before.csv"), new[] { "path,sha256" }.Concat(sourceBefore.Select(pair => Row(pair.Key, pair.Value))));
         frames.Add("case,frame,time,measured,latestSource,latestApplied,sourceAgeMs,pending,busy,gc0,gc1,gc2,ageSampleTime,latestSentTime");
@@ -327,7 +335,7 @@ public static class SustainedCostValidation
         File.WriteAllBytes(Path.Combine(Root, "plan-used.json"), planBytes); hashes.Add(Row("plan", planPath, H(planBytes)));
         var plan = JsonUtility.FromJson<Plan>(System.Text.Encoding.UTF8.GetString(planBytes).TrimStart('\uFEFF')); Check(plan.cases != null && plan.cases.Length > 0, "Empty plan.");
         Check(Keep(new GameObject("Sustained frame pump")).AddComponent<SustainedCostPump>() != null, "Frame pump component missing"); SustainedCostPump.FrameStep = () => step?.Invoke(); Keep(new GameObject("Camera")).AddComponent<Camera>().cullingMask = 0;
-        foreach (Case item in plan.cases) { var run = Measure(item); while (run.MoveNext()) yield return run.Current; Dump(); yield return null; GC.Collect(); }
+        foreach (Case item in plan.cases) { var run = item.scene ? MeasureScene(item) : Measure(item); while (run.MoveNext()) yield return run.Current; Dump(); yield return null; GC.Collect(); }
     }
     static IEnumerator Measure(Case item)
     {

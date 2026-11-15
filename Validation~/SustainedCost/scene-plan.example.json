@@ -1,0 +1,17 @@
+{
+  "cases": [
+    {
+      "name": "aoi51-cubes12",
+      "codec": "Luma4",
+      "scene": true,
+      "warmSeconds": 2,
+      "seconds": 30,
+      "renderHz": 60,
+      "sourceHz": 30,
+      "budget": 2,
+      "safetyMode": 0,
+      "avatarPath": "Assets/Models/Hayakawa_Aoi/Prefabs/Hayakawa_Aoi.prefab",
+      "dancePath": "Assets/Kevin Iglesias/Human Animations/Animations/Female/Social/Dance/Steps/HumanF@Dance06.fbx"
+    }
+  ]
+}

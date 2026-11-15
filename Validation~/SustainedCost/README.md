@@ -102,3 +102,27 @@ measured field ID1024 in each process. Common measured IDs therefore share field
 bytes, while host timestamps, outer TSMP frame indices and warmup counts differ.
 Keep those distinctions when comparing performance; do not call packets bit
 identical. The original27-case source copies remain frozen in the result folder.
+
+## Aoi and cube workload
+
+`scene-plan.example.json` selects Aoi's 51 transmitted bones, twelve source
+Rigidbody cubes and four state fields. Import the licensed avatar and dance
+assets at the plan's paths in the dedicated project; those assets are not included.
+
+```powershell
+./Validation~/SustainedCost/Run-Validation.ps1 -UnityEditor '<Unity.exe>' -Project '<dedicated SDK project>' -Plan './Validation~/SustainedCost/scene-plan.example.json' -Results '<fresh results>'
+python ./Validation~/SustainedCost/Analyze-Scene.py --results '<completed results>'
+```
+
+This mode sends real GPU Luma4 frames at 640x360/sample4 and observes a complete
+17-field application. Pose, packet and timing buffers are allocated before
+preflight; checks and file formatting run after drain. Only `top=True` VM events
+contribute to total processing time; nested component timings are breakdowns.
+The analyzer independently checks both CRCs, field structure, state bytes,
+delivery, timing arithmetic and request-to-callback wall-wait bounds.
+
+Avatar rendering and PhysBones are disabled. Native motion preparation is timed;
+automatic Unity physics simulation is outside the VM timers. This is SDK Editor
+VM elapsed time, not live VRChat FPS or GPU execution time. Nonapply safety modes
+2/3 are diagnostic controls, with no application age/delivery claim; prediction
+fallback also changes their request path.
