@@ -23,14 +23,8 @@ public static class GpuOutputUdonValidation
         EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
         var go = new GameObject("Decoder");
         var decoder = go.AddUdonSharpComponent<TSMPDecoder>();
-        var view = new GameObject("Output").AddUdonSharpComponent<TSMPGpuOutput>();
-        view.input = GpuOutputInput.TransSyncField;
-        view.networkId = 13;
-        view.variableHash = 0xfacedeadu;
-        view.material = new Material(Shader.Find("TSMP/GPU Output/Copy Bytes"));
-        AssetDatabase.CreateAsset(view.material, Root + "/Copy.mat");
-        view.destination = Target("View");
-        decoder.gpuOutputs = new[] { view };
+        decoder.shaderChannel = ShaderReceiveChannel.Channel1;
+        decoder.shaderChannelMaterial = Resources.Load<Material>("TSMPShaderChannel");
         decoder.applyEveryFrame = false;
         decoder.payloadByteTexture = Target("Bytes");
         var prefab = AssetDatabase.LoadAssetAtPath<GameObject>("Packages/com.kibalab.tsmp.codec.luma4/Runtime/Codec_Luma4.prefab");
@@ -42,7 +36,7 @@ public static class GpuOutputUdonValidation
         var payload = new byte[29];
         int msg = NetworkFrameWriter.BeginNetworkFrame(payload, 0, 1);
         int entry = NetworkFrameWriter.BeginVariableState(payload, msg, 13, 1);
-        int value = NetworkFrameWriter.BeginVariableValue(payload, entry, view.variableHash, (int)NetworkValueType.Int32);
+        int value = NetworkFrameWriter.BeginVariableValue(payload, entry, 0xfacedeadu, (int)NetworkValueType.Int32);
         Binary.WriteUInt32LE(payload, value, 0x44fea501u);
         NetworkFrameWriter.EndVariableValue(payload, entry, value + 4);
         NetworkFrameWriter.EndVariableState(payload, msg, value + 4, 1);
@@ -56,7 +50,13 @@ public static class GpuOutputUdonValidation
         if (!codec.TryWriteFrame(image, 8, bytes, payload, out var error)) throw new Exception(error);
         AssetDatabase.CreateAsset(image, Root + "/Input.asset");
         decoder.sourceTexture = image;
-        UdonSharpEditorUtility.CopyProxyToUdon(view);
+        var nextImage = new Texture2D(640, 360, TextureFormat.RGBA32, false, true) { filterMode = FilterMode.Point };
+        header.FrameIndex++;
+        header.WriteTo(bytes, 0);
+        Binary.WriteUInt32LE(payload, entry + NetworkFrameProtocol.VariableValueHashOffset, 7u);
+        Binary.WriteUInt32LE(payload, value, 0xdeadbeefu);
+        if (!codec.TryWriteFrame(nextImage, 8, bytes, payload, out error)) throw new Exception(error);
+        AssetDatabase.CreateAsset(nextImage, Root + "/OtherField.asset");
         UdonSharpEditorUtility.CopyProxyToUdon(decoder);
         var world = new GameObject("World").AddComponent<VRC.SDK3.Components.VRCSceneDescriptor>();
         world.spawns = new[] { new GameObject("Spawn").transform };
@@ -105,12 +105,29 @@ public static class GpuOutputUdonValidation
                 if (!string.IsNullOrEmpty(error)) throw new Exception(error);
                 return;
             }
-            var rt = AssetDatabase.LoadAssetAtPath<RenderTexture>(Root + "/View.renderTexture");
+            if (phase == 2 && ((bool)vm.GetProgramVariable("readbackInFlight") || (uint)vm.GetProgramVariable("lastFrameIndex") != 1u))
+                return;
+            var rt = RenderTexture.GetTemporary(1, 1, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear);
+            var consumer = new Material(Shader.Find("Hidden/TSMP Validation/Inspect GPU View"));
+            consumer.SetInteger("_Mode", 3);
+            consumer.SetInteger("_Channel", 1);
+            consumer.SetInteger("_Width", 1);
+            Graphics.Blit(null, rt, consumer);
             var read = AsyncGPUReadback.Request(rt, 0, TextureFormat.RGBA32);
             read.WaitForCompletion();
-            if (read.hasError || !read.GetData<byte>().Take(4).SequenceEqual(new byte[] { 1, 165, 254, 68 }))
+            bool valid = !read.hasError && read.GetData<byte>().Take(4).SequenceEqual(new byte[] { 1, 165, 254, 68 });
+            RenderTexture.ReleaseTemporary(rt);
+            UnityEngine.Object.Destroy(consumer);
+            if (!valid)
                 throw new Exception("Udon output is not the transmitted Int32");
-            Debug.Log("PASS serialized Udon GPU field loopback");
+            if (phase == 1)
+            {
+                phase++;
+                vm.SetProgramVariable("sourceTexture", AssetDatabase.LoadAssetAtPath<Texture2D>(Root + "/OtherField.asset"));
+                vm.SendCustomEvent("DecodeNow");
+                return;
+            }
+            Debug.Log("PASS serialized Udon shader lookup and retained field");
             Finish(0);
         }
         catch (Exception e) { Debug.LogException(e); Finish(1); }

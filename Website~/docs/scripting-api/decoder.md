@@ -154,24 +154,30 @@ When a variable message arrives, the decoder only applies it to matching binding
 - RPC calls are event-like. Use repeat frames on the encoder if the transport drops frames.
 - Decoder logs important runtime failures because inspector fields are not visible in uploaded worlds.
 
-## GPU outputs
+## Reading received data in a shader
 
-Add a **TSMP GPU Output** component and assign it in the decoder's **GPU Outputs** list. Choose **Network Frame** for the entire NetworkFrame payload (not the 56-byte wire header), or **Trans Sync Field** for the encoded value of one network ID and variable hash, without its entry header. On the decoder or a child object, **Select Decoder Binding** can fill in the IDs; a matching CPU receiver is not required.
+On the **TSMP Decoder**, set **Shader Channel** to **Channel 0**. In your material's vertex or fragment shader, include `TSMP.cginc`. You do not need a receiver component, matching CPU binding, material registration or output RenderTexture. Do not declare the channel textures in ShaderLab Properties: they are globals. The default is **Off**; use a different channel (0–3) for each simultaneously active decoder.
 
-Assign a material and a destination RenderTexture. For a byte-for-byte copy, create a material using **TSMP/GPU Output/Copy Bytes** and a linear ARGB32 target with no MSAA or mipmaps. Allow one pixel per four bytes; a smaller target keeps only the beginning. Extra bytes in the output are zero. Other passes can instead write colors, transforms or any application-specific layout directly. Use a separate destination for each result, not a decoder input or work texture.
+```hlsl
+#pragma target 3.5
+#include "Packages/com.kibalab.tsmp.core/Shaders/TSMP.cginc"
 
-Core invokes material pass 0 once per matching accepted frame, in list order. If a field is absent (including SendOnChange), the output stays unchanged. A present zero-length value still runs the pass. If the same field appears more than once, its last entry wins. A disabled output, rejected frame, or diagnostic safety mode does not update the destination. Normal CPU variable and RPC dispatch is unchanged; do not configure a duplicate CPU binding if only the GPU should consume a value. This path uses the decoder's existing readback and validation, not an additional readback or CPU texture upload.
+float ReadGain(uint channel, uint networkId, uint variableHash, float fallback)
+{
+    TSMPByteView field;
+    if (!TSMPTryGetField(channel, networkId, variableHash, field) ||
+        field.valueType != 3u || field.length != 4u)
+        return fallback;
+    return TSMPReadFloat32LE(field, 0u);
+}
+```
 
-### Custom pass contract
+Choose **Copy Shader Lookup** on the decoder to copy an HLSL lookup for the frame or a configured binding. For an unbound field, use the sender's network ID and **wire hash**, not Unity's shader property ID. In C#, `StableHash.VariableHash(behaviour.GetType(), fieldName, transSyncKey)` computes the same unsigned 32-bit value as the binding builder. Pass the hash as a `uint` (e.g. a hexadecimal literal ending in `u`); a float material property cannot represent every hash exactly.
 
-Declare `_MainTex` as a 2D property in ShaderLab. In a shader targeting 3.5 or higher include `Packages/com.kibalab.tsmp.core/Shaders/TSMPGpuInput.cginc` (do not redeclare `_MainTex`). Read offsets relative to the supplied view; the include handles texel channels, row boundaries and the prediction prefix. Do not retain the source texture. Only the destination persists.
+- `TSMPTryGetFrame(channel, out view)` selects the latest accepted NetworkFrame payload, including RPC messages but excluding the 56-byte header. There is no event queue for shaders.
+- `TSMPTryGetField(channel, networkId, hash, out view)` selects the latest encoded **value** without its entry header. Both selectors also have an overload without `channel` for channel 0. A missing field returns false; a received empty field returns true with length zero.
+- Read offsets relative to the view using `TSMPReadByte`, `TSMPReadUInt16LE`, `TSMPReadUInt32LE` or `TSMPReadFloat32LE`. Out-of-range reads return zero. Use `TSMPStreamId(channel)` and `TSMPFrameIndex(channel)` after checking that a frame exists. Look up a view once per shader invocation and reuse it for multiple reads; do not retain its offset across frames.
 
-| HLSL | Meaning |
-| --- | --- |
-| `TSMPByteLength()`, `TSMPValueType()` | Length in bytes and wire value type (0 for a whole frame). |
-| `TSMPHasBytes(offset, count)` | Whether the whole range lies within the view. |
-| `TSMPReadByte(offset)`, `TSMPReadUInt16LE(offset)`, `TSMPReadUInt32LE(offset)`, `TSMPReadFloat32LE(offset)` | Unaligned reads. Return zero if any required byte is outside the view. |
-| `TSMPStreamId()`, `TSMPFrameIndex()` | Exact unsigned 32-bit identifiers from the frame header. |
-| `_TSMPOutputSize.xy` | Destination width and height in pixels. |
+An omitted SendOnChange field retains its last value. The last entry wins within one frame. A new stream or accepted frame-index restart clears old fields. Rejected, duplicate-filtered or safety-mode frames do not publish. Disabling the decoder or changing channels releases its previous data.
 
-For example, a light-level material receiving a Float32 field can read `TSMPReadFloat32LE(0u)` when `TSMPValueType() == 3u`. A pose plugin can use the same API with a RawBytes field. Neither needs to know which codec supplied the bytes.
+When enabled, the decoder uploads the field directory and runs one GPU pass per accepted frame. Value bytes stay on the GPU path; existing CPU validation, readback and RPC dispatch still run. No additional readback is requested. Each channel can retain up to 1,024 fields and 1 MiB of field values (each rounded to four bytes). Exceeding either limit invalidates the channel and logs a warning without stopping CPU decoding; caching starts again on the next publishable frame.

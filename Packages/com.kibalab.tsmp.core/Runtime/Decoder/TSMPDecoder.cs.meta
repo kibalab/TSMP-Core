@@ -4,6 +4,7 @@ MonoImporter:
   externalObjects: {}
   serializedVersion: 2
   defaultReferences:
+  - shaderChannelMaterial: {fileID: 2100000, guid: b38220cbaf974448a4a6aac5e62b192f, type: 2}
   - readbackPackMaterial: {fileID: 2100000, guid: 2a03032d2efb48aa8a15144d5b59f742, type: 2}
   executionOrder: 0
   icon: {instanceID: 0}

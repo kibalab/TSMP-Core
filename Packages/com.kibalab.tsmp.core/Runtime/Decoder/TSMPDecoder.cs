@@ -41,15 +41,19 @@ namespace K13A.TSMP.Udon
         public RenderTexture payloadByteTexture;
 
         public TSMPCodec[] codecHandlers;
-        [Tooltip("Optional shader passes for accepted network frames or TransSync values.")]
-        public TSMPGpuOutput[] gpuOutputs;
+        [Tooltip("Publish accepted data for shaders. Use a different channel for each active decoder.")]
+        public ShaderReceiveChannel shaderChannel;
+        [HideInInspector] public Material shaderChannelMaterial;
 
-        private int[] _gpuNetworkIds;
-        private uint[] _gpuHashes;
-        private Vector3Int[] _gpuViews;
-        private TSMPGpuOutput[] _gpuFrameOutputs;
-        private int _gpuOutputCount;
-        private bool _hasGpuFieldOutputs;
+        private ShaderReceiveChannel _publishedChannel;
+        private int _channelPropertyId;
+        private uint[] _publishedFields, _stagedFields;
+        private int _publishedCount, _stagedCount;
+        private uint _shaderStream, _shaderFrame;
+        private bool _stageShaderFields, _shaderPublishFailed;
+        private RenderTexture _atlas, _atlasSpare;
+        private Texture2D _shaderDirectory;
+        private byte[] _directoryUpload;
 
         [HideInInspector] public Component[] bindingTargets;
 
@@ -259,6 +263,8 @@ namespace K13A.TSMP.Udon
         {
             if (readbackPackMaterial == null)
                 readbackPackMaterial = Resources.Load<Material>("TSMPReadbackPack");
+            if (shaderChannelMaterial == null)
+                shaderChannelMaterial = Resources.Load<Material>("TSMPShaderChannel");
         }
 #endif
 
@@ -271,6 +277,8 @@ namespace K13A.TSMP.Udon
 
         private void Update()
         {
+            if (_publishedChannel != ShaderReceiveChannel.Off && _publishedChannel != shaderChannel)
+                ReleaseShaderChannel();
             ProcessReadyReadbacks();
             if (!applyEveryFrame)
                 return;
@@ -284,12 +292,15 @@ namespace K13A.TSMP.Udon
 #if !COMPILER_UDONSHARP
             if (readbackPackMaterial == null)
                 readbackPackMaterial = Resources.Load<Material>("TSMPReadbackPack");
+            if (shaderChannelMaterial == null)
+                shaderChannelMaterial = Resources.Load<Material>("TSMPShaderChannel");
 #endif
         }
 
         private void OnDisable()
         {
             _decodeSuspended = true;
+            ReleaseShaderChannel();
             _predictionValid = false;
             for (int i = 0; i < 2; i++)
             {
@@ -305,6 +316,7 @@ namespace K13A.TSMP.Udon
 
         private void OnDestroy()
         {
+            ReleaseShaderChannel();
             _decodeSuspended = true;
             for (int i = 0; i < 2; i++)
                 ReleaseSlotTextures(i);
@@ -684,13 +696,17 @@ namespace K13A.TSMP.Udon
                 return;
             }
 
-            PrepareGpuOutputs();
+            ShaderReceiveChannel channel = shaderChannel;
+            _stageShaderFields = channel != ShaderReceiveChannel.Off && _requestSafetyMode == 0;
+            if (_stageShaderFields)
+                BeginShaderFrame(channel);
             bool valid = ApplyNetworkFrame();
-            _hasGpuFieldOutputs = false;
+            _stageShaderFields = false;
             if (!valid)
                 return;
-            if (_gpuOutputCount > 0 && !_decodeSuspended && !_slotDiscarded[_activeSlot])
-                PublishGpuOutputs(bytes, payloadOffset);
+            if (channel != ShaderReceiveChannel.Off && channel == shaderChannel && _requestSafetyMode == 0 &&
+                !_decodeSuspended && !_slotDiscarded[_activeSlot])
+                PublishShaderFrame(channel, bytes, payloadOffset);
             _hasAppliedFrame = true;
             _lastAppliedStreamId = lastStreamId;
             _lastAppliedFrameIndex = lastFrameIndex;
@@ -698,59 +714,63 @@ namespace K13A.TSMP.Udon
             lastFrameValid = true;
         }
 
-        private void PrepareGpuOutputs()
+        private void BeginShaderFrame(ShaderReceiveChannel channel)
         {
-            _gpuOutputCount = 0;
-            _hasGpuFieldOutputs = false;
-            if (_requestSafetyMode != 0 || gpuOutputs == null || gpuOutputs.Length == 0)
+            if (_publishedChannel != ShaderReceiveChannel.Off && _publishedChannel != channel)
+                ReleaseShaderChannel();
+            bool restart = lastFrameIndex == 0u && (long)_shaderFrame >= Mathf.Max(1, frameWindowSize)
+                && _shaderFrame < 0x80000000u;
+            _stagedCount = lastStreamId == _shaderStream && !restart ? _publishedCount : 0;
+            if (_stagedCount == 0)
                 return;
-
-            int count = gpuOutputs.Length;
-            if (_gpuViews == null || _gpuViews.Length < count)
-            {
-                _gpuNetworkIds = new int[count];
-                _gpuHashes = new uint[count];
-                _gpuViews = new Vector3Int[count];
-                _gpuFrameOutputs = new TSMPGpuOutput[count];
-            }
-
-            for (int i = 0; i < count; i++)
-            {
-                TSMPGpuOutput output = gpuOutputs[i];
-                if (output == null)
-                    continue;
-
-                int slot = _gpuOutputCount++;
-                _gpuFrameOutputs[slot] = output;
-                if (output.input == GpuOutputInput.TransSyncField)
-                {
-                    _gpuNetworkIds[slot] = output.networkId;
-                    _gpuHashes[slot] = output.variableHash;
-                    _gpuViews[slot] = new Vector3Int(-1, 0, 0);
-                    _hasGpuFieldOutputs = true;
-                }
-                else
-                {
-                    _gpuNetworkIds[slot] = -1;
-                    _gpuViews[slot] = new Vector3Int(0, _payloadDataBytes, 0);
-                }
-            }
+            if (_stagedFields == null || _stagedFields.Length < _publishedCount * ShaderReceiveAtlas.EntryWords)
+                _stagedFields = new uint[_publishedFields.Length];
+            System.Array.Copy(_publishedFields, _stagedFields, _publishedCount * ShaderReceiveAtlas.EntryWords);
         }
 
-        private void PublishGpuOutputs(RenderTexture bytes, int payloadOffset)
+        private void PublishShaderFrame(ShaderReceiveChannel channel, RenderTexture bytes, int prefix)
         {
-            for (int i = 0; i < _gpuOutputCount; i++)
+            if (!ShaderReceiveAtlas.Render(shaderChannelMaterial, bytes, prefix, _payloadDataBytes,
+                    lastStreamId, lastFrameIndex, _stagedFields, _stagedCount, _atlas, ref _atlasSpare,
+                    ref _shaderDirectory, ref _directoryUpload))
             {
-                Vector3Int view = _gpuViews[i];
-                TSMPGpuOutput output = _gpuFrameOutputs[i];
-                _gpuFrameOutputs[i] = null;
-                if (view.x < 0 || output == null || output.destination == payloadByteTexture ||
-                    output.destination == sourceTexture)
-                    continue;
-
-                view.x += payloadOffset;
-                output.RenderView(bytes, view, lastStreamId, lastFrameIndex);
+                ReleaseShaderChannel();
+                if (!_shaderPublishFailed)
+                    Debug.LogWarning("[TSMP Decoder] Shader channel unavailable: check its material, texture allocation and field cache limits.");
+                _shaderPublishFailed = true;
+                return;
             }
+            _shaderPublishFailed = false;
+            RenderTexture previous = _atlas;
+            _atlas = _atlasSpare;
+            _atlasSpare = previous;
+            if (channel != _publishedChannel)
+                _channelPropertyId = ShaderReceiveAtlas.PropertyId(channel);
+            ShaderReceiveAtlas.Bind(_channelPropertyId, _atlas);
+            _publishedChannel = channel;
+            _shaderStream = lastStreamId;
+            _shaderFrame = lastFrameIndex;
+            for (int i = 0; i < _stagedCount * ShaderReceiveAtlas.EntryWords; i += ShaderReceiveAtlas.EntryWords)
+                _stagedFields[i + 4] = _stagedFields[i + 2] | 0x80000000u;
+            uint[] scratch = _publishedFields;
+            _publishedFields = _stagedFields;
+            _stagedFields = scratch;
+            _publishedCount = _stagedCount;
+        }
+
+        private void ReleaseShaderChannel()
+        {
+            DecoderSnapshotRuntime.Release(_atlas);
+            DecoderSnapshotRuntime.Release(_atlasSpare);
+            GpuLuma4Writer.ReleaseTexture(_shaderDirectory);
+            _atlas = null;
+            _atlasSpare = null;
+            _shaderDirectory = null;
+            _directoryUpload = null;
+            _publishedFields = null;
+            _stagedFields = null;
+            _publishedCount = 0;
+            _publishedChannel = ShaderReceiveChannel.Off;
         }
 
         private bool ValidateSetup()
@@ -1354,12 +1374,9 @@ namespace K13A.TSMP.Udon
                 if (!NetworkFrameReader.TryReadVariableEntry(_payloadBytes, cursor, bodyEnd, out variableHash, out valueType, out valueOffset, out valueLength, out nextEntryOffset))
                     return FailNetworkFrame("VariableState value is malformed.");
 
-                if (_hasGpuFieldOutputs)
-                {
-                    for (int j = 0; j < _gpuOutputCount; j++)
-                        if (_gpuNetworkIds[j] == (int)networkId && _gpuHashes[j] == variableHash)
-                            _gpuViews[j] = new Vector3Int(valueOffset, valueLength, valueType);
-                }
+                if (_stageShaderFields)
+                    _stagedCount = ShaderReceiveAtlas.Stage(ref _stagedFields, _stagedCount, networkId,
+                        variableHash, valueType, valueOffset, valueLength);
                 if (_requestSafetyMode != DecodeSafetyParseOnly)
                     ApplyVariableValue(networkId, variableHash, valueType, valueOffset, valueLength);
                 cursor = nextEntryOffset;

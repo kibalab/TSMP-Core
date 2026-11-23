@@ -1,9 +1,5 @@
 Shader "Hidden/TSMP Validation/Inspect GPU View"
 {
-    Properties
-    {
-        [HideInInspector] _MainTex ("TSMP Bytes", 2D) = "black" {}
-    }
     SubShader
     {
         Cull Off ZWrite Off ZTest Always
@@ -14,15 +10,27 @@ Shader "Hidden/TSMP Validation/Inspect GPU View"
             #pragma vertex vert_img
             #pragma fragment frag
             #include "UnityCG.cginc"
-            #include "Packages/com.kibalab.tsmp.core/Shaders/TSMPGpuInput.cginc"
+            #include "Packages/com.kibalab.tsmp.core/Shaders/TSMP.cginc"
+            uint _Mode, _Channel, _Width;
             float4 frag(v2f_img i) : SV_Target
             {
-                uint x = (uint)(i.uv.x * _TSMPOutputSize.x);
-                uint v = x == 0u ? TSMPStreamId() : x == 1u ? TSMPFrameIndex() :
-                    x == 2u ? TSMPByteLength() : x == 3u ? TSMPValueType() :
-                    x == 4u ? (uint)(TSMPReadFloat32LE(0u) * 1000.0) :
-                    x == 5u ? TSMPReadUInt16LE(3u) : TSMPReadUInt32LE(TSMPByteLength() - 1u);
-                return float4(v & 255u, (v >> 8) & 255u, (v >> 16) & 255u, v >> 24) / 255.0;
+                uint pixel = (uint)i.pos.y * _Width + (uint)i.pos.x;
+                TSMPByteView v;
+                bool present;
+                if (_Mode == 0u) present = TSMPTryGetFrame(_Channel, v);
+                else present = TSMPTryGetField(_Channel, 13u, _Mode == 3u ? 0xfacedeadu : 0xfedcba98u, v);
+                if (!present) return 0;
+                if (_Mode != 2u)
+                {
+                    uint o = pixel * 4u;
+                    return float4(TSMPReadByte(v, o), TSMPReadByte(v, o + 1u),
+                        TSMPReadByte(v, o + 2u), TSMPReadByte(v, o + 3u)) / 255.0;
+                }
+                uint w = pixel == 0u ? TSMPStreamId(_Channel) : pixel == 1u ? TSMPFrameIndex(_Channel) :
+                    pixel == 2u ? v.length : pixel == 3u ? v.valueType :
+                    pixel == 4u ? (uint)(TSMPReadFloat32LE(v, 0u) * 1000.0) :
+                    pixel == 5u ? TSMPReadUInt16LE(v, 3u) : TSMPReadUInt32LE(v, v.length - 1u);
+                return float4(w & 255u, (w >> 8) & 255u, (w >> 16) & 255u, w >> 24) / 255.0;
             }
             ENDCG
         }

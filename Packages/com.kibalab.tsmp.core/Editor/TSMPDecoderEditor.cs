@@ -83,7 +83,11 @@ namespace K13A.TSMP.Editor
             InspectorUI.BeginSection("Reference");
             InspectorUI.Property(_sourceTexture);
             InspectorUI.Property(_payloadByteTexture);
-            InspectorUI.Property(serializedObject.FindProperty("gpuOutputs"));
+            var channel = serializedObject.FindProperty("shaderChannel");
+            InspectorUI.Property(channel);
+            if (targets.Length == 1 && channel.enumValueIndex > 0 &&
+                EditorGUILayout.DropdownButton(new GUIContent("Copy Shader Lookup"), FocusType.Keyboard))
+                ShowShaderLookups((TSMPDecoder)target, channel.enumValueIndex - 1);
 
             if (targets.Length == 1)
                 InspectorUI.ReadOnlyText("Source Size", GetSourceSizeLabel());
@@ -182,6 +186,26 @@ namespace K13A.TSMP.Editor
             InspectorUI.ReadOnlyInt("Skipped Duplicate Frames", decoder.skippedDuplicateFrameCount);
             InspectorUI.ReadOnlyInt("Skipped Older Frames", decoder.skippedOutOfOrderFrameCount);
             InspectorUI.ReadOnlyText("Last RPC", decoder.lastRpcMethodName);
+        }
+
+        private static void ShowShaderLookups(TSMPDecoder decoder, int channel)
+        {
+            var menu = new GenericMenu();
+            menu.AddItem(new GUIContent("NetworkFrame"), false,
+                () => EditorGUIUtility.systemCopyBuffer = $"TSMPTryGetFrame({channel}u, view)");
+            int count = Mathf.Min(decoder.bindingFieldNames?.Length ?? 0, decoder.bindingNetworkIds?.Length ?? 0);
+            count = Mathf.Min(count, decoder.bindingVariableHashes?.Length ?? 0);
+            for (int i = 0; i < count; i++)
+            {
+                string field = decoder.bindingFieldNames[i];
+                if (string.IsNullOrEmpty(field))
+                    continue;
+                ushort id = decoder.bindingNetworkIds[i];
+                uint hash = decoder.bindingVariableHashes[i];
+                menu.AddItem(new GUIContent($"Fields/{id}/{field} (0x{hash:X8})"), false,
+                    () => EditorGUIUtility.systemCopyBuffer = $"TSMPTryGetField({channel}u, {id}u, 0x{hash:X8}u, view)");
+            }
+            menu.ShowAsContext();
         }
 
         private string GetSourceSizeLabel()

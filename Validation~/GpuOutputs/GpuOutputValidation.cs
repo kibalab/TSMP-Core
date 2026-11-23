@@ -15,7 +15,8 @@ public sealed class GpuOutputValidation : MonoBehaviour
     const uint Stream = 0xff123456u;
     TSMPDecoder decoder;
     TSMPCodec codec;
-    TSMPGpuOutput field, frame;
+    Material consumer;
+    uint stream = Stream;
     Texture2D source;
     uint index = 0xee123456u;
 
@@ -51,24 +52,26 @@ public sealed class GpuOutputValidation : MonoBehaviour
         decoder.sourceTexture = source;
         decoder.payloadByteTexture = Target(37, 8);
         decoder.codecHandlers = new[] { codec };
-        frame = Output(GpuOutputInput.NetworkFrame);
-        field = Output(GpuOutputInput.TransSyncField);
-        var probe = Output(GpuOutputInput.TransSyncField, "Hidden/TSMP Validation/Inspect GPU View", 7, 1);
-        decoder.gpuOutputs = new[] { frame, field, probe };
+        decoder.shaderChannel = ShaderReceiveChannel.Channel0;
+        consumer = new Material(Shader.Find("Hidden/TSMP Validation/Inspect GPU View"));
+        var frame = Target(19, 5);
+        var field = Target(19, 5);
+        var probe = Target(7, 1);
         yield return null;
 
         byte[] expected = null, fieldBytes = null, metadata = null;
-        for (int step = 0; step < 15; step++)
+        for (int step = 0; step < 17; step++)
         {
             decoder.useCombinedByteOutput = step != 2;
             decoder.decodeSafetyMode = step == 7 ? 3 : 0;
-            field.enabled = step != 11;
-            if (step == 14) decoder.gpuOutputs = Array.Empty<TSMPGpuOutput>();
-            bool present = step != 4 && step != 12;
+            if (step == 14) stream++;
+            if (step == 15) decoder.shaderChannel = ShaderReceiveChannel.Channel2;
+            if (step == 16) decoder.shaderChannel = ShaderReceiveChannel.Off;
+            bool present = step != 4 && step != 12 && step != 14;
             byte[] value = new byte[step == 3 ? 283 : step == 9 ? 0 : 279];
             new System.Random(step + 7).NextBytes(value);
             if (value.Length >= 4) Array.Copy(BitConverter.GetBytes(0.5f), value, 4);
-            byte[] bytes = Payload(value, step == 4 ? Hash + 1 : Hash, step == 12 ? 14 : 13, step == 13);
+            byte[] bytes = Payload(value, step == 4 || step == 14 ? Hash + 1 : Hash, step == 12 ? 14 : 13, step == 13);
             if (step == 5) Array.Resize(ref bytes, bytes.Length + 1);
             if (step != 6) index++;
             uint sentIndex = step == 6 ? index - 1 : index;
@@ -84,39 +87,92 @@ public sealed class GpuOutputValidation : MonoBehaviour
             while (decoder.readbackInFlight && Time.realtimeSinceStartup < end) yield return null;
             Require(!decoder.readbackInFlight, "Readback timed out");
             if (step == 5 || step == 10) Require(!decoder.lastFrameValid, "Malformed frame accepted");
-            if (step == 14) Require(decoder.lastFrameValid, "Normal decoding requires no GPU outputs");
-            if (step != 5 && step != 6 && step != 7 && step != 10 && step != 14)
+            if (step == 16) Require(decoder.lastFrameValid, "Normal decoding requires no shader channel");
+            if (step != 5 && step != 6 && step != 7 && step != 10 && step != 16)
             {
                 Require(decoder.lastFrameValid, decoder.lastError);
                 expected = bytes;
-                if (present)
-                {
-                    if (field.enabled) fieldBytes = value;
-                    metadata = new uint[] { Stream, index, (uint)value.Length, (uint)NetworkValueType.RawBytes,
-                        value.Length == 0 ? 0u : 500u, value.Length == 0 ? 0u : BitConverter.ToUInt16(value, 3), 0u }
-                        .SelectMany(BitConverter.GetBytes).ToArray();
-                }
+                if (present) fieldBytes = value;
+                if (step == 14) fieldBytes = null;
+                metadata = fieldBytes == null ? null : new uint[] { stream, index, (uint)fieldBytes.Length, (uint)NetworkValueType.RawBytes,
+                    fieldBytes.Length == 0 ? 0u : 500u, fieldBytes.Length == 0 ? 0u : BitConverter.ToUInt16(fieldBytes, 3), 0u }
+                    .SelectMany(BitConverter.GetBytes).ToArray();
             }
-            Debug.Log($"GPU step={step} accepted={decoder.lastFrameIndex} predicted={decoder.predictedReadbackCount} combined={decoder.combinedByteOutputCount} fallback={decoder.predictionFallbackCount} status={decoder.lastError}");
-            AssertBytes(frame.destination, expected, "frame at " + step);
-            AssertBytes(field.destination, fieldBytes, "field at " + step);
-            AssertBytes(probe.destination, metadata, "view metadata at " + step);
+            int channel = step >= 15 ? 2 : 0;
+            if (step == 16) expected = fieldBytes = metadata = null;
+            CheckView(frame, 0, channel, expected, "frame at " + step);
+            CheckView(field, 1, channel, fieldBytes, "field at " + step);
+            CheckView(probe, 2, channel, metadata, "metadata at " + step);
+            CheckView(frame, 0, channel == 0 ? 2 : 0, null, "inactive channel at " + step);
             if (step == 1) Require(decoder.combinedByteOutputCount > 0 && decoder.predictedReadbackCount > 0, "No direct prediction");
             if (step == 2) Require(decoder.predictedReadbackCount >= 2, "No packed prediction");
             if (step == 3) Require(decoder.predictionFallbackCount > 0, "No fallback");
             if (step == 6) Require(decoder.skippedDuplicateFrameCount > 0, "Duplicate was not filtered");
         }
+        decoder.shaderChannel = ShaderReceiveChannel.Channel0;
+        var first = decoder;
+        var many = ManyFields();
+        Send(many, ++index);
+        float timeout = Time.realtimeSinceStartup + 10;
+        while (decoder.readbackInFlight && Time.realtimeSinceStartup < timeout) yield return null;
+        Require(!decoder.readbackInFlight && decoder.lastFrameValid, "Multi-row directory decode failed");
+        byte[] marker = { 9, 8, 7, 6 };
+        var large = Target(37, 8);
+        CheckView(large, 0, 0, many, "multi-row frame");
+        CheckView(field, 1, 0, marker, "multi-row field");
+
+        decoder = new GameObject("Independent decoder").AddComponent<TSMPDecoder>();
+        decoder.applyEveryFrame = false;
+        decoder.debugLog = false;
+        decoder.sourceTexture = source;
+        decoder.payloadByteTexture = Target(37, 8);
+        decoder.codecHandlers = new[] { codec };
+        decoder.shaderChannel = ShaderReceiveChannel.Channel3;
+        yield return null;
+        byte[] other = { 42 };
+        Send(Payload(other, Hash), ++index);
+        timeout = Time.realtimeSinceStartup + 10;
+        while (decoder.readbackInFlight && Time.realtimeSinceStartup < timeout) yield return null;
+        Require(!decoder.readbackInFlight && decoder.lastFrameValid, "Other decoder failed");
+        CheckView(field, 1, 0, marker, "independent first channel");
+        CheckView(field, 1, 3, other, "independent second channel");
+        first.enabled = false;
+        yield return null;
+        CheckView(field, 1, 0, null, "disabled decoder");
+        CheckView(field, 1, 3, other, "surviving decoder");
+        decoder.enabled = false;
+        Destroy(consumer);
+        foreach (var target in new[] { frame, field, probe, large, decoder.payloadByteTexture, first.payloadByteTexture })
+            target.Release();
     }
 
-    TSMPGpuOutput Output(GpuOutputInput input, string shader = "TSMP/GPU Output/Copy Bytes", int width = 19, int height = 5)
+    static byte[] ManyFields()
     {
-        var pass = gameObject.AddComponent<TSMPGpuOutput>();
-        pass.input = input;
-        pass.networkId = 13;
-        pass.variableHash = Hash;
-        pass.material = new Material(Shader.Find(shader));
-        pass.destination = Target(width, height);
-        return pass;
+        var payload = new byte[1024];
+        const int count = 66;
+        int message = NetworkFrameWriter.BeginNetworkFrame(payload, 0, 0);
+        int entry = NetworkFrameWriter.BeginVariableState(payload, message, 13, 0);
+        for (int i = count - 1; i >= 0; i--)
+        {
+            uint hash = i == 0 ? Hash : (uint)i;
+            int offset = NetworkFrameWriter.BeginVariableValue(payload, entry, hash, (int)NetworkValueType.RawBytes);
+            Binary.WriteUInt32LE(payload, offset, i == 0 ? 0x06070809u : (uint)i);
+            Require(NetworkFrameWriter.EndVariableValue(payload, entry, offset + 4), "Invalid directory fixture");
+            entry = offset + 4;
+        }
+        Require(NetworkFrameWriter.EndVariableState(payload, message, entry, count) &&
+            NetworkFrameWriter.EndNetworkFrame(payload, 0, 1), "Invalid multi-row fixture");
+        Array.Resize(ref payload, entry);
+        return payload;
+    }
+
+    void CheckView(RenderTexture rt, int mode, int channel, byte[] expected, string label)
+    {
+        consumer.SetInteger("_Mode", mode);
+        consumer.SetInteger("_Width", rt.width);
+        consumer.SetInteger("_Channel", channel);
+        Graphics.Blit(null, rt, consumer);
+        AssertBytes(rt, expected ?? Array.Empty<byte>(), label);
     }
 
     static RenderTexture Target(int width, int height)
@@ -154,7 +210,7 @@ public sealed class GpuOutputValidation : MonoBehaviour
         header.ActiveWidthBlocks = 80;
         header.ActiveHeightBlocks = 45;
         header.FrameIndex = frameIndex;
-        header.StreamId = Stream;
+        header.StreamId = stream;
         header.PayloadSize = (ushort)bytes.Length;
         var headerBytes = new byte[FrameHeader.Size];
         header.WriteTo(headerBytes, 0);

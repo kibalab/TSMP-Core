@@ -154,24 +154,30 @@ Variable message가 도착하면 matching binding에만 적용합니다. RPC mes
 - RPC는 event 성격입니다. Transport가 frame을 drop한다면 encoder repeat frames를 늘리세요.
 - Uploaded world에서는 inspector field를 볼 수 없기 때문에 중요한 runtime failure는 log로 표시됩니다.
 
-## GPU 출력
+## 셰이더에서 수신 데이터 읽기
 
-**TSMP GPU Output** 컴포넌트를 추가하고 디코더의 **GPU Outputs** 목록에 연결합니다. **Network Frame**은 56바이트 전송 헤더를 제외한 전체 NetworkFrame 페이로드를, **Trans Sync Field**는 Network ID와 변수 해시가 일치하는 필드의 값만 제공합니다. 컴포넌트가 디코더와 같은 오브젝트나 자식에 있으면 **Select Decoder Binding**에서 필드를 고를 수 있습니다. 해시와 ID를 직접 지정하면 대응하는 CPU 수신 컴포넌트는 필요하지 않습니다.
+**TSMP Decoder → Shader Channel**을 **Channel 0**으로 설정한 뒤 머티리얼의 버텍스 또는 프래그먼트 셰이더에서 `TSMP.cginc`를 include하세요. 별도 수신 컴포넌트, CPU 바인딩, 머티리얼 등록, 출력 RenderTexture는 필요하지 않습니다. 채널 텍스처는 전역이므로 ShaderLab Properties에 선언하지 마세요. 기본값은 **Off**입니다. 동시에 사용할 디코더에는 서로 다른 채널(0~3)을 지정하세요.
 
-머티리얼과 결과를 저장할 RenderTexture를 지정하세요. 바이트를 그대로 보려면 **TSMP/GPU Output/Copy Bytes** 셰이더와 MSAA·밉맵을 끈 Linear ARGB32 텍스처를 사용합니다. 한 픽셀에 4바이트가 들어갑니다. 텍스처가 작으면 앞부분만 담기고, 남는 공간은 0이 됩니다. 사용자 머티리얼은 같은 입력으로 색, 본 행렬 등 원하는 형식을 바로 쓸 수 있습니다. 출력마다 별도 텍스처를 사용하고 디코더 입력이나 작업 텍스처를 대상으로 지정하지 마세요.
+```hlsl
+#pragma target 3.5
+#include "Packages/com.kibalab.tsmp.core/Shaders/TSMP.cginc"
 
-유효한 프레임이 확정되면 목록 순서대로 해당 머티리얼의 패스 0을 한 번 실행합니다. SendOnChange 등으로 필드가 생략되면 이전 결과를 유지하지만, 길이 0인 값이 명시적으로 도착하면 실행합니다. 한 프레임에 같은 필드가 여러 번 나오면 마지막 값이 대상입니다. 비활성 출력, 거부된 프레임, 진단용 Safety Mode에서는 결과를 갱신하지 않습니다. 기존 CPU 변수 적용과 RPC 처리는 그대로입니다. GPU에만 적용하려면 동일한 CPU 수신 바인딩을 두지 마세요. 기존 readback과 검증은 사용하지만 추가 readback이나 CPU에서 GPU로의 재업로드는 없습니다.
+float ReadGain(uint channel, uint networkId, uint variableHash, float fallback)
+{
+    TSMPByteView field;
+    if (!TSMPTryGetField(channel, networkId, variableHash, field) ||
+        field.valueType != 3u || field.length != 4u)
+        return fallback;
+    return TSMPReadFloat32LE(field, 0u);
+}
+```
 
-### 사용자 셰이더
+디코더에서 **Copy Shader Lookup**을 열면 전체 프레임이나 바인딩된 필드의 HLSL 조회식을 복사할 수 있습니다. 바인딩이 없는 필드는 송신자의 Network ID와 **전송용 필드 해시**를 사용합니다. Unity 셰이더 프로퍼티 ID와는 다른 값입니다. C#에서는 `StableHash.VariableHash(behaviour.GetType(), fieldName, transSyncKey)`로 바인딩과 동일한 32비트 해시를 얻을 수 있습니다. 셰이더에는 `uint`(예: 끝에 `u`가 붙은 16진수 리터럴)로 전달하세요. float 프로퍼티로는 모든 해시를 정확하게 표현할 수 없습니다.
 
-ShaderLab Properties에 2D 텍스처 `_MainTex`를 선언하고, 셰이더 타깃 3.5 이상에서 `Packages/com.kibalab.tsmp.core/Shaders/TSMPGpuInput.cginc`를 include하세요. HLSL에서 `_MainTex`를 다시 선언하지 않습니다. 주소는 전체 텍스처가 아니라 전달받은 범위의 시작이 0입니다. 예측 경로의 헤더 크기나 슬롯 번호를 계산하거나 작업 텍스처를 보관하지 마세요. 유지되는 것은 출력 텍스처입니다.
+- `TSMPTryGetFrame(channel, out view)`는 56바이트 헤더를 제외한 최신 NetworkFrame 페이로드를 선택합니다. RPC 메시지도 들어 있지만, 셰이더용 이벤트 큐는 아닙니다.
+- `TSMPTryGetField(channel, networkId, hash, out view)`는 엔트리 헤더를 제외한 최신 필드 **값**을 선택합니다. 두 함수 모두 채널 인자를 생략하면 채널 0을 사용합니다. 한 번도 받지 않은 필드는 false, 길이가 0인 값을 수신한 필드는 true와 길이 0을 반환합니다.
+- 뷰 시작 기준의 바이트 오프셋을 `TSMPReadByte`, `TSMPReadUInt16LE`, `TSMPReadUInt32LE`, `TSMPReadFloat32LE`에 넘기면 됩니다. 범위 밖은 0입니다. 프레임이 있으면 `TSMPStreamId(channel)`, `TSMPFrameIndex(channel)`도 읽을 수 있습니다. 셰이더 호출당 한 번 조회한 뷰를 여러 번 읽을 수 있지만 오프셋을 다음 프레임까지 보관하지 마세요.
 
-| HLSL | 의미 |
-| --- | --- |
-| `TSMPByteLength()`, `TSMPValueType()` | 바이트 길이와 전송 타입. 전체 프레임일 때 타입은 0입니다. |
-| `TSMPHasBytes(offset, count)` | 요청 범위 전체를 읽을 수 있는지 검사합니다. |
-| `TSMPReadByte(offset)`, `TSMPReadUInt16LE(offset)`, `TSMPReadUInt32LE(offset)`, `TSMPReadFloat32LE(offset)` | 정렬되지 않은 주소도 읽습니다. 필요한 바이트가 하나라도 범위 밖이면 0입니다. |
-| `TSMPStreamId()`, `TSMPFrameIndex()` | 정밀도 손실 없는 32비트 스트림 ID와 프레임 번호입니다. |
-| `_TSMPOutputSize.xy` | 출력 텍스처의 가로·세로 픽셀 수입니다. |
+SendOnChange로 필드가 빠져도 마지막 값은 유지됩니다. 한 프레임에서 같은 필드가 반복되면 마지막 값이 남습니다. 스트림이 바뀌거나 프레임 번호 재시작이 승인되면 이전 필드는 지웁니다. 거부·중복 필터링된 프레임이나 진단 안전 모드에서는 갱신하지 않습니다. 디코더를 끄거나 채널을 바꾸면 이전 채널 데이터는 해제됩니다.
 
-예를 들어 조명 밝기를 받는 머티리얼은 `TSMPValueType() == 3u`일 때 `TSMPReadFloat32LE(0u)`로 값을 읽습니다. 포즈 플러그인은 같은 API로 RawBytes 필드를 읽습니다. 둘 다 코덱 종류를 알 필요가 없습니다.
+활성화한 경우에만 승인 프레임마다 필드 위치표를 업로드하고 GPU 패스 한 번을 수행합니다. 값 바이트는 GPU 텍스처에서 가져옵니다. 기존 CPU 검증·readback·RPC는 유지되며 readback을 추가하지 않습니다. 채널당 최대 1,024개 필드, 값 합계 1 MiB(필드별 4바이트 정렬)까지 유지합니다. 초과하면 채널을 무효화하고 경고를 남기며, CPU 디코딩은 계속됩니다. 다음 발행 가능한 프레임에서 캐시를 다시 채웁니다.
