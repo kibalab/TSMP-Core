@@ -136,18 +136,24 @@ float SampleBlockLuma(float blockX, float blockY)
     return sum / (sampleLimit * sampleLimit);
 }
 
+#define TSMP_HAS_BLOCK_COORDINATES 1
+uint2 TSMPBlockCoordinates(uint index)
+{
+    uint width = max(1u, (uint)_ActiveWidthBlocks);
+    uint row = index / width;
+    return uint2(index - row * width, row);
+}
+
 float3 SampleBlockByIndex(float blockIndex)
 {
-    float blockX = fmod(blockIndex, _ActiveWidthBlocks);
-    float blockY = floor(blockIndex / _ActiveWidthBlocks);
-    return SampleBlockRgb(blockX, blockY);
+    uint2 block = TSMPBlockCoordinates((uint)blockIndex);
+    return SampleBlockRgb(block.x, block.y);
 }
 
 float SampleLumaBlockByIndex(float blockIndex)
 {
-    float blockX = fmod(blockIndex, _ActiveWidthBlocks);
-    float blockY = floor(blockIndex / _ActiveWidthBlocks);
-    return SampleBlockLuma(blockX, blockY);
+    uint2 block = TSMPBlockCoordinates((uint)blockIndex);
+    return SampleBlockLuma(block.x, block.y);
 }
 
 float PayloadBlockIndex(int symbolIndex)
