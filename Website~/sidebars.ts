@@ -47,6 +47,7 @@ const sidebars: SidebarsConfig = {
       label: 'Guides',
       items: [
         'guides/texture-transport',
+        'guides/shader-receive',
         'guides/obs-spout-loopback',
         'guides/performance-tuning',
       ],
@@ -94,6 +95,7 @@ const sidebars: SidebarsConfig = {
             'scripting-api/behaviour',
             'scripting-api/encoder',
             'scripting-api/decoder',
+            'scripting-api/shader-receive',
             'scripting-api/setup',
           ],
         },

@@ -20,6 +20,7 @@ Custom receiver wiring, diagnostics 확인, frame이 무시된 이유를 debug�
 | --- | --- |
 | `sourceTexture` | Encoded TSMP frame이 들어있는 texture. |
 | `payloadByteTexture` | Codec shader가 payload bytes를 복구할 때 사용하는 render texture. |
+| `shaderChannel` | 기본값은 Off입니다. 활성화하면 승인된 데이터를 셰이더 채널 0~3 중 하나로 발행합니다. |
 | `codecHandlers` | Decoder가 사용할 수 있는 codec components. Header의 `codecId`가 handler를 선택합니다. |
 | `applyEveryFrame` | Component update loop에서 decode합니다. 다른 script가 `DecodeNow()`를 호출한다면 끄세요. |
 | `skipDuplicateFrames` | 현재 스트림의 중복·역순 프레임을 걸러냅니다. Inspector 이름은 Filter Frames입니다. |
@@ -156,28 +157,4 @@ Variable message가 도착하면 matching binding에만 적용합니다. RPC mes
 
 ## 셰이더에서 수신 데이터 읽기
 
-**TSMP Decoder → Shader Channel**을 **Channel 0**으로 설정한 뒤 머티리얼의 버텍스 또는 프래그먼트 셰이더에서 `TSMP.cginc`를 include하세요. 별도 수신 컴포넌트, CPU 바인딩, 머티리얼 등록, 출력 RenderTexture는 필요하지 않습니다. 채널 텍스처는 전역이므로 ShaderLab Properties에 선언하지 마세요. 기본값은 **Off**입니다. 동시에 사용할 디코더에는 서로 다른 채널(0~3)을 지정하세요.
-
-```hlsl
-#pragma target 3.5
-#include "Packages/com.kibalab.tsmp.core/Shaders/TSMP.cginc"
-
-float ReadGain(uint channel, uint networkId, uint variableHash, float fallback)
-{
-    TSMPByteView field;
-    if (!TSMPTryGetField(channel, networkId, variableHash, field) ||
-        field.valueType != 3u || field.length != 4u)
-        return fallback;
-    return TSMPReadFloat32LE(field, 0u);
-}
-```
-
-디코더에서 **Copy Shader Lookup**을 열면 전체 프레임이나 바인딩된 필드의 HLSL 조회식을 복사할 수 있습니다. 바인딩이 없는 필드는 송신자의 Network ID와 **전송용 필드 해시**를 사용합니다. Unity 셰이더 프로퍼티 ID와는 다른 값입니다. C#에서는 `StableHash.VariableHash(behaviour.GetType(), fieldName, transSyncKey)`로 바인딩과 동일한 32비트 해시를 얻을 수 있습니다. 셰이더에는 `uint`(예: 끝에 `u`가 붙은 16진수 리터럴)로 전달하세요. float 프로퍼티로는 모든 해시를 정확하게 표현할 수 없습니다.
-
-- `TSMPTryGetFrame(channel, out view)`는 56바이트 헤더를 제외한 최신 NetworkFrame 페이로드를 선택합니다. RPC 메시지도 들어 있지만, 셰이더용 이벤트 큐는 아닙니다.
-- `TSMPTryGetField(channel, networkId, hash, out view)`는 엔트리 헤더를 제외한 최신 필드 **값**을 선택합니다. 두 함수 모두 채널 인자를 생략하면 채널 0을 사용합니다. 한 번도 받지 않은 필드는 false, 길이가 0인 값을 수신한 필드는 true와 길이 0을 반환합니다.
-- 뷰 시작 기준의 바이트 오프셋을 `TSMPReadByte`, `TSMPReadUInt16LE`, `TSMPReadUInt32LE`, `TSMPReadFloat32LE`에 넘기면 됩니다. 범위 밖은 0입니다. 프레임이 있으면 `TSMPStreamId(channel)`, `TSMPFrameIndex(channel)`도 읽을 수 있습니다. 셰이더 호출당 한 번 조회한 뷰를 여러 번 읽을 수 있지만 오프셋을 다음 프레임까지 보관하지 마세요.
-
-SendOnChange로 필드가 빠져도 마지막 값은 유지됩니다. 한 프레임에서 같은 필드가 반복되면 마지막 값이 남습니다. 스트림이 바뀌거나 프레임 번호 재시작이 승인되면 이전 필드는 지웁니다. 거부·중복 필터링된 프레임이나 진단 안전 모드에서는 갱신하지 않습니다. 디코더를 끄거나 채널을 바꾸면 이전 채널 데이터는 해제됩니다.
-
-활성화한 경우에만 승인 프레임마다 필드 위치표를 업로드하고 GPU 패스 한 번을 수행합니다. 값 바이트는 GPU 텍스처에서 가져옵니다. 기존 CPU 검증·readback·RPC는 유지되며 readback을 추가하지 않습니다. 채널당 최대 1,024개 필드, 값 합계 1 MiB(필드별 4바이트 정렬)까지 유지합니다. 초과하면 채널을 무효화하고 경고를 남기며, CPU 디코딩은 계속됩니다. 다음 발행 가능한 프레임에서 캐시를 다시 채웁니다.
+설정 절차와 ShaderLab 예제는 [머티리얼에서 TSMP 데이터 읽기](../guides/shader-receive.md)에 있습니다. [TSMP.cginc 레퍼런스](./shader-receive.md)에서 HLSL 함수, 바이트 뷰 읽기, 필드가 없을 때의 동작과 캐시 한도를 확인할 수 있습니다.

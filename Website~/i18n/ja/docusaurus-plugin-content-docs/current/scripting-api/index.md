@@ -38,6 +38,7 @@ using UnityEngine;
 | `TSMPBehaviour` | 基本動作、Udon/Mono ブリッジメソッド、ロギングヘルパー。 |
 | `TSMPEncoder` | フレーム エンコードのライフサイクル、出力テクスチャ、コーデックの選択、キューに入れられた RPC、ライター API。 |
 | `TSMPDecoder` | ソース テクスチャのリードバック、ヘッダー検証、コーデック ディスパッチ、変数/RPC アプリケーション。 |
+| [TSMP.cginc](./shader-receive.md) | 公開されたフレームまたは TransSync フィールドをマテリアルで直接読みます。 |
 | `TSMPSetup` | シーン バインディング、コーデックの検出、レンダー テクスチャのセットアップ、ワンクリック構成。 |
 | `TSMPNetworkBehaviour` | ネットワーク ID、受信補間、ライフサイクル フック、TSMP RPC。 |
 | `TransSync` | フィールドレベルの同期属性とサポートされる値のタイプ。 |

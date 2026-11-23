@@ -19,7 +19,7 @@ Most decode problems are caused by the input texture not containing an unmodifie
 - An input texture that contains the encoded TSMP frame.
 - A compatible Luma4 handler.
 - A payload byte texture.
-- Matching TSMP network behaviours and bindings.
+- You need matching network behaviours and bindings on the receiver only to apply values or dispatch RPCs to scene objects.
 - `TSMPSetup` applied after references are assigned.
 
 ## How to use it
@@ -27,9 +27,11 @@ Most decode problems are caused by the input texture not containing an unmodifie
 1. Assign the input texture.
 2. Use the same Luma4 path as the sender.
 3. Assign or auto-size the payload byte texture through `TSMPSetup`.
-4. Make sure receiver objects have matching TSMP network components.
+4. For scene objects, check that the receiver components have matching bindings. To consume a value only in a material, no receiver binding is required.
 5. Click `Apply Setup`.
 6. Watch logs or `TSMPDebugCanvas` for frame status.
+
+For shaders, choose a **Shader Channel** in the decoder and follow [Read TSMP data in a material](../guides/shader-receive.md). Leave the channel **Off** for CPU-only receivers.
 
 ## Frame window
 

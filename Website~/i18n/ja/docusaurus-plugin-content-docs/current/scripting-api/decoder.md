@@ -20,6 +20,7 @@ title: TSMPDecoder API
 | --- | --- |
 | `sourceTexture` | エンコードされた TSMP フレームを含むテクスチャ。 |
 | `payloadByteTexture` | ペイロード バイトをデコードするときにコーデック シェーダによって使用されるテクスチャをレンダリングします。 |
+| `shaderChannel` | 既定は Off。有効にすると受理したデータをシェーダーチャンネル 0～3 のいずれかで公開します。 |
 | `codecHandlers` | デコーダで使用できるコーデック コンポーネント。ヘッダー `codecId` はハンドラーを選択します。 |
 | `applyEveryFrame` | コンポーネント更新ループからデコードを実行します。別のスクリプトが `DecodeNow()` を呼び出すときは無効にします。 |
 | `skipDuplicateFrames` | 現在のストリームの重複・古いフレームを除外します。Inspector 表示は Filter Frames です。 |
@@ -156,28 +157,4 @@ public void ResetDecodeDiagnostics()
 
 ## シェーダーで受信データを読む
 
-**TSMP Decoder → Shader Channel** を **Channel 0** に設定し、マテリアルの頂点またはフラグメントシェーダーに `TSMP.cginc` をインクルードします。受信用コンポーネント、対応する CPU バインディング、マテリアルの登録、出力 RenderTexture は不要です。チャンネルテクスチャはグローバルなので ShaderLab の Properties には宣言しないでください。既定は **Off** です。同時に使うデコーダーには異なるチャンネル（0～3）を割り当てます。
-
-```hlsl
-#pragma target 3.5
-#include "Packages/com.kibalab.tsmp.core/Shaders/TSMP.cginc"
-
-float ReadGain(uint channel, uint networkId, uint variableHash, float fallback)
-{
-    TSMPByteView field;
-    if (!TSMPTryGetField(channel, networkId, variableHash, field) ||
-        field.valueType != 3u || field.length != 4u)
-        return fallback;
-    return TSMPReadFloat32LE(field, 0u);
-}
-```
-
-デコーダーの **Copy Shader Lookup** で、フレームまたはバインディング済みフィールドの HLSL 呼び出しをコピーできます。バインディングのないフィールドには送信側のネットワーク ID と**通信で使用するフィールドハッシュ**を指定します。Unity のシェーダープロパティ ID ではありません。C# の `StableHash.VariableHash(behaviour.GetType(), fieldName, transSyncKey)` でバインディングと同じ符号なし 32 ビット値が得られます。シェーダーには `uint`（例：末尾が `u` の 16 進リテラル）で渡します。float プロパティではすべてのハッシュを正確に表せません。
-
-- `TSMPTryGetFrame(channel, out view)` は 56 バイトのヘッダーを除く最新の NetworkFrame ペイロードを選びます。RPC メッセージも含みますが、シェーダー用のイベントキューではありません。
-- `TSMPTryGetField(channel, networkId, hash, out view)` はエントリーヘッダーを含まない最新の**値**を選びます。どちらもチャンネル引数を省略するとチャンネル 0 を使用します。未受信のフィールドは false、受信済みで空の値は true と長さ 0 を返します。
-- ビュー先頭からのバイトオフセットを `TSMPReadByte`、`TSMPReadUInt16LE`、`TSMPReadUInt32LE`、`TSMPReadFloat32LE` に渡します。範囲外は 0 です。フレームの存在を確認してから `TSMPStreamId(channel)` と `TSMPFrameIndex(channel)` も読めます。シェーダーの同一呼び出し内ではビューを再利用できますが、オフセットを次のフレームに持ち越さないでください。
-
-SendOnChange により省略された値は保持されます。同一フレームに複数の値があれば最後の値を使用します。ストリームの変更時やフレーム番号の再開始が受理されたときは古いフィールドを破棄します。不正、重複フィルターの対象、診断用セーフモードのフレームでは更新しません。デコーダーの無効化やチャンネル変更で以前のチャンネルのデータを解放します。
-
-有効な場合のみ、受理したフレームごとにフィールドの位置表をアップロードし、GPU パスを 1 回実行します。値のバイト列は GPU テクスチャから取得します。既存の CPU 検証・readback・RPC は継続し、readback は追加しません。上限はチャンネルあたり 1,024 フィールド、値の合計 1 MiB（各値を 4 バイトに整列）です。超過時はチャンネルを無効にして警告を出しますが、CPU デコードは継続し、次に公開できるフレームからキャッシュを作り直します。
+設定手順と ShaderLab の例は[マテリアルで TSMP のデータを読む](../guides/shader-receive.md)を参照してください。[TSMP.cginc リファレンス](./shader-receive.md)では HLSL 関数、バイトビューの読み方、フィールドがない場合の動作、キャッシュの上限を説明しています。

@@ -20,6 +20,7 @@ Use this page when wiring a custom receiver, reading diagnostics, or debugging w
 | --- | --- |
 | `sourceTexture` | Texture that contains the encoded TSMP frame. |
 | `payloadByteTexture` | Render texture used by codec shaders when decoding payload bytes. |
+| `shaderChannel` | Off by default. Publish accepted data on shader channel 0–3. |
 | `codecHandlers` | Codec components available to the decoder. The header `codecId` selects the handler. |
 | `applyEveryFrame` | Runs decode from the component update loop. Disable it when another script calls `DecodeNow()`. |
 | `skipDuplicateFrames` | Enables duplicate and older-frame filtering for the current stream. Inspector label: Filter Frames. |
@@ -156,28 +157,4 @@ When a variable message arrives, the decoder only applies it to matching binding
 
 ## Reading received data in a shader
 
-On the **TSMP Decoder**, set **Shader Channel** to **Channel 0**. In your material's vertex or fragment shader, include `TSMP.cginc`. You do not need a receiver component, matching CPU binding, material registration or output RenderTexture. Do not declare the channel textures in ShaderLab Properties: they are globals. The default is **Off**; use a different channel (0–3) for each simultaneously active decoder.
-
-```hlsl
-#pragma target 3.5
-#include "Packages/com.kibalab.tsmp.core/Shaders/TSMP.cginc"
-
-float ReadGain(uint channel, uint networkId, uint variableHash, float fallback)
-{
-    TSMPByteView field;
-    if (!TSMPTryGetField(channel, networkId, variableHash, field) ||
-        field.valueType != 3u || field.length != 4u)
-        return fallback;
-    return TSMPReadFloat32LE(field, 0u);
-}
-```
-
-Choose **Copy Shader Lookup** on the decoder to copy an HLSL lookup for the frame or a configured binding. For an unbound field, use the sender's network ID and **wire hash**, not Unity's shader property ID. In C#, `StableHash.VariableHash(behaviour.GetType(), fieldName, transSyncKey)` computes the same unsigned 32-bit value as the binding builder. Pass the hash as a `uint` (e.g. a hexadecimal literal ending in `u`); a float material property cannot represent every hash exactly.
-
-- `TSMPTryGetFrame(channel, out view)` selects the latest accepted NetworkFrame payload, including RPC messages but excluding the 56-byte header. There is no event queue for shaders.
-- `TSMPTryGetField(channel, networkId, hash, out view)` selects the latest encoded **value** without its entry header. Both selectors also have an overload without `channel` for channel 0. A missing field returns false; a received empty field returns true with length zero.
-- Read offsets relative to the view using `TSMPReadByte`, `TSMPReadUInt16LE`, `TSMPReadUInt32LE` or `TSMPReadFloat32LE`. Out-of-range reads return zero. Use `TSMPStreamId(channel)` and `TSMPFrameIndex(channel)` after checking that a frame exists. Look up a view once per shader invocation and reuse it for multiple reads; do not retain its offset across frames.
-
-An omitted SendOnChange field retains its last value. The last entry wins within one frame. A new stream or accepted frame-index restart clears old fields. Rejected, duplicate-filtered or safety-mode frames do not publish. Disabling the decoder or changing channels releases its previous data.
-
-When enabled, the decoder uploads the field directory and runs one GPU pass per accepted frame. Value bytes stay on the GPU path; existing CPU validation, readback and RPC dispatch still run. No additional readback is requested. Each channel can retain up to 1,024 fields and 1 MiB of field values (each rounded to four bytes). Exceeding either limit invalidates the channel and logs a warning without stopping CPU decoding; caching starts again on the next publishable frame.
+See [Read TSMP data in a material](../guides/shader-receive.md) for setup and a working ShaderLab example. The [TSMP.cginc reference](./shader-receive.md) covers the HLSL calls, byte layout of a view, missing fields and cache limits.
