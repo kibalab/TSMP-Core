@@ -82,6 +82,19 @@ float SampleLumaAtTopLeftPixel(float2 pixel)
     return dot(rgb, float3(0.33333334, 0.33333334, 0.33333334));
 }
 
+#if defined(TSMP_ENABLE_RGB_BOX4)
+float _UseBilinear4;
+float4 _MainTex_TexelSize;
+SamplerState tsmp_linear_clamp_sampler;
+
+float3 TSMPBoxSample(float2 pixelCenter)
+{
+    float2 uv = pixelCenter / float2(_SourceWidth, _SourceHeight);
+    uv.y = lerp(uv.y, 1.0 - uv.y, _FlipY);
+    return _MainTex.SampleLevel(tsmp_linear_clamp_sampler, uv, 0).rgb;
+}
+#endif
+
 float3 SampleBlockRgb(float blockX, float blockY)
 {
     float sampleSize = _SampleSize > 0.5 ? floor(_SampleSize) : (_BlockSize >= 8.0 ? 4.0 : 3.0);
@@ -93,16 +106,24 @@ float3 SampleBlockRgb(float blockX, float blockY)
     if (sampleLimit <= 1)
         return SampleRgbAtTopLeftPixel(startPixel);
 
+#if defined(TSMP_ENABLE_RGB_BOX4)
+    if (_UseBilinear4 > 0.5 && sampleLimit == 4 &&
+        all(_MainTex_TexelSize.zw == float2(_SourceWidth, _SourceHeight)))
+    {
+        float2 p = startPixel + 1.0;
+        return 0.25 * (TSMPBoxSample(p) + TSMPBoxSample(p + float2(2, 0))
+                     + TSMPBoxSample(p + float2(0, 2)) + TSMPBoxSample(p + 2));
+    }
+#endif
     float3 sum = 0.0;
 
     [loop]
-    for (int y = 0; y < 8; y++)
+    for (int y = 0; y < sampleLimit; y++)
     {
         [loop]
-        for (int x = 0; x < 8; x++)
+        for (int x = 0; x < sampleLimit; x++)
         {
-            if (x < sampleLimit && y < sampleLimit)
-                sum += SampleRgbAtTopLeftPixel(startPixel + float2(x, y));
+            sum += SampleRgbAtTopLeftPixel(startPixel + float2(x, y));
         }
     }
 
@@ -144,10 +165,15 @@ uint2 TSMPBlockCoordinates(uint index)
     return uint2(index - row * width, row);
 }
 
+float3 SampleBlockByIndex(uint blockIndex)
+{
+    uint2 block = TSMPBlockCoordinates(blockIndex);
+    return SampleBlockRgb(block.x, block.y);
+}
+
 float3 SampleBlockByIndex(float blockIndex)
 {
-    uint2 block = TSMPBlockCoordinates((uint)blockIndex);
-    return SampleBlockRgb(block.x, block.y);
+    return SampleBlockByIndex((uint)blockIndex);
 }
 
 float SampleLumaBlockByIndex(float blockIndex)

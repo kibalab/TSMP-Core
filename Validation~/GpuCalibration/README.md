@@ -45,3 +45,10 @@ and must not be presented as VRChat client or Android timings.
 
 The frozen RGB16 Refine shaders remain comparison controls. Their LUT paths
 were slower in the expanded G01 measurements and are not enabled or shipped.
+
+For the color codec receive regression, import the production-feedback Core,
+RGB16, RGB20 and Color256 packages in a plain Unity project, add
+`Editor/ColorCodecReceiveValidation.cs` to its `Assets/Editor`, and run
+`-batchmode -quit -force-d3d11 -executeMethod ColorCodecReceiveValidation.Run`.
+It compares GPU readback with seeded payloads and zero padding on an odd-width
+block grid, including RGB16 three-bit symbols and Color256 interleaved rows.
