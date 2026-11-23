@@ -153,3 +153,25 @@ When a variable message arrives, the decoder only applies it to matching binding
 - `ReceiveInterpolation.None` on a target behaviour means received values are ignored for that behaviour.
 - RPC calls are event-like. Use repeat frames on the encoder if the transport drops frames.
 - Decoder logs important runtime failures because inspector fields are not visible in uploaded worlds.
+
+## GPU outputs
+
+Add a **TSMP GPU Output** component and assign it in the decoder's **GPU Outputs** list. Choose **Network Frame** for the entire NetworkFrame payload (not the 56-byte wire header), or **Trans Sync Field** for the encoded value of one network ID and variable hash, without its entry header. On the decoder or a child object, **Select Decoder Binding** can fill in the IDs; a matching CPU receiver is not required.
+
+Assign a material and a destination RenderTexture. For a byte-for-byte copy, create a material using **TSMP/GPU Output/Copy Bytes** and a linear ARGB32 target with no MSAA or mipmaps. Allow one pixel per four bytes; a smaller target keeps only the beginning. Extra bytes in the output are zero. Other passes can instead write colors, transforms or any application-specific layout directly. Use a separate destination for each result, not a decoder input or work texture.
+
+Core invokes material pass 0 once per matching accepted frame, in list order. If a field is absent (including SendOnChange), the output stays unchanged. A present zero-length value still runs the pass. If the same field appears more than once, its last entry wins. A disabled output, rejected frame, or diagnostic safety mode does not update the destination. Normal CPU variable and RPC dispatch is unchanged; do not configure a duplicate CPU binding if only the GPU should consume a value. This path uses the decoder's existing readback and validation, not an additional readback or CPU texture upload.
+
+### Custom pass contract
+
+Declare `_MainTex` as a 2D property in ShaderLab. In a shader targeting 3.5 or higher include `Packages/com.kibalab.tsmp.core/Shaders/TSMPGpuInput.cginc` (do not redeclare `_MainTex`). Read offsets relative to the supplied view; the include handles texel channels, row boundaries and the prediction prefix. Do not retain the source texture. Only the destination persists.
+
+| HLSL | Meaning |
+| --- | --- |
+| `TSMPByteLength()`, `TSMPValueType()` | Length in bytes and wire value type (0 for a whole frame). |
+| `TSMPHasBytes(offset, count)` | Whether the whole range lies within the view. |
+| `TSMPReadByte(offset)`, `TSMPReadUInt16LE(offset)`, `TSMPReadUInt32LE(offset)`, `TSMPReadFloat32LE(offset)` | Unaligned reads. Return zero if any required byte is outside the view. |
+| `TSMPStreamId()`, `TSMPFrameIndex()` | Exact unsigned 32-bit identifiers from the frame header. |
+| `_TSMPOutputSize.xy` | Destination width and height in pixels. |
+
+For example, a light-level material receiving a Float32 field can read `TSMPReadFloat32LE(0u)` when `TSMPValueType() == 3u`. A pose plugin can use the same API with a RawBytes field. Neither needs to know which codec supplied the bytes.

@@ -83,6 +83,7 @@ namespace K13A.TSMP.Editor
             InspectorUI.BeginSection("Reference");
             InspectorUI.Property(_sourceTexture);
             InspectorUI.Property(_payloadByteTexture);
+            InspectorUI.Property(serializedObject.FindProperty("gpuOutputs"));
 
             if (targets.Length == 1)
                 InspectorUI.ReadOnlyText("Source Size", GetSourceSizeLabel());

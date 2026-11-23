@@ -41,6 +41,15 @@ namespace K13A.TSMP.Udon
         public RenderTexture payloadByteTexture;
 
         public TSMPCodec[] codecHandlers;
+        [Tooltip("Optional shader passes for accepted network frames or TransSync values.")]
+        public TSMPGpuOutput[] gpuOutputs;
+
+        private int[] _gpuNetworkIds;
+        private uint[] _gpuHashes;
+        private Vector3Int[] _gpuViews;
+        private TSMPGpuOutput[] _gpuFrameOutputs;
+        private int _gpuOutputCount;
+        private bool _hasGpuFieldOutputs;
 
         [HideInInspector] public Component[] bindingTargets;
 
@@ -661,10 +670,10 @@ namespace K13A.TSMP.Udon
             if (!CopyBytesFromReadback(_payloadBytes, _payloadDataBytes))
                 return;
 
-            CompletePayload();
+            CompletePayload(_requestByteTexture, 0);
         }
 
-        private void CompletePayload()
+        private void CompletePayload(RenderTexture bytes, int payloadOffset)
         {
             CachePrediction();
 
@@ -675,13 +684,73 @@ namespace K13A.TSMP.Udon
                 return;
             }
 
-            if (!ApplyNetworkFrame())
+            PrepareGpuOutputs();
+            bool valid = ApplyNetworkFrame();
+            _hasGpuFieldOutputs = false;
+            if (!valid)
                 return;
+            if (_gpuOutputCount > 0 && !_decodeSuspended && !_slotDiscarded[_activeSlot])
+                PublishGpuOutputs(bytes, payloadOffset);
             _hasAppliedFrame = true;
             _lastAppliedStreamId = lastStreamId;
             _lastAppliedFrameIndex = lastFrameIndex;
 
             lastFrameValid = true;
+        }
+
+        private void PrepareGpuOutputs()
+        {
+            _gpuOutputCount = 0;
+            _hasGpuFieldOutputs = false;
+            if (_requestSafetyMode != 0 || gpuOutputs == null || gpuOutputs.Length == 0)
+                return;
+
+            int count = gpuOutputs.Length;
+            if (_gpuViews == null || _gpuViews.Length < count)
+            {
+                _gpuNetworkIds = new int[count];
+                _gpuHashes = new uint[count];
+                _gpuViews = new Vector3Int[count];
+                _gpuFrameOutputs = new TSMPGpuOutput[count];
+            }
+
+            for (int i = 0; i < count; i++)
+            {
+                TSMPGpuOutput output = gpuOutputs[i];
+                if (output == null)
+                    continue;
+
+                int slot = _gpuOutputCount++;
+                _gpuFrameOutputs[slot] = output;
+                if (output.input == GpuOutputInput.TransSyncField)
+                {
+                    _gpuNetworkIds[slot] = output.networkId;
+                    _gpuHashes[slot] = output.variableHash;
+                    _gpuViews[slot] = new Vector3Int(-1, 0, 0);
+                    _hasGpuFieldOutputs = true;
+                }
+                else
+                {
+                    _gpuNetworkIds[slot] = -1;
+                    _gpuViews[slot] = new Vector3Int(0, _payloadDataBytes, 0);
+                }
+            }
+        }
+
+        private void PublishGpuOutputs(RenderTexture bytes, int payloadOffset)
+        {
+            for (int i = 0; i < _gpuOutputCount; i++)
+            {
+                Vector3Int view = _gpuViews[i];
+                TSMPGpuOutput output = _gpuFrameOutputs[i];
+                _gpuFrameOutputs[i] = null;
+                if (view.x < 0 || output == null || output.destination == payloadByteTexture ||
+                    output.destination == sourceTexture)
+                    continue;
+
+                view.x += payloadOffset;
+                output.RenderView(bytes, view, lastStreamId, lastFrameIndex);
+            }
         }
 
         private bool ValidateSetup()
@@ -938,7 +1007,7 @@ namespace K13A.TSMP.Udon
                 return;
             }
             predictedReadbackCount++;
-            CompletePayload();
+            CompletePayload(_combinedByteTexture, FrameHeader.Size);
         }
 
         private void CachePrediction()
@@ -1285,6 +1354,12 @@ namespace K13A.TSMP.Udon
                 if (!NetworkFrameReader.TryReadVariableEntry(_payloadBytes, cursor, bodyEnd, out variableHash, out valueType, out valueOffset, out valueLength, out nextEntryOffset))
                     return FailNetworkFrame("VariableState value is malformed.");
 
+                if (_hasGpuFieldOutputs)
+                {
+                    for (int j = 0; j < _gpuOutputCount; j++)
+                        if (_gpuNetworkIds[j] == (int)networkId && _gpuHashes[j] == variableHash)
+                            _gpuViews[j] = new Vector3Int(valueOffset, valueLength, valueType);
+                }
                 if (_requestSafetyMode != DecodeSafetyParseOnly)
                     ApplyVariableValue(networkId, variableHash, valueType, valueOffset, valueLength);
                 cursor = nextEntryOffset;

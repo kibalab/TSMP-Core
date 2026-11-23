@@ -153,3 +153,25 @@ Variable message가 도착하면 matching binding에만 적용합니다. RPC mes
 - Target behaviour의 `ReceiveInterpolation.None`은 received values를 무시합니다.
 - RPC는 event 성격입니다. Transport가 frame을 drop한다면 encoder repeat frames를 늘리세요.
 - Uploaded world에서는 inspector field를 볼 수 없기 때문에 중요한 runtime failure는 log로 표시됩니다.
+
+## GPU 출력
+
+**TSMP GPU Output** 컴포넌트를 추가하고 디코더의 **GPU Outputs** 목록에 연결합니다. **Network Frame**은 56바이트 전송 헤더를 제외한 전체 NetworkFrame 페이로드를, **Trans Sync Field**는 Network ID와 변수 해시가 일치하는 필드의 값만 제공합니다. 컴포넌트가 디코더와 같은 오브젝트나 자식에 있으면 **Select Decoder Binding**에서 필드를 고를 수 있습니다. 해시와 ID를 직접 지정하면 대응하는 CPU 수신 컴포넌트는 필요하지 않습니다.
+
+머티리얼과 결과를 저장할 RenderTexture를 지정하세요. 바이트를 그대로 보려면 **TSMP/GPU Output/Copy Bytes** 셰이더와 MSAA·밉맵을 끈 Linear ARGB32 텍스처를 사용합니다. 한 픽셀에 4바이트가 들어갑니다. 텍스처가 작으면 앞부분만 담기고, 남는 공간은 0이 됩니다. 사용자 머티리얼은 같은 입력으로 색, 본 행렬 등 원하는 형식을 바로 쓸 수 있습니다. 출력마다 별도 텍스처를 사용하고 디코더 입력이나 작업 텍스처를 대상으로 지정하지 마세요.
+
+유효한 프레임이 확정되면 목록 순서대로 해당 머티리얼의 패스 0을 한 번 실행합니다. SendOnChange 등으로 필드가 생략되면 이전 결과를 유지하지만, 길이 0인 값이 명시적으로 도착하면 실행합니다. 한 프레임에 같은 필드가 여러 번 나오면 마지막 값이 대상입니다. 비활성 출력, 거부된 프레임, 진단용 Safety Mode에서는 결과를 갱신하지 않습니다. 기존 CPU 변수 적용과 RPC 처리는 그대로입니다. GPU에만 적용하려면 동일한 CPU 수신 바인딩을 두지 마세요. 기존 readback과 검증은 사용하지만 추가 readback이나 CPU에서 GPU로의 재업로드는 없습니다.
+
+### 사용자 셰이더
+
+ShaderLab Properties에 2D 텍스처 `_MainTex`를 선언하고, 셰이더 타깃 3.5 이상에서 `Packages/com.kibalab.tsmp.core/Shaders/TSMPGpuInput.cginc`를 include하세요. HLSL에서 `_MainTex`를 다시 선언하지 않습니다. 주소는 전체 텍스처가 아니라 전달받은 범위의 시작이 0입니다. 예측 경로의 헤더 크기나 슬롯 번호를 계산하거나 작업 텍스처를 보관하지 마세요. 유지되는 것은 출력 텍스처입니다.
+
+| HLSL | 의미 |
+| --- | --- |
+| `TSMPByteLength()`, `TSMPValueType()` | 바이트 길이와 전송 타입. 전체 프레임일 때 타입은 0입니다. |
+| `TSMPHasBytes(offset, count)` | 요청 범위 전체를 읽을 수 있는지 검사합니다. |
+| `TSMPReadByte(offset)`, `TSMPReadUInt16LE(offset)`, `TSMPReadUInt32LE(offset)`, `TSMPReadFloat32LE(offset)` | 정렬되지 않은 주소도 읽습니다. 필요한 바이트가 하나라도 범위 밖이면 0입니다. |
+| `TSMPStreamId()`, `TSMPFrameIndex()` | 정밀도 손실 없는 32비트 스트림 ID와 프레임 번호입니다. |
+| `_TSMPOutputSize.xy` | 출력 텍스처의 가로·세로 픽셀 수입니다. |
+
+예를 들어 조명 밝기를 받는 머티리얼은 `TSMPValueType() == 3u`일 때 `TSMPReadFloat32LE(0u)`로 값을 읽습니다. 포즈 플러그인은 같은 API로 RawBytes 필드를 읽습니다. 둘 다 코덱 종류를 알 필요가 없습니다.

@@ -153,3 +153,25 @@ public void ResetDecodeDiagnostics()
 - ターゲット動作の `ReceiveInterpolation.None` は、その動作では受信した値が無視されることを意味します。
 - RPC 呼び出しはイベントのようなものです。トランスポートがフレームをドロップする場合は、エンコーダでリピート フレームを使用します。
 - アップロードされたワールドではインスペクター フィールドが表示されないため、デコーダーは重要な実行時エラーをログに記録します。
+
+## GPU 出力
+
+**TSMP GPU Output** コンポーネントを追加し、デコーダーの **GPU Outputs** リストに登録します。**Network Frame** は 56 バイトの通信ヘッダーを除く NetworkFrame ペイロード全体、**Trans Sync Field** はネットワーク ID と変数ハッシュが一致するフィールドの値だけを渡します。デコーダーと同じオブジェクトまたはその子なら **Select Decoder Binding** から選択できます。ID とハッシュを直接指定する場合、対応する CPU 受信コンポーネントは不要です。
+
+マテリアルと出力先の RenderTexture を指定します。バイトをそのまま保存するには **TSMP/GPU Output/Copy Bytes** と、MSAA・ミップマップなしの Linear ARGB32 テクスチャを使用してください。1 ピクセルは 4 バイトです。小さい出力には先頭だけが入り、余りはゼロになります。独自マテリアルでは色やボーン行列などを直接書き出せます。各出力には専用のテクスチャを用意し、デコーダーの入力や作業テクスチャは使用しないでください。
+
+受理されたフレームに対して、リスト順にマテリアルのパス 0 を実行します。SendOnChange などでフィールドが省略された場合は前回値を維持し、長さゼロの値が明示された場合は実行します。同じフィールドが複数回あれば最後の値を使います。出力が無効な場合、フレームが拒否された場合、または診断用 Safety Mode では出力を更新しません。既存の CPU 変数適用と RPC 配信は変わりません。GPU 専用にするなら同じ CPU 受信バインディングを設定しないでください。既存の readback と検証は使用しますが、追加 readback や CPU からの再アップロードは行いません。
+
+### 独自シェーダー
+
+ShaderLab の Properties に 2D テクスチャ `_MainTex` を宣言し、ターゲット 3.5 以上で `Packages/com.kibalab.tsmp.core/Shaders/TSMPGpuInput.cginc` を include します。HLSL 側では `_MainTex` を再宣言しません。オフセットは渡された範囲の先頭からのバイト数です。予測経路のヘッダーやスロットを意識する必要はありません。入力テクスチャを保持せず、出力テクスチャを利用してください。
+
+| HLSL | 意味 |
+| --- | --- |
+| `TSMPByteLength()`, `TSMPValueType()` | バイト長と通信上の値型。フレーム全体の場合は型 0。 |
+| `TSMPHasBytes(offset, count)` | 指定範囲全体を読み取れるかを判定。 |
+| `TSMPReadByte(offset)`, `TSMPReadUInt16LE(offset)`, `TSMPReadUInt32LE(offset)`, `TSMPReadFloat32LE(offset)` | 非整列アドレスにも対応。必要なバイトの一部でも範囲外ならゼロ。 |
+| `TSMPStreamId()`, `TSMPFrameIndex()` | 32 ビット精度のストリーム ID とフレーム番号。 |
+| `_TSMPOutputSize.xy` | 出力先の幅と高さ（ピクセル単位）。 |
+
+たとえば照明の明るさなら `TSMPValueType() == 3u` を確認して `TSMPReadFloat32LE(0u)` を使用できます。ポーズプラグインも同じ API で RawBytes を読み取れます。どちらもコーデックには依存しません。
