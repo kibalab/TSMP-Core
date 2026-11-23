@@ -55,6 +55,8 @@ namespace K13A.TSMP.Udon
         [HideInInspector] public int[] bindingPriorities;
 
         public bool applyEveryFrame = true;
+        [Tooltip("Check all binding settings on each received frame. Disable only for fixed bindings; call _InvalidateBindingCache after changing bindings at runtime.")]
+        public bool validateBindingCacheOnReceive = true;
         public bool skipDuplicateFrames = true;
         [Min(1)] public int frameWindowSize = 256;
 
@@ -220,6 +222,8 @@ namespace K13A.TSMP.Udon
         private byte[][] _rawByteValueArrays;
         private uint[] _crc32Table;
         private int _cachedBindingTargetCount = -1;
+        private bool _lastValidateBindingCacheOnReceive = true;
+        private ushort[] _bindingTableSource;
         private const int RpcDedupCacheSize = 32;
         private uint[] _recentRpcStreamIds;
         private ushort[] _recentRpcNetworkIds;
@@ -1387,19 +1391,38 @@ namespace K13A.TSMP.Udon
 #endif
         }
 
+        // Local-only helper. Rebuild lazily before the next applied network frame.
+        public void _InvalidateBindingCache()
+        {
+            _cachedBindingTargetCount = -1;
+            _bindingLookupCount = -1;
+            _bindingLookupSignature = -1;
+        }
+
         private void EnsureBindingTargetCache(int targetCount)
         {
             if (targetCount < 0)
                 targetCount = 0;
 
+            if (_lastValidateBindingCacheOnReceive != validateBindingCacheOnReceive || _bindingTableSource != bindingNetworkIds)
+            {
+                _InvalidateBindingCache();
+                _lastValidateBindingCacheOnReceive = validateBindingCacheOnReceive;
+                _bindingTableSource = bindingNetworkIds;
+            }
+
             bool cacheValid = true;
             if (_cachedBindingTargetCount != targetCount)
                 cacheValid = false;
 #if UDONSHARP || COMPILER_UDONSHARP
-            if (!BindingTable.MatchesUdonTargets(_cachedBindingUdonTargets, bindingTargets, bindingUdonTargets, targetCount))
+            if (!BindingTable.IsUdonTargetCacheValid(_cachedBindingUdonTargets, targetCount))
+                cacheValid = false;
+            if (validateBindingCacheOnReceive && !BindingTable.MatchesUdonTargets(_cachedBindingUdonTargets, bindingTargets, bindingUdonTargets, targetCount))
                 cacheValid = false;
 #else
-            if (!BindingTable.MatchesComponentTargets(_cachedBindingComponentTargets, bindingTargets, targetCount))
+            if (!BindingTable.IsComponentTargetCacheValid(_cachedBindingComponentTargets, targetCount))
+                cacheValid = false;
+            if (validateBindingCacheOnReceive && !BindingTable.MatchesComponentTargets(_cachedBindingComponentTargets, bindingTargets, targetCount))
                 cacheValid = false;
 #endif
             bool valueCacheValid = DecoderBindingRuntime.IsArrayValueCacheValid(
@@ -1409,7 +1432,7 @@ namespace K13A.TSMP.Udon
                 cacheValid = false;
             if (_cachedBindingFieldNames == null || _cachedBindingFieldNames.Length != targetCount)
                 cacheValid = false;
-            for (int i = 0; cacheValid && i < targetCount; i++)
+            for (int i = 0; validateBindingCacheOnReceive && cacheValid && i < targetCount; i++)
             {
                 string fieldName = bindingFieldNames != null && i < bindingFieldNames.Length ? bindingFieldNames[i] : null;
                 if (_cachedBindingFieldNames[i] != fieldName)
@@ -1418,7 +1441,11 @@ namespace K13A.TSMP.Udon
 
             if (cacheValid)
             {
-                EnsureBindingLookupCache(targetCount);
+                int lookupCount = BindingTable.ClampNetworkHashCount(targetCount, bindingNetworkIds, bindingVariableHashes);
+                if (validateBindingCacheOnReceive || !BindingLookup.IsCacheValid(
+                    _bindingLookupNetworkIds, _bindingLookupVariableHashes, _bindingLookupBindingIndices,
+                    _bindingLookupCount, _bindingLookupSignature, lookupCount, lookupCount))
+                    EnsureBindingLookupCache(targetCount);
                 return;
             }
 

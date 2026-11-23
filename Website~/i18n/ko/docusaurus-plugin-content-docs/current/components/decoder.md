@@ -39,6 +39,10 @@ title: TSMPDecoder
 
 세션을 식별하는 기능은 아닙니다. 오래된 0번을 재시작으로 오인하거나 0번 유실로 재시작을 놓칠 수 있습니다. 녹화 영상의 원하는 시점으로 이동할 때는 필터를 끌 수 있지만 과거 변수값도 적용됩니다. [정확한 판정 규칙과 한계](../scripting-api/decoder.md#frame-window)를 참고하세요.
 
+## 고정 수신 바인딩
+
+런타임에 바인딩이 바뀌는 씬에서는 **Validate Binding Cache On Receive**를 켜 두세요. 구성이 고정된 공연에서는 끄면 반복적인 테이블 검사를 생략합니다. 패킷과 대상의 활성 상태는 여전히 확인합니다. 기존 바인딩 원소를 직접 변경한 뒤에는 `_InvalidateBindingCache()`를 호출하세요.
+
 ## 정상 decode 상태
 
 `TSMPDebugCanvas`에서 정상 decoder는 다음을 보여야 합니다.

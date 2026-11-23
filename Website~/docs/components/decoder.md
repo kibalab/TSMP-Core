@@ -39,6 +39,10 @@ The decoder normally ignores repeated or older frame numbers. It also recognizes
 
 This does not identify sessions: an old zero can look like a restart, and missing frame zero can prevent restart detection. Disable the filter for intentional seeking through recorded frames, understanding that old values may then be applied. See [exact ordering rules and limitations](../scripting-api/decoder.md#frame-window).
 
+## Fixed receiver bindings
+
+Leave **Validate Binding Cache On Receive** enabled if your scene changes bindings at runtime. For a fixed show rig, disabling it skips repeated table scans, not packet or target activity checks. Call `_InvalidateBindingCache()` after modifying a binding in place.
+
 ## What valid decode looks like
 
 In `TSMPDebugCanvas`, a working decoder should show:
