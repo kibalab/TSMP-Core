@@ -34,6 +34,10 @@ TSMP로 보낼 오브젝트에 다음 컴포넌트를 추가합니다.
 
 ## Humanoid pose sync
 
+**Auto Resolve Bones**를 사용하는 고정 무대 리그는 **Cache Fixed Receive Rig**를 켜면 본의 부모 참조를 재사용합니다. 본을 다른 부모 아래로 옮기거나 기존 본 ID 배열의 원소를 바꾼 뒤에는 `InvalidateReceiveRig()`를 호출하세요. 자주 바뀌는 리그는 기본값인 꺼짐이 적합합니다.
+
+**Alternate Hand Updates**는 첫 정상 포즈에서 양손을 적용하고 이후 수신할 때마다 좌우 손가락을 번갈아 갱신합니다. **Alternate Include Wrists**를 켜면 손목도 교대합니다. 몸통은 매번 갱신하고 연속 보간은 양손 모두 유지합니다. 손의 접촉 타이밍이 중요하면 교대를 끄세요. 전송량은 달라지지 않습니다.
+
 `TSMPNetworkHumanoidPoseSync`는 humanoid Animator rig에 사용합니다.
 
 사용 예:
@@ -64,6 +68,8 @@ Full mode는 transform 또는 blend shape sync보다 더 많은 payload capacity
 ## Blend shape sync
 
 `TSMPNetworkBlendShapesSync`는 얼굴 표정 또는 mesh shape key에 사용합니다.
+
+선택 목록이 고정돼 있다면 **Validate Blend Shape Cache On Receive**를 꺼서 매번 인덱스를 검사하는 비용을 줄일 수 있습니다. 배열 원소를 직접 바꾸면 `_InvalidateBlendShapeCache()`를 호출하세요. 렌더러·메시·인덱스 배열 자체의 교체는 자동으로 감지합니다.
 
 실제로 필요한 blend shape만 선택하세요. 모든 blend shape를 보내면 특히 많은 shape key가 있는 avatar에서 payload capacity를 빠르게 낭비합니다.
 

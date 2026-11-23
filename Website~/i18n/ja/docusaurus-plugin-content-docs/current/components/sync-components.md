@@ -36,6 +36,10 @@ Sync Rigidbody は、Rigidbody がある場合に速度と角速度を送受信�
 
 人型 Animator リグには `TSMPNetworkHumanoidPoseSync` を使用します。
 
+固定リグで **Auto Resolve Bones** を使う場合は、**Cache Fixed Receive Rig** で親ボーンの参照を再利用できます。ボーンを別の親に移す場合や既存のボーン ID 配列を直接書き換えた場合は、`InvalidateReceiveRig()` を呼んでください。構成が頻繁に変わるリグではオフのままにします。
+
+**Alternate Hand Updates** は最初の有効なポーズで両手を更新し、以後は受信ごとに左右の指を交互に更新します。**Alternate Include Wrists** を有効にすると手首も対象になります。体は毎回更新され、連続補間は両手とも続きます。手の接触タイミングを優先する場合はオフにしてください。送信量は変わりません。
+
 次の用途に使用します。
 
 - 人型キャラクターのアニメーションをミラーリングします。
@@ -64,6 +68,8 @@ Sync Rigidbody は、Rigidbody がある場合に速度と角速度を送受信�
 ## ブレンドシェイプの同期
 
 表情やメッシュ シェイプ キーには `TSMPNetworkBlendShapesSync` を使用します。
+
+選択が固定なら **Validate Blend Shape Cache On Receive** をオフにすると、受信ごとのインデックス検査を省けます。既存の配列要素を直接書き換えた後は `_InvalidateBlendShapeCache()` を呼んでください。レンダラー、メッシュ、配列自体の差し替えは自動で検出されます。
 
 実際に必要なブレンド シェイプを選択します。すべてのブレンド シェイプを送信すると、特に多くのシェイプ キーを持つアバターの場合、すぐにペイロード容量を浪費する可能性があります。
 

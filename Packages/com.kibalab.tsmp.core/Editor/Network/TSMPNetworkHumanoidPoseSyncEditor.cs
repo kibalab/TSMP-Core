@@ -108,7 +108,15 @@ namespace K13A.TSMP.Editor
             DrawTSMPNetworkSection(true);
             DrawProperty("animator");
             DrawProperty("autoResolveBones");
+            DrawProperty("cacheFixedReceiveRig");
             DrawProperty("rootSyncSpace");
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Receive Hand Updates", EditorStyles.boldLabel);
+            DrawProperty("alternateHandUpdates");
+            SerializedProperty alternate = serializedObject.FindProperty("alternateHandUpdates");
+            using (new EditorGUI.DisabledScope(!alternate.boolValue && !alternate.hasMultipleDifferentValues))
+                DrawProperty("alternateIncludeWrists");
 
             using (new EditorGUI.DisabledScope(true))
             {
