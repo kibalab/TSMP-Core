@@ -1,0 +1,37 @@
+---
+title: 휴머노이드 수신 모델의 GPU 스키닝
+---
+
+월드에서 **공연자의 모습을 그리는 용도**라면, 송신 측의 `TSMPNetworkHumanoidPoseSync`는 그대로 사용하고 수신 측에서는 [셰이더 채널](./shader-receive.md)의 값으로 메시를 변형할 수 있습니다. 씬의 본 Transform, 콜라이더, 본에 붙은 소품은 움직이지 않습니다. 다른 컴포넌트가 본 위치를 사용한다면 기존 CPU 수신도 유지하세요.
+
+## 수신 모델 베이크하기
+
+1. 수신 디코더에서 **Shader Channel**을 켜고 채널 번호(0~3)와 **송신 측** 휴머노이드 포즈의 Network ID를 확인합니다. 먼저 디코더와 코덱에서 정상 프레임을 받고 있어야 합니다.
+2. Edit Mode에서 수신 모델의 유효한 Humanoid Animator를 기본 자세로 놓고 자식 SkinnedMeshRenderer를 선택하세요. 원본 모델은 **Read/Write Enabled**이고 본 Transform에 접근할 수 있어야 하며, 정점당 가중치는 최대 4개입니다. 가중치가 있는 본은 Hips 또는 그 하위에 있어야 합니다. Animator 및 그 상위, Animator와 Hips 사이의 Transform은 양수 균일 스케일을 사용하세요.
+3. **TSMP → Bake Humanoid GPU Skin**을 엽니다. Animator와 렌더러를 선택하고 송신 Network ID와 디코더 채널을 입력하세요. **Motion Margin**은 메시의 각 방향으로 추가할 이동 여유 범위입니다(Animator 로컬 단위). World 루트 모션이면 수신 모델을 무대 근처에 두세요. Unity는 셰이더가 옮긴 정점이 아닌 고정 범위로 컬링합니다.
+4. **Bake GPU Skin**을 눌러 Assets 안의 새 에셋으로 저장하고 씬을 저장합니다. Animator 아래에 MeshRenderer가 생성되고 원래 렌더러는 꺼집니다. 원본 메시와 머티리얼은 바뀌지 않습니다. 여러 메시라면 각각 베이크하세요. 생성된 오브젝트의 로컬 Transform은 변경하지 말고 정적 배칭도 켜지 마세요.
+5. 송신 애니메이션을 재생합니다. Hips의 Local·World 모션을 모두 지원합니다. 수신용 포즈 컴포넌트는 필요하지 않습니다. 다른 용도가 없는 기존 CPU 수신기는 끄거나 수신 모드를 **None**으로 설정하세요.
+
+생성된 에셋에 메시, 리그 정보, 팔레트, 머티리얼이 함께 저장됩니다. 기본 Built-in 불투명 셰이더는 원본의 알베도 텍스처, 타일링·오프셋, 틴트만 가져옵니다. 원래 셰이더 전체가 변환되지는 않습니다. 본 계층·가중치·기본 자세를 바꿨다면 다시 베이크하세요. 원복하려면 생성된 오브젝트를 제거하고 원래 렌더러를 다시 켜면 됩니다.
+
+## 어떤 움직임이 적용되나요?
+
+GPU 패스 두 개가 현재 v4 `humanoid.pose` 값을 풀고 본별 행렬을 만듭니다. 머티리얼은 이 행렬로 정점 위치·노멀·탄젠트를 변형합니다. 본마다 Udon으로 Transform을 쓰거나 스키닝 결과를 readback하지 않습니다. 디코더 자체의 프레임 검증과 readback은 그대로이며, 베이크된 메시마다 렌더 프레임당 팔레트 두 개를 갱신합니다. 이 구조만으로 특정 성능 향상 수치를 보장하지는 않습니다.
+
+선택된 휴머노이드 본의 회전을 보간 없이 적용합니다. 미선택 본과 보조 본은 베이크된 로컬 자세를 유지하며 부모 본을 따라갑니다. SendOnChange로 포즈 필드 전체가 생략되면 직전 값을 유지합니다. 채널이나 필드가 없거나 지원하지 않는 포맷이면 메시의 기본 자세를 표시합니다. VRChat 플레이어 풀의 별도 패킷, 흔들림 물리, BlendShape, CPU 수신 보간은 처리하지 않습니다.
+
+## 커스텀 머티리얼
+
+머티리얼의 2D 프로퍼티 `_TSMPSkinPalette`에 생성된 스킨 팔레트를 지정하세요. 배칭을 끄고 그림자를 포함해 기하를 그리는 모든 패스에 변형을 적용합니다. **베이크한 복사본**의 UV3·UV4에 각각 본 인덱스와 가중치가 들어 있습니다. 클립 공간 변환 전에 다음 함수를 호출하세요.
+
+```hlsl
+#pragma target 3.5
+#include "Packages/com.kibalab.tsmp.core/Shaders/TSMPSkinning.cginc"
+
+void vert(inout appdata_full v)
+{
+    float3 p = v.vertex.xyz;
+    TSMPSkinVertex(p, v.normal, v.tangent, v.texcoord2, v.texcoord3);
+    v.vertex.xyz = p;
+}
+```

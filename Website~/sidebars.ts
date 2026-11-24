@@ -48,6 +48,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'guides/texture-transport',
         'guides/shader-receive',
+        'guides/gpu-skinning',
         'guides/obs-spout-loopback',
         'guides/performance-tuning',
       ],

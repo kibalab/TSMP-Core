@@ -61,3 +61,5 @@ return float4(gain, gain, gain, 1);
 Magenta means that field has not been received. Yellow means it was received but is not a four-byte Float32. Otherwise, changing the sender's value changes the mesh from black to white. If SendOnChange omits the field in a later frame, the last brightness is retained. For a packed byte array, use the field's own layout instead of reading it as a float.
 
 Use the [shader receive API](../scripting-api/shader-receive.md) for byte offsets, channel limits and reset behavior.
+
+For a humanoid rig, follow [GPU skinning for a humanoid receiver](./gpu-skinning.md).
