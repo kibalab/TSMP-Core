@@ -16,6 +16,10 @@ namespace K13A.TSMP.Editor
 
         public static MeshRenderer Bake(Animator animator, SkinnedMeshRenderer source, int channel, int networkId,
             float motionMargin, string path)
+            => Bake(animator, source, channel, networkId, motionMargin, path, null);
+
+        public static MeshRenderer Bake(Animator animator, SkinnedMeshRenderer source, int channel, int networkId,
+            float motionMargin, string path, Transform[] localSimulationRoots)
         {
             if (Application.isPlaying || !animator || !source || !animator.gameObject.scene.IsValid() ||
                 !source.transform.IsChildOf(animator.transform))
@@ -56,6 +60,31 @@ namespace K13A.TSMP.Editor
             if (!hips || hips == root || !hips.IsChildOf(root))
                 throw new ArgumentException("Hips must be a mapped bone below the Animator.");
             bool[] used = GetInfluences(weights, bones, hips, out var ids, out var influences);
+            LocalSkinPartition.Split(sourceMesh, hips, bones, weights, localSimulationRoots, out var gpu, out var local);
+            if (gpu != null)
+            {
+                if (source.GetComponent<Cloth>())
+                    throw new ArgumentException("A Cloth component requires the original mesh topology. Keep its renderer unbaked.");
+                used = GetInfluences(gpu.Select(weights), bones, hips, out ids, out influences);
+                var remap = new int[bones.Length];
+                int count = 0;
+                for (int i = 0; i < bones.Length; i++)
+                {
+                    if (!used[i]) continue;
+                    remap[i] = count;
+                    bones[count] = bones[i];
+                    bind[count++] = bind[i];
+                }
+                Array.Resize(ref bones, count);
+                Array.Resize(ref bind, count);
+                used = new bool[count];
+                for (int i = 0; i < count; i++) used[i] = true;
+                for (int i = 0; i < ids.Count; i++)
+                {
+                    Vector4 v = ids[i];
+                    ids[i] = new Vector4(remap[(int)v.x], remap[(int)v.y], remap[(int)v.z], remap[(int)v.w]);
+                }
+            }
 
             Matrix4x4 meshToRig = root.worldToLocalMatrix * source.transform.localToWorldMatrix;
             if (!(meshToRig.determinant > 0f)) throw new ArgumentException("The mesh transform is mirrored or singular.");
@@ -67,11 +96,14 @@ namespace K13A.TSMP.Editor
             Shader surface = FindShader("TSMP/Humanoid GPU Skinning");
             var owned = new List<Object>();
             bool created = false;
+            bool originallyEnabled = source.enabled;
+            Bounds originalBounds = source.localBounds;
             GameObject proxy = null;
             try
             {
-                var mesh = Object.Instantiate(sourceMesh);
-                owned.Add(mesh);
+                var mesh = gpu == null ? Object.Instantiate(sourceMesh) : gpu.BuildMesh(sourceMesh, false, owned);
+                if (gpu == null) owned.Add(mesh);
+                Mesh localMesh = local?.BuildMesh(sourceMesh, true, owned);
                 PrepareMesh(mesh, meshToRig, ids, influences, motionMargin);
 
                 var rig = new Texture2D(width, height, TextureFormat.RGBAFloat, false, true)
@@ -107,8 +139,13 @@ namespace K13A.TSMP.Editor
                 renderer.receiveShadows = source.receiveShadows;
                 renderer.allowOcclusionWhenDynamic = false;
                 Undo.RegisterCreatedObjectUndo(proxy, "Bake GPU Skin");
-                Undo.RecordObject(source, "Hide Original Skinned Mesh");
-                source.enabled = false;
+                Undo.RecordObject(source, "Bake GPU Skin");
+                if (localMesh)
+                {
+                    source.sharedMesh = localMesh;
+                    source.localBounds = originalBounds;
+                }
+                source.enabled = localMesh != null;
                 PrefabUtility.RecordPrefabInstancePropertyModifications(source);
                 EditorSceneManager.MarkSceneDirty(root.gameObject.scene);
                 return renderer;
@@ -116,6 +153,9 @@ namespace K13A.TSMP.Editor
             catch
             {
                 if (proxy) Object.DestroyImmediate(proxy);
+                source.sharedMesh = sourceMesh;
+                source.localBounds = originalBounds;
+                source.enabled = originallyEnabled;
                 if (created) AssetDatabase.DeleteAsset(path);
                 foreach (Object item in owned)
                     if (item && !EditorUtility.IsPersistent(item)) Object.DestroyImmediate(item);

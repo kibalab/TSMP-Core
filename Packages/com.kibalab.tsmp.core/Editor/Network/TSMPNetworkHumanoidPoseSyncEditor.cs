@@ -110,6 +110,7 @@ namespace K13A.TSMP.Editor
             DrawProperty("autoResolveBones");
             DrawProperty("cacheFixedReceiveRig");
             DrawProperty("rootSyncSpace");
+            DrawProperty("localSimulationRoots");
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Receive Hand Updates", EditorStyles.boldLabel);

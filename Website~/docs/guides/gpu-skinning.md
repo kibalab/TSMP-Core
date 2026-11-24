@@ -20,6 +20,14 @@ The two GPU passes decode the current v4 `humanoid.pose` field and build per-bon
 
 Selected humanoid rotations are applied discretely. Unselected and non-humanoid joints keep their baked local transform relative to their animated parent. If an entire field is omitted by SendOnChange, its previous value is retained. When the channel/field is unavailable or the packet format is unsupported, the mesh shows its rest geometry. This path does **not** decode the separate VRChat player-pool packet, simulate secondary motion, apply BlendShapes or perform CPU receive interpolation.
 
+## Keep hair, clothing or other bones local
+
+1. On each `TSMPNetworkHumanoidPoseSync`, set **Local Simulation Roots** to the first bones owned by that client's solver, not the anchors they follow. For example, choose HairRoot below Head, not Head. The root and all descendants are excluded from capture **and** pose application. Hips remains synchronized. Each rig needs its own Transform references. Auxiliary bones such as hair were never in the humanoid packet; only excluding mapped humanoid bones reduces its size (6 bytes per omitted rotation).
+2. On the receiver, keep a **Discrete** pose receiver bound to the sender ID. Select the humanoid ancestors that move the real anchors and all non-local bones influencing the local triangles or their boundaries. Set up your local dynamics on that skeleton as usual. TSMP neither installs nor runs a physics solver.
+3. When baking a mixed mesh, assign that pose receiver to **Local Physics Receiver**. Every triangle touching a locally weighted vertex stays on the original SkinnedMeshRenderer, including its skin weights, material slots and BlendShape frames. Other triangles use the GPU renderer. For a separate, entirely local accessory, **do not bake it**. Leave the field empty for the original GPU-only workflow.
+
+This trades a native renderer and CPU updates for the selected anchors for independent motion on each client. Discrete reception matches the GPU pose mode; CPU and shader updates are not frame-locked. Measure the cost with your model. To undo a mixed bake or change ownership, restore the **original mesh** on the skinned renderer, remove the generated object, then bake again. When changing the mask or hierarchy in place at runtime, call `InvalidateReceiveRig()` on the pose component; the mesh partition itself is fixed at bake time.
+
 ## Custom materials
 
 Use the generated skin palette on your material's `_TSMPSkinPalette` 2D property, disable batching, and apply skinning in every pass that draws geometry (including shadows). UV3 and UV4 on the **baked copy** contain bone indices and weights. Call the helper before transforming vertices to clip space:

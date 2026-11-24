@@ -28,11 +28,16 @@ public static class SkinWorldValidation
             var renderer = animator.GetComponentsInChildren<SkinnedMeshRenderer>(true)
                 .Where(r => r.sharedMesh && r.sharedMesh.boneWeights.Length > 0)
                 .OrderByDescending(r => r.sharedMesh.vertexCount).First();
-            HumanoidSkinBaker.Bake(animator,renderer,0,37,5,AssetDatabase.GenerateUniqueAssetPath(folder+"/Skin.asset"));
             var controller = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(
                 "Packages/com.kibalab.tsmp.core/Samples/TSMPController.prefab"));
             var pose = animator.gameObject.AddUdonSharpComponent<TSMPNetworkHumanoidPoseSync>();
-            pose.animator = animator; pose.networkId = 37; pose.receiveInterpolation = ReceiveInterpolationMode.None;
+            pose.animator = animator; pose.networkId = 37; pose.receiveInterpolation = ReceiveInterpolationMode.Discrete;
+            pose.localSimulationRoots = new[] { animator.GetBoneTransform(HumanBodyBones.LeftLowerArm) };
+            var physicsRoot = pose.localSimulationRoots[0];
+            physicsRoot.gameObject.AddComponent<VRC.SDK3.Dynamics.PhysBone.Components.VRCPhysBone>().rootTransform = physicsRoot;
+            HumanoidSkinBaker.Bake(animator,renderer,0,37,5,AssetDatabase.GenerateUniqueAssetPath(folder+"/Skin.asset"),pose.localSimulationRoots);
+            if (!renderer.enabled || !AssetDatabase.IsSubAsset(renderer.sharedMesh))
+                throw new Exception("Missing native half of mixed skin");
             UdonSharpEditorUtility.CopyProxyToUdon(pose);
             controller.GetComponentInChildren<TSMPSetup>(true).ApplyNow();
             var decoder = controller.GetComponentInChildren<TSMPDecoder>(true);

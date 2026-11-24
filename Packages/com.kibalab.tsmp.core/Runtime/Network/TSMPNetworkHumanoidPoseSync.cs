@@ -76,6 +76,10 @@ namespace K13A.TSMP.Udon
         public bool autoResolveBones = true;
         public HumanoidRootSyncSpace rootSyncSpace = HumanoidRootSyncSpace.Local;
         public bool includeFingerBones = true;
+        [Tooltip("These subtrees are controlled by this client, not captured or applied. Select roots below Hips. After changing the hierarchy or editing entries at runtime, call InvalidateReceiveRig.")]
+        public Transform[] localSimulationRoots;
+        private Transform[] _cachedLocalRoots;
+        private bool[] _localBoneById;
         [Tooltip("Receive only: alternate left/right finger decoding on successful pose receipts. Continuous interpolation still runs for both sides every frame. Disabled by default.")]
         public bool alternateHandUpdates;
         [Tooltip("Also alternate LeftHand/RightHand (wrists). Arms and the rest of the body still update on every pose receipt.")]
@@ -253,7 +257,7 @@ namespace K13A.TSMP.Udon
             if (!IsTSMPActive())
                 return;
 
-            if (autoResolveBones)
+            if (autoResolveBones || _cachedLocalRoots != localSimulationRoots || (!_resolvedBones && _localBoneById != null))
                 ResolveBones();
             else
                 EnsureFingerBoneIds();
@@ -412,7 +416,8 @@ namespace K13A.TSMP.Udon
             {
                 int rawBoneId = poseBytes[cursor];
                 Transform target = targetsById[rawBoneId];
-                if (target == null || !_hasBoneId[rawBoneId] || !_fingerAllowedById[rawBoneId])
+                if (target == null || !_hasBoneId[rawBoneId] || !_fingerAllowedById[rawBoneId] ||
+                    (_localBoneById != null && _localBoneById[rawBoneId]))
                 {
                     cursor += PoseBoneBytes;
                     continue;
@@ -597,7 +602,7 @@ namespace K13A.TSMP.Udon
                 && _cachedBoneIdHash == GetBoneIdHash()
                 && _cachedIncludeFingerBones == includeFingerBones;
 
-            if (cacheShapeValid)
+            if (cacheShapeValid && _cachedLocalRoots == localSimulationRoots)
                 return;
 
             EnsureLookupArrays();
@@ -1039,11 +1044,11 @@ namespace K13A.TSMP.Udon
         private void PrepareReceiveRig()
         {
             if (cacheFixedReceiveRig && autoResolveBones && _fixedParents != null && _resolvedBones &&
-                _fixedBoneIds == boneIds && _cachedIncludeFingerBones == includeFingerBones &&
+                _fixedBoneIds == boneIds && _cachedIncludeFingerBones == includeFingerBones && _cachedLocalRoots == localSimulationRoots &&
                 animator != null && animator == _resolvedAnimator && animator.avatar == _resolvedAvatar)
                 return;
             _fixedParents = null;
-            if (autoResolveBones)
+            if (autoResolveBones || _cachedLocalRoots != localSimulationRoots || (!_resolvedBones && _localBoneById != null))
                 ResolveBones();
             else
                 EnsureFingerBoneIds();
@@ -1210,6 +1215,8 @@ namespace K13A.TSMP.Udon
 
         private void RebuildActiveBoneIndices()
         {
+            _cachedLocalRoots = localSimulationRoots;
+            _localBoneById = null;
             if (boneIds == null || boneTargets == null)
             {
                 _activeBoneCount = 0;
@@ -1217,12 +1224,35 @@ namespace K13A.TSMP.Udon
             }
 
             EnsureLookupArrays();
+            if (localSimulationRoots != null && localSimulationRoots.Length != 0 && _rootMotionTarget != null)
+            {
+                _localBoneById = new bool[(int)HumanBodyBones.LastBone];
+                for (int j = 0; j < localSimulationRoots.Length; j++)
+                {
+                    Transform root = localSimulationRoots[j];
+                    if (root == null || root == _rootMotionTarget || !root.IsChildOf(_rootMotionTarget))
+                        continue;
+                    for (int i = 0; i < boneIds.Length; i++)
+                    {
+                        int id = boneIds[i];
+                        if (!HumanoidBoneUtil.IsValidHumanBoneId(id))
+                            continue;
+                        Transform bone = boneTargets[i];
+                        if (bone != null && bone.IsChildOf(root))
+                        {
+                            _localBoneById[id] = true;
+                            _hasTargetBoneRotation[id] = false;
+                        }
+                    }
+                }
+            }
             int count = 0;
             var included = new bool[(int)HumanBodyBones.LastBone];
             for (int i = 0; i < boneIds.Length; i++)
             {
                 int boneId = boneIds[i];
-                if (!HumanoidBoneUtil.IsValidHumanBoneId(boneId) || !_fingerAllowedById[boneId] || included[boneId])
+                if (!HumanoidBoneUtil.IsValidHumanBoneId(boneId) || !_fingerAllowedById[boneId] || included[boneId] ||
+                    (_localBoneById != null && _localBoneById[boneId]))
                     continue;
 
                 Transform target = boneTargets[i];

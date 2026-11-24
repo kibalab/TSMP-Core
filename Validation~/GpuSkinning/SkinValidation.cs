@@ -38,6 +38,23 @@ public static class SkinValidation
         var source = MakeMesh(receiver);
         var proxy = HumanoidSkinBaker.Bake(receiver,source,2,37,5,AssetDatabase.GenerateUniqueAssetPath(Folder+"/Skin.asset"));
         proxy.name = "Proxy";
+        var hybrid = MakeMesh(receiver);
+        hybrid.name = "Hybrid Source";
+        hybrid.enabled = true;
+        var original = hybrid.sharedMesh;
+        var delta = new Vector3[4];
+        delta[3] = Vector3.forward;
+        original.AddBlendShapeFrame("Fabric", 100f, delta, null, null);
+        var hybridProxy = HumanoidSkinBaker.Bake(receiver, hybrid, 2, 37, 5,
+            AssetDatabase.GenerateUniqueAssetPath(Folder+"/Hybrid.asset"), new[]{hybrid.bones[3]});
+        hybridProxy.name = "Hybrid GPU";
+        var compactPalette = hybridProxy.sharedMaterial.GetTexture("_TSMPSkinPalette");
+        if (!hybrid.enabled || hybrid.sharedMesh.vertexCount != 3 || hybrid.sharedMesh.GetTriangles(0).Length != 3 ||
+            compactPalette.width != 2 + 3 * 3 ||
+            hybrid.sharedMesh.blendShapeCount != 1 || hybrid.sharedMesh.boneWeights[2].boneIndex0 != 3 ||
+            hybridProxy.GetComponent<MeshFilter>().sharedMesh.vertexCount != 3 || original.triangles.Length != 6)
+            throw new Exception("Mixed triangle partition failed");
+        hybrid.SetBlendShapeWeight(0, 0);
         new GameObject("Camera").AddComponent<Camera>();
         EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene(), Folder+"/Check.unity");
         SessionState.SetBool(Key,true);
@@ -120,6 +137,7 @@ public static class SkinValidation
         var rx = dst.gameObject.AddComponent<TSMPNetworkHumanoidPoseSync>();
         rx.receiveInterpolation = ReceiveInterpolationMode.Discrete;
         tx.animator=src; rx.animator=dst;
+        tx.includeFingerBones = rx.includeFingerBones = false;
         int[] ids = {(int)HumanBodyBones.Hips,(int)HumanBodyBones.LeftUpperArm,(int)HumanBodyBones.LeftHand};
         tx.boneIds=ids; rx.boneIds=ids;
         var source = GameObject.Find("Probe Source").GetComponent<SkinnedMeshRenderer>();
@@ -127,10 +145,16 @@ public static class SkinValidation
         var points = Object.Instantiate(proxy.GetComponent<MeshFilter>().sharedMesh);
         points.SetIndices(new[]{0,1,2,3},MeshTopology.Points,0);
         var actualMaterial = proxy.sharedMaterial;
+        var hybrid = GameObject.Find("Hybrid Source").GetComponent<SkinnedMeshRenderer>();
+        var hybridGpu = GameObject.Find("Hybrid GPU").GetComponent<MeshRenderer>();
+        var hybridPoints = Object.Instantiate(hybridGpu.GetComponent<MeshFilter>().sharedMesh);
+        hybridPoints.SetIndices(new[]{0,1,2},MeshTopology.Points,0);
         if (!actualMaterial.SetPass(0) || ShaderUtil.ShaderHasError(actualMaterial.shader)) throw new Exception("Surface shader failed to compile");
         var palette = (CustomRenderTexture)actualMaterial.GetTexture("_TSMPSkinPalette");
         var probe = new Material(Shader.Find("Hidden/TSMP Validation/Skin Probe"));
         probe.SetTexture("_TSMPSkinPalette",palette);
+        var hybridProbe = new Material(probe);
+        hybridProbe.SetTexture("_TSMPSkinPalette", hybridGpu.sharedMaterial.GetTexture("_TSMPSkinPalette"));
         var expectedRest = Expected(source);
         var real = dst.GetComponentsInChildren<SkinnedMeshRenderer>(true).First(r=>r.name=="Model Source");
         var model = GameObject.Find("Model Skin").GetComponent<MeshRenderer>();
@@ -188,6 +212,9 @@ public static class SkinValidation
             Compare(points,proxy,probe,step==2?expectedRest:Expected(source),step==0?"local":step==1?"world":"bad packet");
             if(step!=2)
             {
+                var seam = Expected(hybrid);
+                var full = Expected(source);
+                Compare(hybridPoints, hybridGpu, hybridProbe, new[]{full[0], seam[0], seam[1]}, "hybrid boundary "+step);
                 var baked=new Mesh();
                 source.BakeMesh(baked,false);
                 Compare(points,proxy,probe,baked.normals.Take(2).Select(n=>source.transform.TransformDirection(n).normalized).ToArray(),"normals "+step,1);
@@ -197,7 +224,38 @@ public static class SkinValidation
                 Compare(modelPoints,model,modelProbe,samples.Select(i=>modelWorld[i]).ToArray(),"model "+step);
             }
         }
-        Debug.Log("PASS GPU humanoid skinning: "+SystemInfo.graphicsDeviceName);
+        var localBone = hybrid.bones[3];
+        var before = Expected(hybrid);
+        localBone.localPosition += Vector3.up * .2f;
+        var after = Expected(hybrid);
+        if (Vector3.Distance(before[2], after[2]) < .03f || Vector3.Distance(before[0], after[0]) > .0001f)
+            throw new Exception("Client-local bone did not deform just its weighted vertices");
+        tx.localSimulationRoots = new[] { src.GetBoneTransform(HumanBodyBones.LeftUpperArm) };
+        tx.TSMPBeforeEncode();
+        if (tx.validBoneCount != 1 || tx.poseBytes.Length != 27 || tx.poseBytes[4] != (byte)HumanBodyBones.Hips)
+            throw new Exception("Locally owned arm or hand was transmitted");
+        tx.localSimulationRoots = null;
+        tx.TSMPBeforeEncode();
+        if (tx.validBoneCount != 3) throw new Exception("Removing the local mask did not restore capture");
+        rx.cacheFixedReceiveRig = true;
+        rx.localSimulationRoots = new[] { dst.GetBoneTransform(HumanBodyBones.LeftUpperArm) };
+        var localHand = dst.GetBoneTransform(HumanBodyBones.LeftHand);
+        foreach (var mode in new[]{ReceiveInterpolationMode.Discrete, ReceiveInterpolationMode.Continuous})
+        {
+            rx.receiveInterpolation = mode;
+            Vector3 origin = dst.GetBoneTransform(HumanBodyBones.Hips).position;
+            Quaternion q = localHand.localRotation * Quaternion.Euler(43,12,6);
+            localHand.localRotation = q;
+            src.GetBoneTransform(HumanBodyBones.Hips).position += Vector3.right * .5f;
+            tx.TSMPBeforeEncode();
+            rx.poseBytes = tx.poseBytes;
+            rx.OnTSMPVariableReceived();
+            yield return null;
+            if (Quaternion.Angle(q,localHand.localRotation) > .1f ||
+                Vector3.Distance(origin,dst.GetBoneTransform(HumanBodyBones.Hips).position) < .001f)
+                throw new Exception("Excluded chain or Hips ownership failed: "+mode);
+        }
+        Debug.Log("PASS mixed local skin, excluded sender and receiver subtrees; GPU humanoid skinning: "+SystemInfo.graphicsDeviceName);
     }
 
     static Mesh SamplePoints(Mesh mesh,int[] samples)
