@@ -1,5 +1,7 @@
 # Humanoid GPU skinning checks
 
+For measured receiver CPU time, GPU pass timings, memory and reproduction instructions, see the [receiver profile](PROFILE.md).
+
 Use disposable Unity 2022.3 projects with the working Core and Luma4 packages and the Shapell sample model included in Core. Use a graphics device; do not use `-nographics`.
 
 - **Plain Unity:** copy `SkinValidation.cs` into `Assets/Editor` and `SkinProbe.shader` into `Assets`. Run `-batchmode -force-d3d11 -executeMethod SkinValidation.Run`. The test bakes two proxies, saves the scene, enters Play Mode, and exits with a nonzero code on failure. Do not pass `-quit`.
