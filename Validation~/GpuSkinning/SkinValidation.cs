@@ -230,32 +230,47 @@ public static class SkinValidation
         var after = Expected(hybrid);
         if (Vector3.Distance(before[2], after[2]) < .03f || Vector3.Distance(before[0], after[0]) > .0001f)
             throw new Exception("Client-local bone did not deform just its weighted vertices");
-        tx.localSimulationRoots = new[] { src.GetBoneTransform(HumanBodyBones.LeftUpperArm) };
+        tx.excludedSendBoneRoots = new[] { src.GetBoneTransform(HumanBodyBones.LeftUpperArm) };
         tx.TSMPBeforeEncode();
         if (tx.validBoneCount != 1 || tx.poseBytes.Length != 27 || tx.poseBytes[4] != (byte)HumanBodyBones.Hips)
-            throw new Exception("Locally owned arm or hand was transmitted");
-        tx.localSimulationRoots = null;
+            throw new Exception("Excluded arm or hand was transmitted");
+        tx.excludedSendBoneRoots[0] = src.GetBoneTransform(HumanBodyBones.LeftHand);
+        tx.TSMPBeforeEncode();
+        if (tx.validBoneCount != 2) throw new Exception("Editing a send root did not update the packet");
+        tx.excludedSendBoneRoots = null;
         tx.TSMPBeforeEncode();
         if (tx.validBoneCount != 3) throw new Exception("Removing the local mask did not restore capture");
         rx.cacheFixedReceiveRig = true;
-        rx.localSimulationRoots = new[] { dst.GetBoneTransform(HumanBodyBones.LeftUpperArm) };
+        rx.excludedSendBoneRoots = new[] { dst.GetBoneTransform(HumanBodyBones.LeftUpperArm) };
         var localHand = dst.GetBoneTransform(HumanBodyBones.LeftHand);
         foreach (var mode in new[]{ReceiveInterpolationMode.Discrete, ReceiveInterpolationMode.Continuous})
         {
             rx.receiveInterpolation = mode;
+            tx.excludedSendBoneRoots = null;
+            tx.TSMPBeforeEncode();
+            Quaternion start = localHand.localRotation * Quaternion.Euler(35,10,4);
+            localHand.localRotation = start;
+            rx.poseBytes = tx.poseBytes;
+            rx.OnTSMPVariableReceived();
+            until = Time.frameCount + 3;
+            while (Time.frameCount < until) yield return null;
+            if (Quaternion.Angle(start,localHand.localRotation) < 1f)
+                throw new Exception("Receiver's send exclusion suppressed incoming hand: "+mode);
             Vector3 origin = dst.GetBoneTransform(HumanBodyBones.Hips).position;
             Quaternion q = localHand.localRotation * Quaternion.Euler(43,12,6);
             localHand.localRotation = q;
             src.GetBoneTransform(HumanBodyBones.Hips).position += Vector3.right * .5f;
+            tx.excludedSendBoneRoots = new[] { src.GetBoneTransform(HumanBodyBones.LeftUpperArm) };
             tx.TSMPBeforeEncode();
             rx.poseBytes = tx.poseBytes;
             rx.OnTSMPVariableReceived();
-            yield return null;
+            until = Time.frameCount + 3;
+            while (Time.frameCount < until) yield return null;
             if (Quaternion.Angle(q,localHand.localRotation) > .1f ||
                 Vector3.Distance(origin,dst.GetBoneTransform(HumanBodyBones.Hips).position) < .001f)
                 throw new Exception("Excluded chain or Hips ownership failed: "+mode);
         }
-        Debug.Log("PASS mixed local skin, excluded sender and receiver subtrees; GPU humanoid skinning: "+SystemInfo.graphicsDeviceName);
+        Debug.Log("PASS mixed skin, send-only subtree exclusions and independent receive; GPU humanoid skinning: "+SystemInfo.graphicsDeviceName);
     }
 
     static Mesh SamplePoints(Mesh mesh,int[] samples)

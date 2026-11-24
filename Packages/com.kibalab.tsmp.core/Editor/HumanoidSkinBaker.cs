@@ -19,7 +19,7 @@ namespace K13A.TSMP.Editor
             => Bake(animator, source, channel, networkId, motionMargin, path, null);
 
         public static MeshRenderer Bake(Animator animator, SkinnedMeshRenderer source, int channel, int networkId,
-            float motionMargin, string path, Transform[] localSimulationRoots)
+            float motionMargin, string path, Transform[] nativeBoneRoots)
         {
             if (Application.isPlaying || !animator || !source || !animator.gameObject.scene.IsValid() ||
                 !source.transform.IsChildOf(animator.transform))
@@ -60,7 +60,7 @@ namespace K13A.TSMP.Editor
             if (!hips || hips == root || !hips.IsChildOf(root))
                 throw new ArgumentException("Hips must be a mapped bone below the Animator.");
             bool[] used = GetInfluences(weights, bones, hips, out var ids, out var influences);
-            LocalSkinPartition.Split(sourceMesh, hips, bones, weights, localSimulationRoots, out var gpu, out var local);
+            LocalSkinPartition.Split(sourceMesh, hips, bones, weights, nativeBoneRoots, out var gpu, out var local);
             if (gpu != null)
             {
                 if (source.GetComponent<Cloth>())

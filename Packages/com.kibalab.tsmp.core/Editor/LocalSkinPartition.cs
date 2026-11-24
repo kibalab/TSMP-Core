@@ -24,20 +24,20 @@ namespace K13A.TSMP.Editor
             gpu = null;
             local = null;
             if (roots == null || roots.Length == 0) return;
-            var simulated = new bool[bones.Length];
+            var keepOnRenderer = new bool[bones.Length];
             foreach (Transform root in roots)
             {
                 if (!root || root == hips || !root.IsChildOf(hips))
-                    throw new ArgumentException("Each local simulation root must be a bone below Hips on the receiver.");
+                    throw new ArgumentException("Each bone kept on the skinned renderer must be below Hips on the receiving rig.");
                 for (int i = 0; i < bones.Length; i++)
-                    if (bones[i] && bones[i].IsChildOf(root)) simulated[i] = true;
+                    if (bones[i] && bones[i].IsChildOf(root)) keepOnRenderer[i] = true;
             }
             var touched = new bool[weights.Length];
             for (int i = 0; i < weights.Length; i++)
             {
                 BoneWeight w = weights[i];
-                touched[i] = (w.weight0 > 0 && simulated[w.boneIndex0]) || (w.weight1 > 0 && simulated[w.boneIndex1]) ||
-                             (w.weight2 > 0 && simulated[w.boneIndex2]) || (w.weight3 > 0 && simulated[w.boneIndex3]);
+                touched[i] = (w.weight0 > 0 && keepOnRenderer[w.boneIndex0]) || (w.weight1 > 0 && keepOnRenderer[w.boneIndex1]) ||
+                             (w.weight2 > 0 && keepOnRenderer[w.boneIndex2]) || (w.weight3 > 0 && keepOnRenderer[w.boneIndex3]);
             }
             if (Array.IndexOf(touched, true) < 0) return;
             gpu = new LocalSkinPartition(mesh.subMeshCount);
@@ -45,7 +45,7 @@ namespace K13A.TSMP.Editor
             for (int s = 0; s < mesh.subMeshCount; s++)
             {
                 if (mesh.GetTopology(s) != MeshTopology.Triangles)
-                    throw new ArgumentException("Local simulation requires triangle submeshes.");
+                    throw new ArgumentException("Partitioning a skin requires triangle submeshes.");
                 int[] indices = mesh.GetTriangles(s);
                 for (int i = 0; i < indices.Length; i += 3)
                 {
@@ -64,7 +64,7 @@ namespace K13A.TSMP.Editor
                 }
             }
             if (gpu.Vertices.Count == 0)
-                throw new ArgumentException("Every triangle uses local simulation. Keep the original skinned renderer; no GPU bake is needed.");
+                throw new ArgumentException("Every triangle is kept on the original skinned renderer; no GPU bake is needed.");
             if (local.Vertices.Count == 0) gpu = local = null;
         }
 
@@ -92,7 +92,7 @@ namespace K13A.TSMP.Editor
             mesh.RecalculateBounds();
             if (!keepSkin) return mesh;
 
-            mesh.name += " Local Simulation";
+            mesh.name += " Skinned Renderer";
             mesh.bindposes = source.bindposes;
             mesh.boneWeights = Select(source.boneWeights);
             if (source.blendShapeCount == 0) return mesh;

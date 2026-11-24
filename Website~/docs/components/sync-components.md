@@ -38,6 +38,8 @@ For a fixed stage rig with **Auto Resolve Bones**, enable **Cache Fixed Receive 
 
 **Alternate Hand Updates** decodes both hands on the first valid pose, then alternates fingers on subsequent poses. **Alternate Include Wrists** also alternates the hands themselves. The body still updates every receipt; continuous interpolation still runs on both sides. Leave this off for precise hand contact. Neither option reduces the transmitted bytes.
 
+**Excluded Send Bone Roots** skips the selected subtrees below Hips when sending. This does not filter received poses or require a physics component.
+
 Use `TSMPNetworkHumanoidPoseSync` for a humanoid Animator rig.
 
 Use it for:

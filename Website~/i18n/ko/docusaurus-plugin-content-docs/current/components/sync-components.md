@@ -38,6 +38,8 @@ TSMP로 보낼 오브젝트에 다음 컴포넌트를 추가합니다.
 
 **Alternate Hand Updates**는 첫 정상 포즈에서 양손을 적용하고 이후 수신할 때마다 좌우 손가락을 번갈아 갱신합니다. **Alternate Include Wrists**를 켜면 손목도 교대합니다. 몸통은 매번 갱신하고 연속 보간은 양손 모두 유지합니다. 손의 접촉 타이밍이 중요하면 교대를 끄세요. 전송량은 달라지지 않습니다.
 
+**Excluded Send Bone Roots**에 Hips 아래의 본을 넣으면 그 본과 자식 본을 송신하지 않습니다. 수신 필터가 아니며 물리 컴포넌트도 필요하지 않습니다.
+
 `TSMPNetworkHumanoidPoseSync`는 humanoid Animator rig에 사용합니다.
 
 사용 예:
