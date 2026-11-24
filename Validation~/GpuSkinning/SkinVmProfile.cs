@@ -19,10 +19,15 @@ using Watch = System.Diagnostics.Stopwatch;
 public static class SkinVmProfile
 {
     const string Key="TSMP.SkinVmProfile", Folder="Assets/SkinProfileInputs/";
-    static readonly string[] Modes={"decode","cpu-default","cpu","gpu","hybrid"};
+    static readonly int Count = int.Parse(Environment.GetEnvironmentVariable("TSMP_CROWD_N") ?? "1");
+    static readonly bool Crowd = Environment.GetEnvironmentVariable("TSMP_CROWD_N") != null;
+    static readonly string[] Modes = Crowd ? new[]{"cpu","gpu","hybrid"} : new[]{"decode","cpu-default","cpu","gpu","hybrid"};
+    static string Input(int i) => Folder+(Crowd ? Count+"-" : "")+i+".asset";
     static readonly List<string> Rows=new List<string>{"round,mode,sample,submitUs,completionUs,poseUs,callbacks,applied"};
-    static UdonBehaviour active, pose;
-    static UdonBehaviour[] decoders, receivers;
+    static UdonBehaviour active;
+    static HashSet<UdonBehaviour> targets;
+    static UdonBehaviour[] decoders;
+    static UdonBehaviour[][] receivers;
     static Texture2D[] inputs;
     static RenderTexture stream;
     static HashSet<uint> callbacks;
@@ -44,11 +49,12 @@ public static class SkinVmProfile
             codec.byteDecodeMaterial=codecPrefab.GetComponent<TSMPCodecLuma4>().byteDecodeMaterial;
             UdonSharpEditorUtility.CopyProxyToUdon(codec);
             var dec=new GameObject("Decoder "+m).AddUdonSharpComponent<TSMPDecoder>();
-            dec.sourceTexture=AssetDatabase.LoadAssetAtPath<Texture2D>(Folder+"0.asset");
+            dec.sourceTexture=AssetDatabase.LoadAssetAtPath<Texture2D>(Input(0));
             if(!dec.sourceTexture) throw new Exception("Missing staged input textures");
             dec.codecHandlers=new TSMPCodec[]{codec};
-            dec.blockSize=8; dec.sampleSize=1; dec.applyEveryFrame=false; dec.debugLog=false; dec.skipDuplicateFrames=false;
-            dec.payloadByteTexture=new RenderTexture(128,4,0,RenderTextureFormat.ARGB32,RenderTextureReadWrite.Linear);
+            dec.blockSize=Crowd?4:8; dec.sampleSize=1; dec.applyEveryFrame=false; dec.debugLog=false; dec.skipDuplicateFrames=false;
+            int textureRows = Crowd ? (Count > 32 ? 32 : 16) : 4;
+            dec.payloadByteTexture=new RenderTexture(Crowd?256:128,textureRows,0,RenderTextureFormat.ARGB32,RenderTextureReadWrite.Linear);
             AssetDatabase.CreateAsset(dec.payloadByteTexture,AssetDatabase.GenerateUniqueAssetPath(Folder+m+".renderTexture"));
             dec.readbackPackMaterial=Resources.Load<Material>("TSMPReadbackPack");
             if(m=="gpu" || m=="hybrid")
@@ -58,22 +64,26 @@ public static class SkinVmProfile
             }
             if(m.StartsWith("cpu",StringComparison.Ordinal) || m=="hybrid")
             {
-                var model=Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>("Packages/com.kibalab.tsmp.core/Samples/TSMPExample/Models/Shapell/data/shapell.fbx"));
-                model.name="Rig "+m;
-                var a=model.GetComponentInChildren<Animator>();
-                a.enabled=false;
-                foreach(var r in model.GetComponentsInChildren<Renderer>()) r.enabled=false;
-                var rx=model.AddUdonSharpComponent<TSMPNetworkHumanoidPoseSync>();
-                rx.animator=a; rx.cacheFixedReceiveRig=m!="cpu-default";
-                if(m=="hybrid") { rx.boneIds=new[]{0,7,8,11,13}; rx.includeFingerBones=false; }
-                UdonSharpEditorUtility.CopyProxyToUdon(rx);
-                dec.bindingTargets=new Component[]{rx};
-                dec.bindingUdonTargets=new[]{UdonSharpEditorUtility.GetBackingUdonBehaviour(rx)};
-                dec.bindingNetworkIds=new ushort[]{37};
-                dec.bindingVariableHashes=new[]{StableHash.VariableHash(typeof(TSMPNetworkHumanoidPoseSync),"poseBytes","humanoid.pose")};
-                dec.bindingValueTypes=new[]{(byte)NetworkValueType.RawBytes};
-                dec.bindingDirections=new[]{(int)NetworkSyncDirection.ReceiveOnly};
-                dec.bindingFieldNames=new[]{nameof(rx.poseBytes)};
+                dec.bindingTargets=new Component[Count]; dec.bindingUdonTargets=new UdonBehaviour[Count];
+                dec.bindingNetworkIds=new ushort[Count]; dec.bindingVariableHashes=new uint[Count];
+                dec.bindingValueTypes=new byte[Count]; dec.bindingDirections=new int[Count]; dec.bindingFieldNames=new string[Count];
+                for(int k=0;k<Count;k++)
+                {
+                    var model=Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>("Packages/com.kibalab.tsmp.core/Samples/TSMPExample/Models/Shapell/data/shapell.fbx"));
+                    model.name="Rig "+m+" "+k;
+                    var a=model.GetComponentInChildren<Animator>();
+                    a.enabled=false;
+                    foreach(var r in model.GetComponentsInChildren<Renderer>()) r.enabled=false;
+                    var rx=model.AddUdonSharpComponent<TSMPNetworkHumanoidPoseSync>();
+                    rx.animator=a; rx.cacheFixedReceiveRig=m!="cpu-default";
+                    if(m=="hybrid") { rx.boneIds=new[]{0,7,8,11,13}; rx.includeFingerBones=false; }
+                    UdonSharpEditorUtility.CopyProxyToUdon(rx);
+                    dec.bindingTargets[k]=rx; dec.bindingUdonTargets[k]=UdonSharpEditorUtility.GetBackingUdonBehaviour(rx);
+                    dec.bindingNetworkIds[k]=(ushort)(37+k);
+                    dec.bindingVariableHashes[k]=StableHash.VariableHash(typeof(TSMPNetworkHumanoidPoseSync),"poseBytes","humanoid.pose");
+                    dec.bindingValueTypes[k]=(byte)NetworkValueType.RawBytes;
+                    dec.bindingDirections[k]=(int)NetworkSyncDirection.ReceiveOnly; dec.bindingFieldNames[k]=nameof(rx.poseBytes);
+                }
             }
             UdonSharpEditorUtility.CopyProxyToUdon(dec);
         }
@@ -84,7 +94,7 @@ public static class SkinVmProfile
     [InitializeOnLoadMethod] static void Attach()
     {
         if(!SessionState.GetBool(Key,false)) return;
-        deadline=EditorApplication.timeSinceStartup+240;
+        deadline=EditorApplication.timeSinceStartup+360;
         EditorApplication.update-=Tick; EditorApplication.update+=Tick;
     }
 
@@ -95,14 +105,14 @@ public static class SkinVmProfile
     {
         __state=0;
         if(!pending) return;
-        if((__instance==active && (__0==submit || callbacks.Contains(__0))) || (__instance==pose && __0==poseEvent))
+        if((__instance==active && (__0==submit || callbacks.Contains(__0))) || (__0==poseEvent && targets.Contains(__instance)))
             __state=Watch.GetTimestamp();
     }
     static void Postfix(UdonBehaviour __instance,uint __0,long __state)
     {
         if(__state==0) return;
         long dt=Watch.GetTimestamp()-__state;
-        if(__instance==pose) poseTicks+=dt;
+        if(__instance!=active) poseTicks+=dt;
         else if(__0==submit) submitTicks+=dt;
         else {callbackTicks+=dt; calls++;}
     }
@@ -115,8 +125,9 @@ public static class SkinVmProfile
             if(decoders==null)
             {
                 decoders=Modes.Select(m=>UdonSharpEditorUtility.GetBackingUdonBehaviour(GameObject.Find("Decoder "+m).GetComponent<TSMPDecoder>())).ToArray();
-                receivers=Modes.Select(m=>GameObject.Find("Rig "+m)).Select(o=>o?UdonSharpEditorUtility.GetBackingUdonBehaviour(o.GetComponent<TSMPNetworkHumanoidPoseSync>()):null).ToArray();
-                inputs=Enumerable.Range(0,8).Select(i=>AssetDatabase.LoadAssetAtPath<Texture2D>(Folder+i+".asset")).ToArray();
+                receivers=Modes.Select(m=>Enumerable.Range(0,Count).Select(k=>GameObject.Find("Rig "+m+" "+k)).Where(o=>o)
+                    .Select(o=>UdonSharpEditorUtility.GetBackingUdonBehaviour(o.GetComponent<TSMPNetworkHumanoidPoseSync>())).ToArray()).ToArray();
+                inputs=Enumerable.Range(0,8).Select(i=>AssetDatabase.LoadAssetAtPath<Texture2D>(Input(i))).ToArray();
                 stream=new RenderTexture(inputs[0].width,inputs[0].height,0,inputs[0].graphicsFormat){filterMode=FilterMode.Point};
                 stream.Create();
             }
@@ -132,12 +143,12 @@ public static class SkinVmProfile
             {
                 if(ordinal==0)
                 {
-                    active=decoders[index]; pose=receivers[index];
+                    active=decoders[index]; targets=new HashSet<UdonBehaviour>(receivers[index]);
                     var e=Program(active).EntryPoints;
                     submit=e.GetAddressFromSymbol("DecodeNow");
                     callbacks=new HashSet<uint>(e.GetExportedSymbols().Where(s=>s.IndexOf("Readback",StringComparison.OrdinalIgnoreCase)>=0).Select(e.GetAddressFromSymbol));
                     if(callbacks.Count==0) throw new Exception("No exported readback event");
-                    if(pose) poseEvent=Program(pose).EntryPoints.GetAddressFromSymbol("OnTSMPVariableReceived");
+                    if(targets.Count>0) poseEvent=Program(receivers[index][0]).EntryPoints.GetAddressFromSymbol("OnTSMPVariableReceived");
                     active.SetProgramVariable("sourceTexture",stream);
                 }
                 submitTicks=callbackTicks=poseTicks=0; calls=0;
@@ -149,7 +160,7 @@ public static class SkinVmProfile
             pending=false;
             int applied=(int)active.GetProgramVariable("lastAppliedVariableCount");
             if(!(bool)active.GetProgramVariable("lastFrameValid") || (uint)active.GetProgramVariable("lastFrameIndex")!=1u+ordinal%8 ||
-                applied!=(pose?1:0) || submitTicks==0 || callbackTicks==0 || (pose && poseTicks==0))
+                applied!=targets.Count || submitTicks==0 || callbackTicks==0 || (targets.Count>0 && poseTicks==0))
                 throw new Exception($"VM check {Modes[index]} {ordinal} {applied} ticks {submitTicks}/{callbackTicks}/{poseTicks}: {active.GetProgramVariable("lastError")}");
             if(ordinal>=16)
             {
@@ -158,7 +169,7 @@ public static class SkinVmProfile
             }
             if(++ordinal<96) return;
             if((Modes[index]=="gpu" || Modes[index]=="hybrid") && !Shader.GetGlobalTexture("_UdonTSMPChannel2")) throw new Exception("Channel not published");
-            if(pose)
+            foreach(var pose in receivers[index])
             {
                 var packed=(byte[])pose.GetProgramVariable("poseBytes");
                 var rig=(Animator)pose.GetProgramVariable("animator");
@@ -175,7 +186,7 @@ public static class SkinVmProfile
             Debug.Log($"PASS VM profile block {round}: {Modes[index]}");
             ordinal=0;
             if(++round<2*Modes.Length) return;
-            File.WriteAllLines(Path.Combine(Environment.GetEnvironmentVariable("TSMP_SKIN_OUT"),"vm.csv"),Rows);
+            File.WriteAllLines(Path.Combine(Environment.GetEnvironmentVariable("TSMP_SKIN_OUT"),Crowd?"vm-"+Count+".csv":"vm.csv"),Rows);
             Finish(0);
         }
         catch(Exception e){ Debug.LogException(e); Finish(1); }
