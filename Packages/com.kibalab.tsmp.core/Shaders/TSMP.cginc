@@ -14,12 +14,11 @@ struct TSMPByteView
 uint TSMPAtlasWord(uint channel, uint word)
 {
     int3 p = int3(word & 255u, word >> 8, 0);
-    float4 rgba;
+    float4 rgba = 0;
     if (channel == 0u) rgba = _UdonTSMPChannel0.Load(p);
     else if (channel == 1u) rgba = _UdonTSMPChannel1.Load(p);
     else if (channel == 2u) rgba = _UdonTSMPChannel2.Load(p);
     else if (channel == 3u) rgba = _UdonTSMPChannel3.Load(p);
-    else return 0u;
     uint4 b = (uint4)round(saturate(rgba) * 255.0);
     return b.x | (b.y << 8) | (b.z << 16) | (b.w << 24);
 }
