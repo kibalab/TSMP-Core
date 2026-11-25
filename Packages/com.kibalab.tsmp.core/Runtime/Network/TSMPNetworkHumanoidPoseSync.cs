@@ -120,6 +120,7 @@ namespace K13A.TSMP.Udon
         private bool[] _boneTargetResolvedByIndex;
         private bool[] _hasBoneId;
         private bool[] _validatedReceivedBoneIds;
+        private int[] _selectedReceiveOffsets;
         private bool[] _fingerAllowedById;
         private int[] _activeBoneIds;
         private Transform[] _activeBoneTargets;
@@ -383,7 +384,9 @@ namespace K13A.TSMP.Udon
             if (count > (int)HumanBodyBones.LastBone)
                 return;
             PrepareReceiveRig();
-            if (!ValidatePoseBoneRecords(count))
+            bool sparse = boneIds != null && boneIds.Length < count / 2;
+            int applyCount = ValidatePoseBoneRecords(count, sparse);
+            if (applyCount < 0)
                 return;
             if (!ValidateRootMotionPosition(count, rootTailBytes))
                 return;
@@ -424,8 +427,10 @@ namespace K13A.TSMP.Udon
                 ClearReceivedBoneWorldRotations();
             }
 
-            for (int i = 0; i < count; i++)
+            for (int i = 0; i < applyCount; i++)
             {
+                if (sparse)
+                    cursor = _selectedReceiveOffsets[i];
                 int rawBoneId = poseBytes[cursor];
                 Transform target = targetsById[rawBoneId];
                 if (target == null || !_hasBoneId[rawBoneId] || !_fingerAllowedById[rawBoneId])
@@ -471,6 +476,7 @@ namespace K13A.TSMP.Udon
             }
 
             bool skipContinuousRootBoneRotation = false;
+            cursor = PoseHeaderBytes + count * PoseBoneBytes;
             if (version >= 2 && (flags & PoseFlagHasRootMotionPosition) != 0 && cursor + PoseRootMotionPositionBytes <= poseBytes.Length)
             {
                 _continuousRootIsAnimatorRelative = false;
@@ -1085,24 +1091,28 @@ namespace K13A.TSMP.Udon
             }
         }
 
-        private bool ValidatePoseBoneRecords(int count)
+        private int ValidatePoseBoneRecords(int count, bool sparse)
         {
             int lastBone = (int)HumanBodyBones.LastBone;
-            for (int i = 0; i < lastBone; i++)
-                _validatedReceivedBoneIds[i] = false;
+            System.Array.Clear(_validatedReceivedBoneIds, 0, lastBone);
+            if (sparse && _selectedReceiveOffsets == null)
+                _selectedReceiveOffsets = new int[lastBone];
 
             int cursor = PoseHeaderBytes;
+            int selected = 0;
             for (int i = 0; i < count; i++)
             {
                 int rawBoneId = poseBytes[cursor];
                 if (rawBoneId >= lastBone || _validatedReceivedBoneIds[rawBoneId])
-                    return false;
+                    return -1;
 
                 _validatedReceivedBoneIds[rawBoneId] = true;
+                if (sparse && _hasBoneId[rawBoneId])
+                    _selectedReceiveOffsets[selected++] = cursor;
                 cursor += PoseBoneBytes;
             }
 
-            return true;
+            return sparse ? selected : count;
         }
 
         private bool ValidateRootMotionPosition(int boneCount, int rootTailBytes)
@@ -1111,13 +1121,12 @@ namespace K13A.TSMP.Udon
                 return true;
 
             int cursor = PoseHeaderBytes + boneCount * PoseBoneBytes;
-            Vector3 rootPosition = Binary.ReadVector3Float32LE(poseBytes, cursor);
-            return IsFinite(rootPosition.x) && IsFinite(rootPosition.y) && IsFinite(rootPosition.z);
+            return IsFiniteFloat32At(cursor) && IsFiniteFloat32At(cursor + 4) && IsFiniteFloat32At(cursor + 8);
         }
 
-        private static bool IsFinite(float value)
+        private bool IsFiniteFloat32At(int offset)
         {
-            return !float.IsNaN(value) && !float.IsInfinity(value);
+            return (poseBytes[offset + 3] & 0x7f) != 0x7f || (poseBytes[offset + 2] & 0x80) == 0;
         }
 
         private void RebuildBoneParentLookup()

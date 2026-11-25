@@ -270,7 +270,43 @@ public static class SkinValidation
                 Vector3.Distance(origin,dst.GetBoneTransform(HumanBodyBones.Hips).position) < .001f)
                 throw new Exception("Excluded chain or Hips ownership failed: "+mode);
         }
+        CheckSparseReceive(tx, rx);
         Debug.Log("PASS mixed skin, send-only subtree exclusions and independent receive; GPU humanoid skinning: "+SystemInfo.graphicsDeviceName);
+    }
+
+    static void CheckSparseReceive(TSMPNetworkHumanoidPoseSync tx, TSMPNetworkHumanoidPoseSync rx)
+    {
+        var arm = rx.animator.GetBoneTransform(HumanBodyBones.LeftUpperArm);
+        var hips = rx.animator.GetBoneTransform(HumanBodyBones.Hips);
+        rx.cacheFixedReceiveRig = false;
+        rx.includeFingerBones = false;
+        rx.boneIds = new[] { (int)HumanBodyBones.LeftUpperArm };
+        rx.receiveInterpolation = ReceiveInterpolationMode.Discrete;
+        tx.boneIds = new[] { 13, 14, 15, 16, 17, 18, 0 };
+        tx.excludedSendBoneRoots = null;
+        tx.rootSyncSpace = HumanoidRootSyncSpace.World;
+        tx.TSMPBeforeEncode();
+        byte[] packet = tx.poseBytes;
+        int count = Binary.ReadUInt16LE(packet, 2), tail = 4 + count * 6;
+        if (count < 6) throw new Exception("Not a sparse receive fixture");
+        var start = arm.rotation * Quaternion.Euler(20,0,0);
+        var position = hips.position + Vector3.right;
+        hips.position = position;
+        arm.rotation = start;
+        foreach (int kind in new[] {0, 1, 2})
+        {
+            var bad = (byte[])packet.Clone();
+            if (kind < 2) bad[tail - 6] = kind == 0 ? bad[4] : (byte)255;
+            else Array.Copy(BitConverter.GetBytes(float.NaN), 0, bad, tail, 4);
+            rx.poseBytes = bad;
+            rx.OnTSMPVariableReceived();
+            if (Vector3.Distance(hips.position, position) > .001f || Quaternion.Angle(arm.rotation, start) > .1f)
+                throw new Exception("Partially applied malformed sparse pose " + kind);
+        }
+        rx.poseBytes = packet;
+        rx.OnTSMPVariableReceived();
+        if (Quaternion.Angle(arm.rotation,start) < 1 || Vector3.Distance(hips.position,tx.animator.GetBoneTransform(HumanBodyBones.Hips).position) > .001f)
+            throw new Exception("Sparse arm or root tail not applied");
     }
 
     static Mesh SamplePoints(Mesh mesh,int[] samples)
