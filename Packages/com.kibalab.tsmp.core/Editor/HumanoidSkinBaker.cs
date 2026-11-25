@@ -21,13 +21,8 @@ namespace K13A.TSMP.Editor
         public static MeshRenderer Bake(Animator animator, SkinnedMeshRenderer source, int channel, int networkId,
             float motionMargin, string path, Transform[] nativeBoneRoots)
         {
-            if (Application.isPlaying || !animator || !source || !animator.gameObject.scene.IsValid() ||
-                !source.transform.IsChildOf(animator.transform))
-                throw new ArgumentException("Select a scene Animator and a skinned mesh in its hierarchy in Edit Mode.");
-            if (!animator.avatar || !animator.avatar.isValid || !animator.isHuman)
-                throw new ArgumentException("The Animator needs a valid Humanoid avatar.");
-            if (!source.gameObject.scene.IsValid() || EditorUtility.IsPersistent(source))
-                throw new ArgumentException("Choose a scene instance, not a model asset.");
+            string inputError = CheckReceiver(animator, source);
+            if (inputError != null) throw new ArgumentException(inputError);
             if (channel < 0 || channel > 3 || networkId < 0 || networkId > ushort.MaxValue ||
                 !(motionMargin >= 0f) || float.IsInfinity(motionMargin))
                 throw new ArgumentException("Invalid shader channel, sender network ID or motion margin.");
@@ -37,8 +32,6 @@ namespace K13A.TSMP.Editor
                 throw new ArgumentException("Choose a new .asset file in Assets. Existing bakes are not overwritten.");
 
             Mesh sourceMesh = source.sharedMesh;
-            if (!sourceMesh || !sourceMesh.isReadable)
-                throw new ArgumentException("The source mesh must have Read/Write enabled for baking.");
             Transform[] bones = source.bones;
             Matrix4x4[] bind = sourceMesh.bindposes;
             var weights = sourceMesh.boneWeights;
@@ -165,6 +158,20 @@ namespace K13A.TSMP.Editor
                     if (item && !EditorUtility.IsPersistent(item)) Object.DestroyImmediate(item);
                 throw;
             }
+        }
+
+        internal static string CheckReceiver(Animator animator, SkinnedMeshRenderer source)
+        {
+            if (Application.isPlaying) return "Exit Play Mode to bake.";
+            if (!animator) return "Choose the receiving avatar's Animator.";
+            if (!animator.gameObject.scene.IsValid() || !animator.avatar || !animator.avatar.isValid || !animator.isHuman)
+                return "Choose a scene Animator with a valid Humanoid avatar.";
+            if (!source) return "Choose a Skinned Mesh Renderer from the receiving avatar.";
+            if (EditorUtility.IsPersistent(source) || !source.transform.IsChildOf(animator.transform))
+                return "The source renderer must belong to the receiving Animator.";
+            if (!source.sharedMesh) return "Assign a mesh to the source renderer.";
+            if (!source.sharedMesh.isReadable) return "Enable Read/Write in the source model's import settings.";
+            return null;
         }
 
         private static bool[] GetInfluences(BoneWeight[] weights, Transform[] bones, Transform hips,

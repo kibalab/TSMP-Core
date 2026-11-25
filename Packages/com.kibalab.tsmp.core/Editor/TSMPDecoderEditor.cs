@@ -37,7 +37,8 @@ namespace K13A.TSMP.Editor
         private SerializedProperty _debugLog;
         private SerializedProperty _debugErrorLogBudget;
 
-        private bool _showCodecTable;
+        private bool _showLayout;
+        private bool _showDiagnostics;
         private bool _showAdvanced;
         private bool _showRuntimeStatus;
 
@@ -71,8 +72,9 @@ namespace K13A.TSMP.Editor
             serializedObject.Update();
 
             DrawReferenceSection();
-            DrawLayoutSection();
             DrawApplicationSection();
+            DrawShaderSection();
+            DrawLayoutSection();
             DrawDiagnosticsSection();
 
             serializedObject.ApplyModifiedProperties();
@@ -80,31 +82,37 @@ namespace K13A.TSMP.Editor
 
         private void DrawReferenceSection()
         {
-            InspectorUI.BeginSection("Reference");
+            InspectorUI.SectionLabel("Input");
             InspectorUI.Property(_sourceTexture);
             InspectorUI.Property(_payloadByteTexture);
+            if (targets.Length == 1)
+                InspectorUI.ReadOnlyText("Source Size", GetSourceSizeLabel());
+
+            if (_codecHandlers != null)
+                EditorGUILayout.PropertyField(_codecHandlers, new GUIContent("Codec Runtime Table"), true);
+        }
+
+        private void DrawShaderSection()
+        {
+            InspectorUI.SectionLabel("Shader Output");
             var channel = serializedObject.FindProperty("shaderChannel");
             InspectorUI.Property(channel);
             if (targets.Length == 1 && channel.enumValueIndex > 0 &&
                 EditorGUILayout.DropdownButton(new GUIContent("Copy Shader Lookup"), FocusType.Keyboard))
                 ShowShaderLookups((TSMPDecoder)target, channel.enumValueIndex - 1);
-
-            if (targets.Length == 1)
-                InspectorUI.ReadOnlyText("Source Size", GetSourceSizeLabel());
-
-            int codecCount = _codecHandlers == null || !_codecHandlers.isArray ? 0 : _codecHandlers.arraySize;
-            _showCodecTable = InspectorUI.Foldout(_showCodecTable, "Codec Runtime Table (" + codecCount + ")");
-            if (_showCodecTable)
-                InspectorUI.Property(_codecHandlers);
-
-            InspectorUI.EndSection();
+            if (targets.Length == 1 && GUILayout.Button("Bake Humanoid GPU Skin..."))
+            {
+                serializedObject.ApplyModifiedProperties();
+                HumanoidSkinBakeWindow.OpenForDecoder((TSMPDecoder)target);
+            }
         }
 
         private void DrawApplicationSection()
         {
-            InspectorUI.BeginSection("Decode");
+            InspectorUI.SectionLabel("Decode");
             InspectorUI.Property(_applyEveryFrame);
-            InspectorUI.Property(_validateBindingCacheOnReceive);
+            EditorGUILayout.PropertyField(_validateBindingCacheOnReceive, new GUIContent("Validate Bindings",
+                "Check cached binding targets when a frame is received."));
             EditorGUILayout.PropertyField(_skipDuplicateFrames, new GUIContent("Filter Frames", "Skip duplicate and older frames, with a frame-zero restart exception based on Window Size."));
             using (new EditorGUI.DisabledScope(!_skipDuplicateFrames.hasMultipleDifferentValues && !_skipDuplicateFrames.boolValue))
                 EditorGUILayout.PropertyField(_frameWindowSize, new GUIContent("Window Size", "Frame count used to recognize a restart at frame zero. Default: 256."));
@@ -114,22 +122,20 @@ namespace K13A.TSMP.Editor
                 if (GUILayout.Button("Decode Now"))
                     ((TSMPDecoder)target).DecodeNow();
             }
-            InspectorUI.EndSection();
         }
 
         private void DrawLayoutSection()
         {
-            InspectorUI.BeginSection("Frame Layout");
+            if (!InspectorUI.SectionFoldout(ref _showLayout, "Frame Layout")) return;
             InspectorUI.Property(_useHeaderPayloadLayout);
             InspectorUI.Property(_blockSize);
             InspectorUI.Property(_sampleSize);
             InspectorUI.Property(_flipY);
-            InspectorUI.EndSection();
         }
 
         private void DrawDiagnosticsSection()
         {
-            InspectorUI.BeginSection("Diagnostics");
+            if (!InspectorUI.SectionFoldout(ref _showDiagnostics, "Diagnostics")) return;
             InspectorUI.Property(_debugLog);
             InspectorUI.Property(_debugErrorLogBudget);
 
@@ -155,8 +161,6 @@ namespace K13A.TSMP.Editor
                 if (_showRuntimeStatus)
                     DrawRuntimeStatus((TSMPDecoder)target);
             }
-
-            InspectorUI.EndSection();
         }
 
         private void DrawAdvancedDecode()

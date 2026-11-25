@@ -28,7 +28,9 @@ namespace K13A.TSMP.Editor
         private SerializedProperty _debugErrorLogBudget;
 
         private bool _showAdvanced;
-        private bool _showExplicitBehaviours;
+        private bool _showNetwork;
+        private bool _showLayout;
+        private bool _showDiagnostics;
         private bool _showRuntimeStatus;
 
         private void OnEnable()
@@ -72,19 +74,17 @@ namespace K13A.TSMP.Editor
 
         private void DrawReferenceSection()
         {
-            InspectorUI.BeginSection("Reference");
-            InspectorUI.Property(_output);
+            InspectorUI.SectionLabel("Output");
+            EditorGUILayout.PropertyField(_output, new GUIContent("Output Texture"));
             InspectorUI.Property(_selectedCodec);
 
             if (targets.Length == 1)
                 InspectorUI.ReadOnlyText("Output Size", GetOutputSizeLabel());
-
-            InspectorUI.EndSection();
         }
 
         private void DrawEncodeSection()
         {
-            InspectorUI.BeginSection("Encode");
+            InspectorUI.SectionLabel("Encode");
             InspectorUI.Property(_autoEncode);
             InspectorUI.Property(_frameRate);
             InspectorUI.Property(_maxPayloadBytes);
@@ -94,20 +94,18 @@ namespace K13A.TSMP.Editor
                 if (GUILayout.Button("Encode Now"))
                     ((TSMPEncoder)target).EncodeNow();
             }
-            InspectorUI.EndSection();
         }
 
         private void DrawLayoutSection()
         {
-            InspectorUI.BeginSection("Frame Layout");
+            if (!InspectorUI.SectionFoldout(ref _showLayout, "Frame Layout")) return;
             InspectorUI.Property(_blockSize);
             InspectorUI.Property(_sampleSize);
-            InspectorUI.EndSection();
         }
 
         private void DrawNetworkSection()
         {
-            InspectorUI.BeginSection("Network");
+            if (!InspectorUI.SectionFoldout(ref _showNetwork, "Network")) return;
             InspectorUI.Property(_streamId);
             InspectorUI.Property(_layoutId);
             InspectorUI.Property(_autoBuildVariablesFromBindings);
@@ -115,11 +113,7 @@ namespace K13A.TSMP.Editor
             InspectorUI.Property(_transSyncRefreshInterval);
 
             if (_networkBehaviours != null)
-            {
-                _showExplicitBehaviours = InspectorUI.Foldout(_showExplicitBehaviours, "Explicit Network Behaviours");
-                if (_showExplicitBehaviours)
-                    EditorGUILayout.PropertyField(_networkBehaviours, true);
-            }
+                EditorGUILayout.PropertyField(_networkBehaviours, new GUIContent("Explicit Network Behaviours"), true);
 
             if (targets.Length == 1)
             {
@@ -128,12 +122,11 @@ namespace K13A.TSMP.Editor
                 InspectorUI.ReadOnlyInt("Auto Variables", encoder.autoVariableCount);
                 InspectorUI.ReadOnlyInt("Deferred Variables", encoder.deferredVariableCount);
             }
-            InspectorUI.EndSection();
         }
 
         private void DrawDiagnosticsSection()
         {
-            InspectorUI.BeginSection("Diagnostics");
+            if (!InspectorUI.SectionFoldout(ref _showDiagnostics, "Diagnostics")) return;
             InspectorUI.Property(_debugLog);
             InspectorUI.Property(_debugErrorLogBudget);
 
@@ -162,8 +155,6 @@ namespace K13A.TSMP.Editor
                 if (_showRuntimeStatus)
                     DrawRuntimeStatus((TSMPEncoder)target);
             }
-
-            InspectorUI.EndSection();
         }
 
         private void DrawFrameIndex(TSMPEncoder encoder)

@@ -98,6 +98,9 @@ namespace K13A.TSMP.Editor
             new RigPoint(HumanBodyBones.RightToes, 0.69f, 0.94f, 20, 6f),
         };
 
+        private bool _showReceive;
+        private bool _showDiagnostics;
+
         public override void OnInspectorGUI()
         {
             if (DrawUdonSharpHeader())
@@ -106,42 +109,47 @@ namespace K13A.TSMP.Editor
             serializedObject.Update();
 
             DrawTSMPNetworkSection(true);
+            InspectorUI.SectionLabel("Rig");
             DrawProperty("animator");
             DrawProperty("autoResolveBones");
-            DrawProperty("cacheFixedReceiveRig");
             DrawProperty("rootSyncSpace");
+            InspectorUI.SectionLabel("Outgoing Pose");
             DrawProperty(nameof(TSMPNetworkHumanoidPoseSync.excludedSendBoneRoots));
-
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Receive Hand Updates", EditorStyles.boldLabel);
-            DrawProperty("alternateHandUpdates");
-            SerializedProperty alternate = serializedObject.FindProperty("alternateHandUpdates");
-            using (new EditorGUI.DisabledScope(!alternate.boolValue && !alternate.hasMultipleDifferentValues))
-                DrawProperty("alternateIncludeWrists");
-
-            using (new EditorGUI.DisabledScope(true))
-            {
-                DrawProperty("validBoneCount");
-                DrawProperty("encodedPoseBytes");
-                DrawProperty("encodedRootMotionBytes");
-            }
-
             serializedObject.ApplyModifiedProperties();
 
-            TSMPNetworkHumanoidPoseSync sync = (TSMPNetworkHumanoidPoseSync)target;
-            EnsureDefaultSelection(sync);
+            InspectorUI.SectionLabel("Humanoid Rig Map");
+            if (targets.Length == 1)
+                DrawRigMap((TSMPNetworkHumanoidPoseSync)target);
+            else
+                EditorGUILayout.HelpBox("Select one avatar to edit its rig map.", MessageType.Info);
 
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Humanoid Rig Map", EditorStyles.boldLabel);
-
-            DrawRigMap(sync);
+            serializedObject.Update();
+            if (InspectorUI.SectionFoldout(ref _showReceive, "Receive Settings"))
+            {
+                DrawProperty("cacheFixedReceiveRig");
+                DrawProperty("alternateHandUpdates");
+                SerializedProperty alternate = serializedObject.FindProperty("alternateHandUpdates");
+                using (new EditorGUI.DisabledScope(!alternate.boolValue && !alternate.hasMultipleDifferentValues))
+                    DrawProperty("alternateIncludeWrists");
+            }
+            if (InspectorUI.SectionFoldout(ref _showDiagnostics, "Diagnostics"))
+            {
+                using (new EditorGUI.DisabledScope(true))
+                {
+                    DrawProperty("validBoneCount");
+                    DrawProperty("encodedPoseBytes");
+                    DrawProperty("encodedRootMotionBytes");
+                }
+            }
+            serializedObject.ApplyModifiedProperties();
         }
 
         private static void DrawRigMap(TSMPNetworkHumanoidPoseSync sync)
         {
-            Rect outer = GUILayoutUtility.GetRect(280f, 390f, GUILayout.ExpandWidth(true));
-            float size = Mathf.Min(outer.width - 20f, outer.height - 20f);
-            Rect map = new Rect(outer.x + (outer.width - size) * 0.5f, outer.y + 10f, size, size);
+            float height = Mathf.Clamp(EditorGUIUtility.currentViewWidth - 32f, 240f, 320f);
+            Rect outer = GUILayoutUtility.GetRect(0f, height + 50f, GUILayout.ExpandWidth(true));
+            float size = Mathf.Min(outer.width - 12f, height);
+            Rect map = new Rect(outer.center.x - size * 0.5f, outer.center.y - size * 0.5f, size, size);
 
             if (Event.current.type == EventType.Repaint)
             {
@@ -178,6 +186,7 @@ namespace K13A.TSMP.Editor
                 Undo.RecordObject(sync, "Change TSMP Finger Bone Sync");
                 sync.includeFingerBones = includeFingers;
                 sync.boneTargets = null;
+                PrefabUtility.RecordPrefabInstancePropertyModifications(sync);
                 EditorUtility.SetDirty(sync);
             }
         }
@@ -230,14 +239,6 @@ namespace K13A.TSMP.Editor
             return sync.animator.GetBoneTransform(bone) != null;
         }
 
-        private static void EnsureDefaultSelection(TSMPNetworkHumanoidPoseSync sync)
-        {
-            if (sync.boneIds != null && sync.boneIds.Length > 0)
-                return;
-
-            SetAll(sync, true);
-        }
-
         private static bool ContainsBone(int[] boneIds, HumanBodyBones bone)
         {
             if (boneIds == null)
@@ -284,6 +285,7 @@ namespace K13A.TSMP.Editor
 
             sync.boneIds = next;
             sync.boneTargets = null;
+            PrefabUtility.RecordPrefabInstancePropertyModifications(sync);
             EditorUtility.SetDirty(sync);
         }
 
@@ -292,6 +294,7 @@ namespace K13A.TSMP.Editor
             Undo.RecordObject(sync, "Change TSMP Humanoid Bone Selection");
             sync.boneIds = selected ? BuildAllBoneIds() : new int[0];
             sync.boneTargets = null;
+            PrefabUtility.RecordPrefabInstancePropertyModifications(sync);
             EditorUtility.SetDirty(sync);
         }
 
