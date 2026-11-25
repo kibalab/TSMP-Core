@@ -98,6 +98,7 @@ namespace K13A.TSMP.Editor
             bool created = false;
             bool originallyEnabled = source.enabled;
             Bounds originalBounds = source.localBounds;
+            Material[] originalMaterials = source.sharedMaterials;
             GameObject proxy = null;
             try
             {
@@ -123,7 +124,8 @@ namespace K13A.TSMP.Editor
                 skinMaterial.SetTexture("_Rig", rig);
                 var palette = Palette("Skin Matrices", 2 + 3 * bones.Length, skinMaterial);
                 owned.Add(palette);
-                Material[] materials = CreateMaterials(source.sharedMaterials, mesh.subMeshCount, surface, palette, owned);
+                Material[] materials = CreateMaterials(gpu != null ? gpu.SelectMaterials(originalMaterials) : originalMaterials,
+                    mesh.subMeshCount, surface, palette, owned);
 
                 AssetDatabase.CreateAsset(mesh, path);
                 created = true;
@@ -143,6 +145,7 @@ namespace K13A.TSMP.Editor
                 if (localMesh)
                 {
                     source.sharedMesh = localMesh;
+                    source.sharedMaterials = local.SelectMaterials(originalMaterials);
                     source.localBounds = originalBounds;
                 }
                 source.enabled = localMesh != null;
@@ -154,6 +157,7 @@ namespace K13A.TSMP.Editor
             {
                 if (proxy) Object.DestroyImmediate(proxy);
                 source.sharedMesh = sourceMesh;
+                source.sharedMaterials = originalMaterials;
                 source.localBounds = originalBounds;
                 source.enabled = originallyEnabled;
                 if (created) AssetDatabase.DeleteAsset(path);

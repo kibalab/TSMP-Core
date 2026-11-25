@@ -42,6 +42,14 @@ public static class SkinValidation
         hybrid.name = "Hybrid Source";
         hybrid.enabled = true;
         var original = hybrid.sharedMesh;
+        original.subMeshCount = 3;
+        original.SetTriangles(new[]{1,2,3}, 0);
+        original.SetTriangles(Array.Empty<int>(), 1);
+        original.SetTriangles(new[]{0,1,2}, 2);
+        var slots = new[] {"Native", "Unused", "GPU", "Overlay"}
+            .Select(n => new Material(Shader.Find("Standard")) { name = n }).ToArray();
+        foreach (var mat in slots) AssetDatabase.CreateAsset(mat, AssetDatabase.GenerateUniqueAssetPath(Folder+"/"+mat.name+".mat"));
+        hybrid.sharedMaterials = slots;
         var delta = new Vector3[4];
         delta[3] = Vector3.forward;
         original.AddBlendShapeFrame("Fabric", 100f, delta, null, null);
@@ -49,6 +57,10 @@ public static class SkinValidation
             AssetDatabase.GenerateUniqueAssetPath(Folder+"/Hybrid.asset"), new[]{hybrid.bones[3]});
         hybridProxy.name = "Hybrid GPU";
         var compactPalette = hybridProxy.sharedMaterial.GetTexture("_TSMPSkinPalette");
+        if (hybrid.sharedMesh.subMeshCount != 1 || hybridProxy.GetComponent<MeshFilter>().sharedMesh.subMeshCount != 1 ||
+            !hybrid.sharedMaterials.SequenceEqual(new[]{slots[0]}) ||
+            !hybridProxy.sharedMaterials.Select(m => m.name).SequenceEqual(new[]{"GPU GPU Skin", "Overlay GPU Skin"}))
+            throw new Exception("Partition lost material order or replayed an overlay on the wrong triangles");
         if (!hybrid.enabled || hybrid.sharedMesh.vertexCount != 3 || hybrid.sharedMesh.GetTriangles(0).Length != 3 ||
             compactPalette.width != 2 + 3 * 3 ||
             hybrid.sharedMesh.blendShapeCount != 1 || hybrid.sharedMesh.boneWeights[2].boneIndex0 != 3 ||

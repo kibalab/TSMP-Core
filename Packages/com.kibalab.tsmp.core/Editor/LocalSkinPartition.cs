@@ -9,6 +9,7 @@ namespace K13A.TSMP.Editor
     internal sealed class LocalSkinPartition
     {
         private readonly List<int>[] _triangles;
+        private int _subMeshCount;
         private readonly Dictionary<int, int> _indices = new Dictionary<int, int>();
         internal readonly List<int> Vertices = new List<int>();
 
@@ -50,6 +51,7 @@ namespace K13A.TSMP.Editor
                 for (int i = 0; i < indices.Length; i += 3)
                 {
                     var side = touched[indices[i]] || touched[indices[i + 1]] || touched[indices[i + 2]] ? local : gpu;
+                    if (side._triangles[s].Count == 0) side._subMeshCount++;
                     for (int j = i; j < i + 3; j++)
                     {
                         int v = indices[j];
@@ -87,8 +89,10 @@ namespace K13A.TSMP.Editor
                     }
                 }
             }
-            mesh.subMeshCount = _triangles.Length;
-            for (int s = 0; s < _triangles.Length; s++) mesh.SetTriangles(_triangles[s], s, false);
+            mesh.subMeshCount = _subMeshCount;
+            int slot = 0;
+            foreach (var triangles in _triangles)
+                if (triangles.Count != 0) mesh.SetTriangles(triangles, slot++, false);
             mesh.RecalculateBounds();
             if (!keepSkin) return mesh;
 
@@ -117,6 +121,14 @@ namespace K13A.TSMP.Editor
             var result = new T[Vertices.Count];
             for (int i = 0; i < result.Length; i++) result[i] = source[Vertices[i]];
             return result;
+        }
+
+        internal Material[] SelectMaterials(Material[] materials)
+        {
+            var kept = new List<Material>();
+            for (int i = 0; i < materials.Length; i++)
+                if (_triangles[Math.Min(i, _triangles.Length - 1)].Count != 0) kept.Add(materials[i]);
+            return kept.ToArray();
         }
     }
 }

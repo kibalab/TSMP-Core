@@ -28,6 +28,8 @@ On the sender's `TSMPNetworkHumanoidPoseSync`, add roots below Hips to **Exclude
 
 If those bones must follow streamed anchors, drive their actual ancestors and the non-excluded bones influencing the boundary with a **Discrete** CPU pose receiver bound to the sender ID. CPU and shader updates are not frame-locked. To change a baked partition, restore the original mesh and remove the generated renderer before baking again. Changing the send list needs no re-bake; after reparenting bones at runtime, call `InvalidateReceiveRig()`.
 
+Each side of a split bake keeps only material slots with triangles, in their original order. Extra layers on the original last submesh stay on the side(s) that contain those triangles. If an animation or script changes materials by slot index, update its indices for the baked renderer. Restore the original material list as well as the mesh before re-baking. Existing bakes are not modified automatically.
+
 ## Custom materials
 
 Use the generated skin palette on your material's `_TSMPSkinPalette` 2D property, disable batching, and apply skinning in every pass that draws geometry (including shadows). UV3 and UV4 on the **baked copy** contain bone indices and weights. Call the helper before transforming vertices to clip space:
