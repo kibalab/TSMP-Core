@@ -78,11 +78,7 @@ public sealed class SkinProfile : MonoBehaviour
             int i=frame-Warm;
             captured[i]=t; freshTiming[i]=fresh; intervals[i]=Time.unscaledDeltaTime*1000; allocations[i]=gc.Valid?gc.LastValue:-1;
         }
-        if (frame==Warm && Environment.GetEnvironmentVariable("TSMP_SKIN_CAPTURE")=="1")
-        {
-            if(RENDERDOC_GetAPI(10000,out var api)!=1) throw new Exception("RenderDoc is not attached");
-            Marshal.GetDelegateForFunctionPointer<TriggerCapture>(Marshal.ReadIntPtr(api,15*IntPtr.Size))();
-        }
+        if (frame == Warm) CaptureIfRequested();
         if (frame++ < Warm+Samples)
         {
             Graphics.CopyTexture(images[(frame-1)%images.Length],stream);
@@ -133,6 +129,13 @@ public sealed class SkinProfile : MonoBehaviour
         Debug.Log("PASS skin profile "+string.Join(" ",info));
         gc.Dispose(); enabled=false; Application.Quit(0);
     }
+    public static void CaptureIfRequested()
+    {
+        if (Environment.GetEnvironmentVariable("TSMP_SKIN_CAPTURE") != "1") return;
+        if (RENDERDOC_GetAPI(10000,out var api)!=1) throw new Exception("RenderDoc is not attached");
+        Marshal.GetDelegateForFunctionPointer<TriggerCapture>(Marshal.ReadIntPtr(api,15*IntPtr.Size))();
+    }
+
     static void MeshInfo(List<string> info,string name,Mesh mesh) =>
         info.Add($"{name}Vertices={mesh.vertexCount} submeshes={mesh.subMeshCount} runtimeBytes={Profiler.GetRuntimeMemorySizeLong(mesh)}");
 }

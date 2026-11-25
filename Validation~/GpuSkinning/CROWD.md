@@ -1,5 +1,7 @@
 # Scaling independent humanoid receivers
 
+For the subsequent sparse CPU receiver, submesh compaction and shader A/B measurements, see the [80-actor follow-up](CROWD-FOLLOWUP.md).
+
 This fixture sends **one frame per update, not one decoder per avatar**. Each Shapell animator has its own network ID, upper-arm angle and 51-bone v4 pose. GPU bodies share immutable geometry and bind-pose data, but never a pose or skin-matrix palette. The wire format is the one used by `TSMPNetworkHumanoidPoseSync`, not the separate VRChat player-pool packet.
 
 ## Results

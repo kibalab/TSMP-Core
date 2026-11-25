@@ -112,6 +112,7 @@ public sealed class CrowdProfile : MonoBehaviour
             measured[i] = timing[0];
             if (d.lastFrameValid && last != d.lastFrameIndex) changes++;
         }
+        if (frame == Warm) SkinProfile.CaptureIfRequested();
         last = d.lastFrameIndex;
         if (frame < Warm + Samples)
         {

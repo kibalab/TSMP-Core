@@ -59,7 +59,7 @@ public static class SkinValidation
         var compactPalette = hybridProxy.sharedMaterial.GetTexture("_TSMPSkinPalette");
         if (hybrid.sharedMesh.subMeshCount != 1 || hybridProxy.GetComponent<MeshFilter>().sharedMesh.subMeshCount != 1 ||
             !hybrid.sharedMaterials.SequenceEqual(new[]{slots[0]}) ||
-            !hybridProxy.sharedMaterials.Select(m => m.name).SequenceEqual(new[]{"GPU GPU Skin", "Overlay GPU Skin"}))
+            !hybridProxy.sharedMaterials.Select(m => m.name).SequenceEqual(slots.Skip(2).Select(m => m.name + " GPU Skin")))
             throw new Exception("Partition lost material order or replayed an overlay on the wrong triangles");
         if (!hybrid.enabled || hybrid.sharedMesh.vertexCount != 3 || hybrid.sharedMesh.GetTriangles(0).Length != 3 ||
             compactPalette.width != 2 + 3 * 3 ||
@@ -186,7 +186,7 @@ public static class SkinValidation
         while(Time.frameCount<until) yield return null;
         Compare(points,proxy,probe,expectedRest,"no input");
 
-        for(int step=0;step<3;step++)
+        for(int step=0;step<6;step++)
         {
             var hips = src.GetBoneTransform(HumanBodyBones.Hips);
             hips.position += new Vector3(.3f,.12f,.05f);
@@ -198,7 +198,11 @@ public static class SkinValidation
             rx.poseBytes = (byte[])tx.poseBytes.Clone();
             rx.OnTSMPVariableReceived();
             byte[] packed=(byte[])tx.poseBytes.Clone();
+            bool invalid = step >= 2 && step < 5;
+            int lastRecord = 4 + (tx.validBoneCount - 1) * 6;
             if(step==2) packed[0]=99;
+            if(step==3) packed[lastRecord]=packed[4];
+            if(step==4) packed[lastRecord]=255;
             var payload=new byte[25+packed.Length];
             int msg=NetworkFrameWriter.BeginNetworkFrame(payload,0,1);
             int entry=NetworkFrameWriter.BeginVariableState(payload,msg,37,1);
@@ -221,8 +225,8 @@ public static class SkinValidation
             if(!decoder.lastFrameValid) throw new Exception(decoder.lastError);
             until=Time.frameCount+5;
             while(Time.frameCount<until) yield return null;
-            Compare(points,proxy,probe,step==2?expectedRest:Expected(source),step==0?"local":step==1?"world":"bad packet");
-            if(step!=2)
+            Compare(points,proxy,probe,invalid?expectedRest:Expected(source),invalid?"bad packet "+step:step==0?"local":"world");
+            if(!invalid)
             {
                 var seam = Expected(hybrid);
                 var full = Expected(source);
