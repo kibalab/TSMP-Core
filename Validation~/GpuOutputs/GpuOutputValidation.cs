@@ -121,6 +121,17 @@ public sealed class GpuOutputValidation : MonoBehaviour
         CheckView(large, 0, 0, many, "multi-row frame");
         CheckView(field, 1, 0, marker, "multi-row field");
 
+        Send(TypedFields(), ++index);
+        timeout = Time.realtimeSinceStartup + 10;
+        while (decoder.readbackInFlight && Time.realtimeSinceStartup < timeout) yield return null;
+        Require(!decoder.readbackInFlight && decoder.lastFrameValid, "Typed fields did not decode");
+        var typed = new Material(Shader.Find("Hidden/TSMP Validation/Typed Fields"));
+        var checks = Target(32, 1);
+        Graphics.Blit(null, checks, typed);
+        AssertBytes(checks, Enumerable.Repeat((byte)255, checks.width * 4).ToArray(), "typed field checks");
+        Destroy(typed);
+        checks.Release();
+
         decoder = new GameObject("Independent decoder").AddComponent<TSMPDecoder>();
         decoder.applyEveryFrame = false;
         decoder.debugLog = false;
@@ -144,6 +155,35 @@ public sealed class GpuOutputValidation : MonoBehaviour
         Destroy(consumer);
         foreach (var target in new[] { frame, field, probe, large, decoder.payloadByteTexture, first.payloadByteTexture })
             target.Release();
+    }
+
+    static byte[] TypedFields()
+    {
+        var values = new object[] {
+            false, int.MinValue + 1, 0f, new Vector2(-1, 0.5f), new Vector3(8, -2, 3), new Quaternion(1, -2, 3, 4),
+            "A\uD55C\U0001F441", new byte[] {0, 128, 255, 64}, new[] {false, true}, new[] {0, -7}, new[] {1f, -2f, 3f, 4f},
+            new[] {Vector2.zero, Vector2.up}, new[] {Vector3.zero, Vector3.back}, new[] {Quaternion.identity},
+            new[] {"", "\u00E9", "\U0001F441"}, Enumerable.Range(0, 16).Select(n => (float)n).ToArray(),
+            Array.Empty<int>(), "", Array.Empty<byte>(), Array.Empty<string>(), new byte[] {0xf0, 0x80, 0x80, 0x80},
+            new byte[] {2, 0, 2, 0, 65}, new byte[] {0xed, 0xa0, 0x80}, new byte[] {0xe2, 0x82}
+        };
+        var payload = new byte[1024];
+        int msg = NetworkFrameWriter.BeginNetworkFrame(payload, 0, 0);
+        int entry = NetworkFrameWriter.BeginVariableState(payload, msg, 27, 0);
+        for (int i = 0; i < values.Length; i++)
+        {
+            var obj = values[i];
+            Require(NetworkValueCodec.TryGetValueType(obj.GetType(), out var type), "No type for fixture " + i);
+            NetworkValueType wireType = i < 20 ? type : i == 21 ? NetworkValueType.UTF8StringArray : NetworkValueType.UTF8String;
+            int start = NetworkFrameWriter.BeginVariableValue(payload, entry, (uint)i + 1, (int)wireType);
+            int end = NetworkValueWriter.WriteObject(payload, start, (int)type, obj);
+            Require(end >= start && NetworkFrameWriter.EndVariableValue(payload, entry, end), "Invalid typed fixture");
+            entry = end;
+        }
+        Require(NetworkFrameWriter.EndVariableState(payload, msg, entry, values.Length) &&
+            NetworkFrameWriter.EndNetworkFrame(payload, 0, 1), "Invalid typed frame");
+        Array.Resize(ref payload, entry);
+        return payload;
     }
 
     static byte[] ManyFields()

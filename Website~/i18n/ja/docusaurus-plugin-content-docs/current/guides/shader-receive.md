@@ -7,7 +7,7 @@ title: マテリアルで TSMP のデータを読む
 ## まずチャンネルを確認する
 
 1. 動作している[受信側デコーダー](../components/decoder.md)を用意し、Play Mode でフレーム番号が進むことを確認します。送信フィールドのバインディングと、デコーダー自身の入力・ペイロードテクスチャは引き続き使用します。
-2. デコーダーの **Reference → Shader Channel** で **Channel 0** を選びます。既定値は **Off** です。同時に動作するデコーダーには別々のチャンネルを割り当ててください。複数のマテリアルが同じチャンネルを読むことはできます。
+2. デコーダーの **Shader Output → Shader Channel** で **Channel 0** を選びます。既定値は **Off** です。同時に動作するデコーダーには別々のチャンネルを割り当ててください。複数のマテリアルが同じチャンネルを読むことはできます。
 3. 以下の例で `.shader` ファイルを作成します（Built-in Render Pipeline 用）。**Example/TSMP Channel Monitor** を使用するマテリアルを作り、受信側のシーンで見えるメッシュに割り当てます。デコーダーへのマテリアル登録や ShaderLab の Properties へのチャンネルテクスチャの宣言は不要です。
 
 ```hlsl
@@ -45,20 +45,17 @@ Shader "Example/TSMP Channel Monitor"
 
 ## TransSync フィールドで明るさを変える
 
-送信側から 0～1 の範囲で変更できる Float32 フィールドを送ります。上の `frag` の本体を次のコードに差し替えてください。**13 と 0xFEDCBA98 は例です**。デコーダーの **Copy Shader Lookup → Fields** で実際のフィールドを選び、`TSMPTryGetField(...)` の式全体を置き換えます。受信側に CPU バインディングがないフィールドはこのメニューに表示されません。その場合は送信側のネットワーク ID と[通信で使用するハッシュ](../scripting-api/shader-receive.md#field-key)を直接指定します。
+送信側から 0～1 の範囲で変更できる Float32 フィールドを送ります。上の `frag` の本体を次のコードに差し替えてください。**13 と 0xFEDCBA98 は例です**。デコーダーの **Copy Shader Lookup → Typed Fields** で実際のフィールドを選び、`TSMPTryGetFloat(...)` の式全体を置き換えます。受信側に CPU バインディングがないフィールドはこのメニューに表示されません。その場合は送信側のネットワーク ID と[通信で使用するハッシュ](../scripting-api/shader-receive.md#field-key)を直接指定します。
 
 ```hlsl
-TSMPByteView view;
-if (!TSMPTryGetField(0u, 13u, 0xFEDCBA98u, view))
+float value;
+if (!TSMPTryGetFloat(0u, 13u, 0xFEDCBA98u, value))
     return float4(1, 0, 1, 1);
-if (view.valueType != 3u || view.length != 4u)
-    return float4(1, 1, 0, 1);
-
-float gain = saturate(TSMPReadFloat32LE(view, 0u));
+float gain = saturate(value);
 return float4(gain, gain, gain, 1);
 ```
 
-マゼンタなら、そのフィールドはまだ受信されていません。黄色なら受信済みですが、型または長さが 4 バイトの Float32 と異なります。正しく設定できれば、送信値に合わせてメッシュの色が黒から白へ変わります。SendOnChange によって次のフレームでフィールドが省略されても、明るさは維持されます。パック済みのバイト配列の場合は、float として扱わず、そのフィールドのバイト配置に従って読み取ってください。
+マゼンタはフィールドがないか、Float32 形式ではないことを示します。受信したゼロは有効な値で、黒になります。次のフレームで SendOnChange によりフィールドが省略されても明るさは維持されます。パックしたバイト列には `TSMPTryGetBytes` を使い、送信側のレイアウトに従って読みます。
 
 オフセット、チャンネルの容量、初期化条件は[シェーダー受信 API](../scripting-api/shader-receive.md)を参照してください。
 

@@ -15,10 +15,17 @@ Shader "Hidden/TSMP Validation/Inspect GPU View"
             float4 frag(v2f_img i) : SV_Target
             {
                 uint pixel = (uint)i.pos.y * _Width + (uint)i.pos.x;
+                if (_Mode == 3u)
+                {
+                    int number;
+                    if (!TSMPTryGetInt(_Channel, 13u, 0xfacedeadu, number)) return 0;
+                    uint bits = asuint(number);
+                    return float4(bits & 255u, (bits >> 8) & 255u, (bits >> 16) & 255u, bits >> 24) / 255.0;
+                }
                 TSMPByteView v;
                 bool present;
                 if (_Mode == 0u) present = TSMPTryGetFrame(_Channel, v);
-                else present = TSMPTryGetField(_Channel, 13u, _Mode == 3u ? 0xfacedeadu : 0xfedcba98u, v);
+                else present = TSMPTryGetField(_Channel, 13u, 0xfedcba98u, v);
                 if (!present) return 0;
                 if (_Mode != 2u)
                 {

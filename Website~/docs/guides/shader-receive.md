@@ -7,7 +7,7 @@ Use a received value to drive a material without copying it into a scene compone
 ## Check the channel first
 
 1. Start with a working [receiver](../components/decoder.md). In Play Mode, check that its frame index advances. Sender bindings and the decoder's own input and payload textures are still needed for normal operation.
-2. In the decoder's **Reference → Shader Channel**, select **Channel 0**. The default is **Off**. Give each simultaneously active decoder a different channel; any number of materials can read the same channel.
+2. In the decoder's **Shader Output → Shader Channel**, select **Channel 0**. The default is **Off**. Give each simultaneously active decoder a different channel; any number of materials can read the same channel.
 3. Create a `.shader` file with the following Built-in Render Pipeline shader. Create a material using **Example/TSMP Channel Monitor** and assign it to a visible mesh on the receiver. Do not add the material to the decoder or declare the channel textures in ShaderLab Properties.
 
 ```hlsl
@@ -45,20 +45,17 @@ Shader "Example/TSMP Channel Monitor"
 
 ## Use a TransSync field for brightness
 
-Send a Float32 field whose value you can vary between 0 and 1. Replace the body of `frag` above with the code below. **13 and 0xFEDCBA98 are examples**: use **Copy Shader Lookup → Fields** on the decoder to replace the entire `TSMPTryGetField(...)` expression with the one for your field. If the receiver has no CPU binding, the field won't be listed in that menu; use the sender's network ID and [wire hash](../scripting-api/shader-receive.md#field-key) instead.
+Send a Float32 field whose value you can vary between 0 and 1. Replace the body of `frag` above with the code below. **13 and 0xFEDCBA98 are examples**: use **Copy Shader Lookup → Typed Fields** on the decoder to replace the entire `TSMPTryGetFloat(...)` expression with the one for your field. If the receiver has no CPU binding, the field won't be listed in that menu; use the sender's network ID and [wire hash](../scripting-api/shader-receive.md#field-key) instead.
 
 ```hlsl
-TSMPByteView view;
-if (!TSMPTryGetField(0u, 13u, 0xFEDCBA98u, view))
+float value;
+if (!TSMPTryGetFloat(0u, 13u, 0xFEDCBA98u, value))
     return float4(1, 0, 1, 1);
-if (view.valueType != 3u || view.length != 4u)
-    return float4(1, 1, 0, 1);
-
-float gain = saturate(TSMPReadFloat32LE(view, 0u));
+float gain = saturate(value);
 return float4(gain, gain, gain, 1);
 ```
 
-Magenta means that field has not been received. Yellow means it was received but is not a four-byte Float32. Otherwise, changing the sender's value changes the mesh from black to white. If SendOnChange omits the field in a later frame, the last brightness is retained. For a packed byte array, use the field's own layout instead of reading it as a float.
+Magenta means the field is unavailable or not a Float32. A received zero is valid and displays black. If SendOnChange omits the field in a later frame, the last brightness is retained. For packed byte arrays, use `TSMPTryGetBytes` and read the layout defined by the sender.
 
 Use the [shader receive API](../scripting-api/shader-receive.md) for byte offsets, channel limits and reset behavior.
 
