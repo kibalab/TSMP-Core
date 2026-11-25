@@ -48,6 +48,10 @@ public static class ReceivePolicyValidation
         foreach (var mode in new[] { ReceiveInterpolationMode.Discrete, ReceiveInterpolationMode.Continuous })
             Test("Disabling Rigidbody clears pending targets while " + mode, () => CancelRigidbodyTarget(mode));
         Test("Missing Rigidbody still receives Transform data", MissingRigidbody);
+        Test("Transform receive reset clears targets and snaps the next applicable packet", TransformReceiveReset);
+        Test("Humanoid receive reset clears targets and snaps the next applicable packet", HumanoidReceiveReset);
+        Test("Fixed rig refreshes both hands then alternates by receipt", FixedRigHands);
+        Test("BlendShape receive reset clears targets and snaps the next applicable packet", BlendShapePolicyCases.Reset);
         foreach (string change in BlendShapePolicyCases.Changes)
             Test("BlendShape target invalidation: " + change, () => BlendShapePolicyCases.Run(change));
         foreach (string selection in AnimatorPolicyCases.SelectionCases)
@@ -387,6 +391,228 @@ public static class ReceivePolicyValidation
             receiver.Call("OnTSMPVariableReceived");
             TickTransform(receiver);
             Check(Vector3.Distance(receiver.Target.transform.position, new Vector3(3, 4, 5)) < .001f, "Missing Rigidbody blocked Transform application");
+        }
+    }
+
+    private static void TransformReceiveReset()
+    {
+        byte[] stalePacket = TransformPacket();
+        byte[] recoveryPacket = (byte[])stalePacket.Clone();
+        byte[] followingPacket = (byte[])stalePacket.Clone();
+        Binary.WriteVector3Float32LE(recoveryPacket, 2, new Vector3(11, 12, 13));
+        Binary.WriteVector3Float32LE(followingPacket, 2, new Vector3(21, 22, 23));
+
+        using (var receiver = new Endpoint(typeof(TSMPNetworkTransformSync)))
+        {
+            receiver.Set("receiveInterpolation", ReceiveInterpolationMode.Continuous);
+            receiver.Set("continuousInterpolationRate", 0f);
+            receiver.Set("networkId", (ushort)19);
+            receiver.Set("lastVariableHash", 123u);
+            receiver.Set("packedBytes", stalePacket);
+            receiver.Call("OnTSMPVariableReceived");
+            Check(receiver.Get<bool>("_hasContinuousTarget"), "Continuous target fixture was not armed");
+
+            receiver.Call("ResetReceiveState");
+            Check(!receiver.Get<bool>("_hasContinuousTarget"), "Reset retained the aggregate Transform target");
+            Check(!receiver.Get<bool>("_continuousHasPosition") &&
+                  !receiver.Get<bool>("_continuousHasRotation") &&
+                  !receiver.Get<bool>("_continuousHasScale") &&
+                  !receiver.Get<bool>("_continuousHasRigidbodyVelocity") &&
+                  !receiver.Get<bool>("_continuousHasRigidbodyAngularVelocity"), "Reset retained a Transform target flag");
+            Check(receiver.Get<Vector3>("_continuousPosition") == Vector3.zero &&
+                  receiver.Get<Quaternion>("_continuousRotation") == Quaternion.identity &&
+                  receiver.Get<Vector3>("_continuousScale") == Vector3.zero &&
+                  receiver.Get<Vector3>("_continuousRigidbodyVelocity") == Vector3.zero &&
+                  receiver.Get<Vector3>("_continuousRigidbodyAngularVelocity") == Vector3.zero, "Reset retained a Transform target value");
+            Check(receiver.Get<bool>("_snapNextReceive"), "Reset did not arm the next applicable packet");
+            Check(ReferenceEquals(receiver.Get<byte[]>("packedBytes"), stalePacket), "Reset replaced the public receive buffer");
+            Check(receiver.Get<ReceiveInterpolationMode>("receiveInterpolation") == ReceiveInterpolationMode.Continuous &&
+                  receiver.Get<float>("continuousInterpolationRate") == 0f &&
+                  receiver.Get<ushort>("networkId") == 19 &&
+                  receiver.Get<uint>("lastVariableHash") == 123u, "Reset changed public configuration or diagnostics");
+
+            TickTransform(receiver);
+            Check(receiver.Target.transform.position == Vector3.zero, "A stale Transform target was replayed after reset");
+
+            receiver.Set("packedBytes", new byte[] { 2 });
+            receiver.Call("OnTSMPVariableReceived");
+            Check(receiver.Get<bool>("_snapNextReceive"), "A malformed packet consumed the pending snap");
+
+            receiver.Set("packedBytes", new byte[] { 2, 0 });
+            receiver.Call("OnTSMPVariableReceived");
+            Check(receiver.Get<bool>("_snapNextReceive"), "An empty packet consumed the pending snap");
+
+            receiver.Set("packedBytes", recoveryPacket);
+            receiver.Call("OnTSMPVariableReceived");
+            Check(Vector3.Distance(receiver.Target.transform.position, new Vector3(11, 12, 13)) < .001f, "The recovery packet did not snap immediately");
+            Check(!receiver.Get<bool>("_snapNextReceive") && !receiver.Get<bool>("_hasContinuousTarget"), "The successful snap did not return to normal receive state");
+
+            receiver.Target.transform.position = Vector3.zero;
+            receiver.Set("packedBytes", followingPacket);
+            receiver.Call("OnTSMPVariableReceived");
+            Check(receiver.Target.transform.position == Vector3.zero && receiver.Get<bool>("_hasContinuousTarget"), "Continuous interpolation did not resume after the snap");
+            TickTransform(receiver);
+            Check(Vector3.Distance(receiver.Target.transform.position, new Vector3(21, 22, 23)) < .001f, "The resumed continuous target was not applied");
+        }
+    }
+
+    private static byte[] HumanoidPosePacket(Quaternion boneRotation, Vector3 rootPosition, Quaternion rootRotation)
+    {
+        byte[] packet = new byte[27];
+        packet[0] = 4;
+        packet[1] = 3;
+        Binary.WriteUInt16LE(packet, 2, 1);
+        packet[4] = (byte)HumanBodyBones.Head;
+        Binary.WritePackedQuaternion12LE(packet, 5, boneRotation);
+        Binary.WriteVector3Float32LE(packet, 10, rootPosition);
+        Binary.WritePackedQuaternion12LE(packet, 22, rootRotation);
+        return packet;
+    }
+
+    private static void TickHumanoid(Endpoint receiver)
+    {
+#if UDONSHARP
+        receiver.Call("_postLateUpdate");
+#else
+        receiver.Call("LateUpdate");
+#endif
+    }
+
+    private static void FixedRigHands()
+    {
+        const string model = "Packages/com.kibalab.tsmp.core/Samples/TSMPExample/Models/Shapell/data/shapell.fbx";
+        using (var receiver = new Endpoint(typeof(TSMPNetworkHumanoidPoseSync)))
+        {
+            var rig = Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(model));
+            rig.transform.SetParent(receiver.Target.transform);
+            var animator = rig.GetComponentInChildren<Animator>();
+            receiver.Set("animator", animator);
+            receiver.Set("boneIds", new[] { (int)HumanBodyBones.LeftHand, (int)HumanBodyBones.RightHand });
+            receiver.Set("cacheFixedReceiveRig", true);
+            receiver.Set("alternateHandUpdates", true);
+            receiver.Set("alternateIncludeWrists", true);
+            receiver.Set("includeFingerBones", false);
+            receiver.Set("receiveInterpolation", ReceiveInterpolationMode.Discrete);
+            var left = animator.GetBoneTransform(HumanBodyBones.LeftHand);
+            var right = animator.GetBoneTransform(HumanBodyBones.RightHand);
+            var packet = new byte[16];
+            packet[0] = 4; packet[1] = 1; packet[2] = 2;
+            packet[4] = (byte)HumanBodyBones.LeftHand; packet[10] = (byte)HumanBodyBones.RightHand;
+            Quaternion previous = right.localRotation;
+            for (int tick = 1; tick <= 3; tick++)
+            {
+                if (tick == 3) receiver.Call("InvalidateReceiveRig");
+                var rotation = Quaternion.Euler(tick * 25, 0, 0);
+                Binary.WritePackedQuaternion12LE(packet, 5, rotation);
+                Binary.WritePackedQuaternion12LE(packet, 11, rotation);
+                receiver.Set("poseBytes", packet);
+                receiver.Call("OnTSMPVariableReceived");
+                Check(Quaternion.Angle(left.localRotation, rotation) < .5f, "Left wrist");
+                Check(Quaternion.Angle(right.localRotation, tick == 2 ? previous : rotation) < .5f, "Right wrist");
+                previous = right.localRotation;
+            }
+        }
+    }
+
+    private static void HumanoidReceiveReset()
+    {
+        Quaternion staleBoneRotation = Quaternion.Euler(10, 20, 30);
+        Quaternion recoveryBoneRotation = Quaternion.Euler(30, 40, 50);
+        Quaternion followingBoneRotation = Quaternion.Euler(50, 60, 70);
+        Quaternion staleRootRotation = Quaternion.Euler(0, 15, 0);
+        Quaternion recoveryRootRotation = Quaternion.Euler(0, 35, 0);
+        Quaternion followingRootRotation = Quaternion.Euler(0, 55, 0);
+        byte[] stalePacket = HumanoidPosePacket(staleBoneRotation, new Vector3(1, 2, 3), staleRootRotation);
+        byte[] recoveryPacket = HumanoidPosePacket(recoveryBoneRotation, new Vector3(4, 5, 6), recoveryRootRotation);
+        byte[] followingPacket = HumanoidPosePacket(followingBoneRotation, new Vector3(7, 8, 9), followingRootRotation);
+
+        using (var receiver = new Endpoint(typeof(TSMPNetworkHumanoidPoseSync)))
+        {
+            Transform root = new GameObject("Humanoid root").transform;
+            Transform bone = new GameObject("Humanoid head").transform;
+            root.SetParent(receiver.Target.transform, false);
+            bone.SetParent(root, false);
+
+            int lastBone = (int)HumanBodyBones.LastBone;
+            int head = (int)HumanBodyBones.Head;
+            Transform[] targetsById = new Transform[lastBone];
+            targetsById[head] = bone;
+
+            receiver.Set("autoResolveBones", false);
+            receiver.Set("includeFingerBones", false);
+            receiver.Set("boneIds", new[] { head });
+            receiver.Set("boneTargets", new[] { bone });
+            receiver.Set("_boneTargetsById", targetsById);
+            receiver.Set("_rootMotionTarget", root);
+            receiver.Set("receiveInterpolation", ReceiveInterpolationMode.Continuous);
+            receiver.Set("continuousInterpolationRate", 0f);
+            receiver.Set("networkId", (ushort)23);
+            receiver.Set("lastVariableHash", 456u);
+            receiver.Set("poseBytes", stalePacket);
+            receiver.Call("OnTSMPVariableReceived");
+            Check(receiver.Get<bool>("_hasContinuousBoneTargets") && receiver.Get<bool>("_hasContinuousRootTarget"), "Continuous Humanoid target fixture was not armed");
+
+            receiver.Get<bool[]>("_hasReceivedBoneWorldRotation")[head] = true;
+            receiver.Get<Quaternion[]>("_receivedBoneWorldRotations")[head] = staleBoneRotation;
+            receiver.Get<bool[]>("_cachedHasReceivedBoneWorldRotation")[head] = true;
+            receiver.Get<int[]>("_receivedAncestorBoneIdsById")[head] = (int)HumanBodyBones.Hips;
+            receiver.Set("_receivedAncestorBoneIdsValid", true);
+
+            receiver.Call("ResetReceiveState");
+            Check(!receiver.Get<bool>("_hasContinuousBoneTargets") && !receiver.Get<bool>("_hasContinuousRootTarget"), "Reset retained an aggregate Humanoid target");
+            Check(!receiver.Get<bool[]>("_hasTargetBoneRotation")[head] &&
+                  !receiver.Get<bool[]>("_hasReceivedBoneWorldRotation")[head] &&
+                  !receiver.Get<bool[]>("_cachedHasReceivedBoneWorldRotation")[head], "Reset retained a Humanoid target mask");
+            Check(receiver.Get<Quaternion[]>("_targetBoneRotations")[head] == Quaternion.identity &&
+                  receiver.Get<Quaternion[]>("_receivedBoneWorldRotations")[head] == Quaternion.identity, "Reset retained a Humanoid rotation target");
+            Check(!receiver.Get<bool>("_receivedAncestorBoneIdsValid") &&
+                  receiver.Get<int[]>("_receivedAncestorBoneIdsById")[head] == -1, "Reset retained the received-ancestor cache");
+            Check(!receiver.Get<bool>("_continuousRootIsLocal") &&
+                  receiver.Get<Vector3>("_continuousRootPosition") == Vector3.zero &&
+                  receiver.Get<Quaternion>("_continuousRootRotation") == Quaternion.identity &&
+                  !receiver.Get<bool>("_continuousRootHasRotation"), "Reset retained the Humanoid root target");
+            Check(receiver.Get<bool>("_snapNextReceive"), "Humanoid reset did not arm the next applicable packet");
+            Check(ReferenceEquals(receiver.Get<byte[]>("poseBytes"), stalePacket) &&
+                  ReferenceEquals(receiver.Get<Transform[]>("_boneTargetsById"), targetsById) &&
+                  receiver.Get<Transform>("_rootMotionTarget") == root, "Reset replaced public data or the resolved bone cache");
+            Check(receiver.Get<ReceiveInterpolationMode>("receiveInterpolation") == ReceiveInterpolationMode.Continuous &&
+                  receiver.Get<float>("continuousInterpolationRate") == 0f &&
+                  receiver.Get<ushort>("networkId") == 23 &&
+                  receiver.Get<uint>("lastVariableHash") == 456u, "Reset changed Humanoid configuration or diagnostics");
+
+            TickHumanoid(receiver);
+            Check(bone.localRotation == Quaternion.identity && root.localPosition == Vector3.zero && root.localRotation == Quaternion.identity,
+                "A stale Humanoid target was replayed after reset");
+
+            receiver.Set("poseBytes", new byte[] { 4, 1, 1, 0 });
+            receiver.Call("OnTSMPVariableReceived");
+            Check(receiver.Get<bool>("_snapNextReceive"), "A malformed Humanoid packet consumed the pending snap");
+
+            receiver.Set("poseBytes", new byte[] { 4, 1, 0, 0 });
+            receiver.Call("OnTSMPVariableReceived");
+            Check(receiver.Get<bool>("_snapNextReceive"), "An empty Humanoid packet consumed the pending snap");
+
+            receiver.Set("poseBytes", recoveryPacket);
+            receiver.Call("OnTSMPVariableReceived");
+            Check(Quaternion.Angle(bone.localRotation, recoveryBoneRotation) < .5f &&
+                  Vector3.Distance(root.localPosition, new Vector3(4, 5, 6)) < .001f &&
+                  Quaternion.Angle(root.localRotation, recoveryRootRotation) < .5f, "The recovery Humanoid packet did not snap immediately");
+            Check(!receiver.Get<bool>("_snapNextReceive") &&
+                  !receiver.Get<bool>("_hasContinuousBoneTargets") &&
+                  !receiver.Get<bool>("_hasContinuousRootTarget"), "The successful Humanoid snap did not return to normal receive state");
+
+            bone.localRotation = Quaternion.identity;
+            root.localPosition = Vector3.zero;
+            root.localRotation = Quaternion.identity;
+            receiver.Set("poseBytes", followingPacket);
+            receiver.Call("OnTSMPVariableReceived");
+            Check(bone.localRotation == Quaternion.identity && root.localPosition == Vector3.zero && root.localRotation == Quaternion.identity &&
+                  receiver.Get<bool>("_hasContinuousBoneTargets") && receiver.Get<bool>("_hasContinuousRootTarget"),
+                "Continuous Humanoid interpolation did not resume after the snap");
+            TickHumanoid(receiver);
+            Check(Quaternion.Angle(bone.localRotation, followingBoneRotation) < .5f &&
+                  Vector3.Distance(root.localPosition, new Vector3(7, 8, 9)) < .001f &&
+                  Quaternion.Angle(root.localRotation, followingRootRotation) < .5f, "The resumed Humanoid target was not applied");
         }
     }
 

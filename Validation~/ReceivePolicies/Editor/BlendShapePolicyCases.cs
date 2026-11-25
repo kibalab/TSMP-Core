@@ -25,6 +25,81 @@ public static class BlendShapePolicyCases
 #endif
     }
 
+    public static void Reset()
+    {
+        using (var sync = new Endpoint(typeof(TSMPNetworkBlendShapesSync)))
+        {
+            var owner = new GameObject("BlendShape reset renderer");
+            Mesh mesh = CreateMesh(1);
+            try
+            {
+                var renderer = owner.AddComponent<SkinnedMeshRenderer>();
+                renderer.sharedMesh = mesh;
+                byte[] stalePacket = { 1, 1, 0, 0, 90 };
+                sync.Set("targetRenderer", renderer);
+                sync.Set("blendShapeCount", 1);
+                sync.Set("blendShapeIndices", new[] { 0 });
+                sync.Set("receiveInterpolation", ReceiveInterpolationMode.Continuous);
+                sync.Set("continuousInterpolationRate", 0f);
+                sync.Set("networkId", (ushort)29);
+                sync.Set("lastVariableHash", 789u);
+                sync.Set("blendShapeBytes", stalePacket);
+                sync.Call("OnTSMPVariableReceived");
+                Check(sync.Get<bool>("_hasContinuousTarget") && sync.Get<bool[]>("_hasTargetBlendShapeValue")[0],
+                    "Continuous BlendShape target fixture was not armed");
+
+                bool[] selectedLookup = sync.Get<bool[]>("_selectedBlendShapeLookup");
+                sync.Call("ResetReceiveState");
+                sync.Call("ResetReceiveState");
+                Check(!sync.Get<bool>("_hasContinuousTarget") && !sync.Get<bool[]>("_hasTargetBlendShapeValue")[0],
+                    "Reset retained a BlendShape target flag");
+                Check(sync.Get<float[]>("_targetBlendShapeValues")[0] == 0f, "Reset retained a BlendShape target value");
+                Check(sync.Get<bool>("_snapNextReceive"), "BlendShape reset did not arm the next applicable packet");
+                Check(ReferenceEquals(sync.Get<byte[]>("blendShapeBytes"), stalePacket) &&
+                      ReferenceEquals(sync.Get<bool[]>("_selectedBlendShapeLookup"), selectedLookup),
+                    "Reset replaced public data or the BlendShape selection cache");
+                Check(sync.Get<ReceiveInterpolationMode>("receiveInterpolation") == ReceiveInterpolationMode.Continuous &&
+                      sync.Get<float>("continuousInterpolationRate") == 0f &&
+                      sync.Get<ushort>("networkId") == 29 &&
+                      sync.Get<uint>("lastVariableHash") == 789u, "Reset changed BlendShape configuration or diagnostics");
+
+                Tick(sync);
+                Check(renderer.GetBlendShapeWeight(0) == 0f, "A stale BlendShape target was replayed after reset");
+
+                sync.Set("blendShapeBytes", new byte[] { 1, 1, 0, 0 });
+                sync.Call("OnTSMPVariableReceived");
+                Check(sync.Get<bool>("_snapNextReceive"), "A malformed BlendShape packet consumed the pending snap");
+
+                sync.Set("blendShapeBytes", new byte[] { 1, 0 });
+                sync.Call("OnTSMPVariableReceived");
+                Check(sync.Get<bool>("_snapNextReceive"), "An empty BlendShape packet consumed the pending snap");
+
+                sync.Set("blendShapeBytes", new byte[] { 1, 1, 1, 0, 50 });
+                sync.Call("OnTSMPVariableReceived");
+                Check(sync.Get<bool>("_snapNextReceive"), "A targetless BlendShape packet consumed the pending snap");
+
+                sync.Set("blendShapeBytes", new byte[] { 1, 1, 0, 0, 60 });
+                sync.Call("OnTSMPVariableReceived");
+                Check(renderer.GetBlendShapeWeight(0) == 60f, "The recovery BlendShape packet did not snap immediately");
+                Check(!sync.Get<bool>("_snapNextReceive") && !sync.Get<bool>("_hasContinuousTarget"),
+                    "The successful BlendShape snap did not return to normal receive state");
+
+                renderer.SetBlendShapeWeight(0, 0f);
+                sync.Set("blendShapeBytes", new byte[] { 1, 1, 0, 0, 80 });
+                sync.Call("OnTSMPVariableReceived");
+                Check(renderer.GetBlendShapeWeight(0) == 0f && sync.Get<bool>("_hasContinuousTarget"),
+                    "Continuous BlendShape interpolation did not resume after the snap");
+                Tick(sync);
+                Check(renderer.GetBlendShapeWeight(0) == 80f, "The resumed BlendShape target was not applied");
+            }
+            finally
+            {
+                Object.DestroyImmediate(owner);
+                Object.DestroyImmediate(mesh);
+            }
+        }
+    }
+
     public static void Run(string change)
     {
         using (var sync = new Endpoint(typeof(TSMPNetworkBlendShapesSync)))

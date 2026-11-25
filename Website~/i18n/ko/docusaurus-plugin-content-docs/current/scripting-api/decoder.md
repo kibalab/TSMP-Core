@@ -20,6 +20,7 @@ Custom receiver wiring, diagnostics 확인, frame이 무시된 이유를 debug�
 | --- | --- |
 | `sourceTexture` | Encoded TSMP frame이 들어있는 texture. |
 | `payloadByteTexture` | Codec shader가 payload bytes를 복구할 때 사용하는 render texture. |
+| `shaderChannel` | 기본값은 Off입니다. 활성화하면 승인된 데이터를 셰이더 채널 0~3 중 하나로 발행합니다. |
 | `codecHandlers` | Decoder가 사용할 수 있는 codec components. Header의 `codecId`가 handler를 선택합니다. |
 | `applyEveryFrame` | Component update loop에서 decode합니다. 다른 script가 `DecodeNow()`를 호출한다면 끄세요. |
 | `skipDuplicateFrames` | 현재 스트림의 중복·역순 프레임을 걸러냅니다. Inspector 이름은 Filter Frames입니다. |
@@ -153,3 +154,7 @@ Variable message가 도착하면 matching binding에만 적용합니다. RPC mes
 - Target behaviour의 `ReceiveInterpolation.None`은 received values를 무시합니다.
 - RPC는 event 성격입니다. Transport가 frame을 drop한다면 encoder repeat frames를 늘리세요.
 - Uploaded world에서는 inspector field를 볼 수 없기 때문에 중요한 runtime failure는 log로 표시됩니다.
+
+## 셰이더에서 수신 데이터 읽기
+
+설정 절차와 ShaderLab 예제는 [머티리얼에서 TSMP 데이터 읽기](../guides/shader-receive.md)에 있습니다. [TSMP.cginc 레퍼런스](./shader-receive.md)에서 HLSL 함수, 바이트 뷰 읽기, 필드가 없을 때의 동작과 캐시 한도를 확인할 수 있습니다.

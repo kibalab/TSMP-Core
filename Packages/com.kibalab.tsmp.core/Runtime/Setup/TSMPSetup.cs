@@ -8,7 +8,7 @@ namespace K13A.TSMP
     [ExecuteAlways]
     public sealed class TSMPSetup : MonoBehaviour
     {
-        [Header("Layout")]
+        [Header("Texture Routing")]
         public Texture sourceTexture;
         public Texture decoderSourceTexture;
         public bool preferEncoderOutputAsDecoderSource = true;

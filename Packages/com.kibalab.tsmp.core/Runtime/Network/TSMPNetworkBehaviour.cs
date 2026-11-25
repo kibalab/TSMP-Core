@@ -35,6 +35,10 @@ namespace K13A.TSMP.Udon
             lastVariableHash = variableHash;
         }
 
+        public virtual void ResetReceiveState()
+        {
+        }
+
         public virtual void TSMPBeforeEncode()
         {
         }

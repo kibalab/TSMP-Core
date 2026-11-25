@@ -127,7 +127,7 @@ namespace K13A.TSMP.Editor
         private void DrawTabs()
         {
             _selectedTab = Mathf.Clamp(_selectedTab, 0, Tabs.Length - 1);
-            _selectedTab = GUILayout.Toolbar(_selectedTab, Tabs, GUILayout.Height(25f));
+            _selectedTab = GUILayout.Toolbar(_selectedTab, Tabs, EditorStyles.toolbarButton);
         }
 
         private void DrawSelectedTab()
@@ -162,10 +162,12 @@ namespace K13A.TSMP.Editor
             DrawProperty(_configureEncoder);
             DrawProperty(_decoder);
             DrawProperty(_configureDecoder);
-            EditorGUILayout.Space(6f);
             DrawProperty(_sourceTexture);
-            DrawProperty(_decoderSourceTexture);
-            DrawProperty(_preferEncoderOutputAsDecoderSource);
+            EditorGUILayout.PropertyField(_decoderSourceTexture, new GUIContent("Decoder Source Override",
+                "When assigned, this texture takes priority over the encoder output and source texture."));
+            using (new EditorGUI.DisabledScope(_decoderSourceTexture.objectReferenceValue != null))
+                EditorGUILayout.PropertyField(_preferEncoderOutputAsDecoderSource,
+                    new GUIContent("Prefer Encoder Output", "When there is no override, use the encoder output if assigned; otherwise use Source Texture."));
         }
 
         private void DrawCodecTab()
@@ -277,7 +279,8 @@ namespace K13A.TSMP.Editor
             string description = string.Empty;
             SetupCodecDiscovery.TryGetPackageInfo(codec, out author, out description);
             EditorGUILayout.TextField("Author", author);
-            EditorGUILayout.TextField("Description", description);
+            EditorGUILayout.LabelField("Description");
+            EditorGUILayout.LabelField(description, EditorStyles.wordWrappedLabel);
         }
 
         private void DrawScriptField()

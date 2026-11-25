@@ -19,7 +19,7 @@ Most decode problems are caused by the input texture not containing an unmodifie
 - An input texture that contains the encoded TSMP frame.
 - A compatible Luma4 handler.
 - A payload byte texture.
-- Matching TSMP network behaviours and bindings.
+- You need matching network behaviours and bindings on the receiver only to apply values or dispatch RPCs to scene objects.
 - `TSMPSetup` applied after references are assigned.
 
 ## How to use it
@@ -27,9 +27,11 @@ Most decode problems are caused by the input texture not containing an unmodifie
 1. Assign the input texture.
 2. Use the same Luma4 path as the sender.
 3. Assign or auto-size the payload byte texture through `TSMPSetup`.
-4. Make sure receiver objects have matching TSMP network components.
+4. For scene objects, check that the receiver components have matching bindings. To consume a value only in a material, no receiver binding is required.
 5. Click `Apply Setup`.
 6. Watch logs or `TSMPDebugCanvas` for frame status.
+
+For shaders, choose a **Shader Channel** in the decoder and follow [Read TSMP data in a material](../guides/shader-receive.md). Leave the channel **Off** for CPU-only receivers.
 
 ## Frame window
 
@@ -38,6 +40,10 @@ In the decoder's **Decode** section, keep **Filter Frames** enabled for live rec
 The decoder normally ignores repeated or older frame numbers. It also recognizes frame zero as a possible restart when the last applied number is at least one window: with 256, `256 -> 0` is allowed but `255 -> 0` is not. Natural UInt32 counter wrap is handled separately. No textures are buffered for this window and the datagram is unchanged.
 
 This does not identify sessions: an old zero can look like a restart, and missing frame zero can prevent restart detection. Disable the filter for intentional seeking through recorded frames, understanding that old values may then be applied. See [exact ordering rules and limitations](../scripting-api/decoder.md#frame-window).
+
+## Fixed receiver bindings
+
+Leave **Validate Binding Cache On Receive** enabled if your scene changes bindings at runtime. For a fixed show rig, disabling it skips repeated table scans, not packet or target activity checks. Call `_InvalidateBindingCache()` after modifying a binding in place.
 
 ## What valid decode looks like
 

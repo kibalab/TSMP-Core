@@ -24,19 +24,18 @@ namespace K13A.TSMP.Editor
 #endif
         }
 
-        public static void BeginSection(string title)
+        public static void SectionLabel(string title)
         {
             EditorGUILayout.Space(6f);
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-
-            Rect titleRect = EditorGUILayout.GetControlRect(false, 20f);
-            titleRect.xMin += 2f;
-            EditorGUI.LabelField(titleRect, title, EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(title, EditorStyles.boldLabel);
         }
 
-        public static void EndSection()
+        public static bool SectionFoldout(ref bool expanded, string title)
         {
-            EditorGUILayout.EndVertical();
+            EditorGUILayout.Space(3f);
+            expanded = EditorGUILayout.BeginFoldoutHeaderGroup(expanded, title);
+            EditorGUILayout.EndFoldoutHeaderGroup();
+            return expanded;
         }
 
         public static void Property(SerializedProperty property)
