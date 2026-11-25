@@ -10,6 +10,35 @@ Texture2D<float4> _TSMPSkinPalette;
 float4 TSMPSkinTexel(int x) { return _TSMPSkinPalette.Load(int3(x,0,0)); }
 #endif
 
+#if defined(TSMP_BLEND_SHAPES)
+#if defined(SHADER_TARGET_SURFACE_ANALYSIS)
+sampler2D _TSMPShapeDeltas, _TSMPShapeWeights;
+float4 _TSMPShapeDeltas_TexelSize, _TSMPShapeWeights_TexelSize;
+float4 TSMPShapeDelta(uint i) { return tex2Dlod(_TSMPShapeDeltas, float4((float2(i & 255u, i >> 8) + 0.5) * _TSMPShapeDeltas_TexelSize.xy, 0, 0)); }
+float TSMPShapeWeight(uint i) { return tex2Dlod(_TSMPShapeWeights, float4((i+0.5)*_TSMPShapeWeights_TexelSize.x, 0.5, 0, 0)).x; }
+#else
+Texture2D<float4> _TSMPShapeDeltas, _TSMPShapeWeights;
+float4 TSMPShapeDelta(uint i) { return _TSMPShapeDeltas.Load(int3(i & 255u, i >> 8, 0)); }
+float TSMPShapeWeight(uint i) { return _TSMPShapeWeights.Load(int3(i,0,0)).x; }
+#endif
+#endif
+
+void TSMPApplyBlendShapes(inout float3 position, inout float3 normal, inout float4 tangent, float2 range)
+{
+#if defined(TSMP_BLEND_SHAPES)
+    [loop] for (uint i = 0u; i < (uint)range.y; ++i)
+    {
+        uint cursor = (uint)range.x + 3u * i;
+        float4 dp = TSMPShapeDelta(cursor);
+        float factor = TSMPShapeWeight((uint)dp.w);
+        if (factor == 0) continue;
+        position += dp.xyz * factor;
+        normal += TSMPShapeDelta(cursor+1u).xyz * factor;
+        tangent.xyz += TSMPShapeDelta(cursor+2u).xyz * factor;
+    }
+#endif
+}
+
 void TSMPSkinVertex(inout float3 position, inout float3 normal, inout float4 tangent, float4 indices, float4 weights)
 {
     float4 root = TSMPSkinTexel(0);
