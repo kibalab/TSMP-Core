@@ -41,6 +41,19 @@ namespace K13A.TSMP.Udon
         public RenderTexture payloadByteTexture;
 
         public TSMPCodec[] codecHandlers;
+        [Tooltip("Publish accepted data for shaders. Use a different channel for each active decoder.")]
+        public ShaderReceiveChannel shaderChannel;
+        [HideInInspector] public Material shaderChannelMaterial;
+
+        private ShaderReceiveChannel _publishedChannel;
+        private int _channelPropertyId;
+        private uint[] _publishedFields, _stagedFields;
+        private int _publishedCount, _stagedCount;
+        private uint _shaderStream, _shaderFrame;
+        private bool _stageShaderFields, _shaderPublishFailed;
+        private RenderTexture _atlas, _atlasSpare;
+        private Texture2D _shaderDirectory;
+        private byte[] _directoryUpload;
 
         [HideInInspector] public Component[] bindingTargets;
 
@@ -55,6 +68,8 @@ namespace K13A.TSMP.Udon
         [HideInInspector] public int[] bindingPriorities;
 
         public bool applyEveryFrame = true;
+        [Tooltip("Check all binding settings on each received frame. Disable only for fixed bindings; call _InvalidateBindingCache after changing bindings at runtime.")]
+        public bool validateBindingCacheOnReceive = true;
         public bool skipDuplicateFrames = true;
         [Min(1)] public int frameWindowSize = 256;
 
@@ -220,6 +235,8 @@ namespace K13A.TSMP.Udon
         private byte[][] _rawByteValueArrays;
         private uint[] _crc32Table;
         private int _cachedBindingTargetCount = -1;
+        private bool _lastValidateBindingCacheOnReceive = true;
+        private ushort[] _bindingTableSource;
         private const int RpcDedupCacheSize = 32;
         private uint[] _recentRpcStreamIds;
         private ushort[] _recentRpcNetworkIds;
@@ -246,6 +263,8 @@ namespace K13A.TSMP.Udon
         {
             if (readbackPackMaterial == null)
                 readbackPackMaterial = Resources.Load<Material>("TSMPReadbackPack");
+            if (shaderChannelMaterial == null)
+                shaderChannelMaterial = Resources.Load<Material>("TSMPShaderChannel");
         }
 #endif
 
@@ -258,6 +277,8 @@ namespace K13A.TSMP.Udon
 
         private void Update()
         {
+            if (_publishedChannel != ShaderReceiveChannel.Off && _publishedChannel != shaderChannel)
+                ReleaseShaderChannel();
             ProcessReadyReadbacks();
             if (!applyEveryFrame)
                 return;
@@ -271,12 +292,15 @@ namespace K13A.TSMP.Udon
 #if !COMPILER_UDONSHARP
             if (readbackPackMaterial == null)
                 readbackPackMaterial = Resources.Load<Material>("TSMPReadbackPack");
+            if (shaderChannelMaterial == null)
+                shaderChannelMaterial = Resources.Load<Material>("TSMPShaderChannel");
 #endif
         }
 
         private void OnDisable()
         {
             _decodeSuspended = true;
+            ReleaseShaderChannel();
             _predictionValid = false;
             for (int i = 0; i < 2; i++)
             {
@@ -292,6 +316,7 @@ namespace K13A.TSMP.Udon
 
         private void OnDestroy()
         {
+            ReleaseShaderChannel();
             _decodeSuspended = true;
             for (int i = 0; i < 2; i++)
                 ReleaseSlotTextures(i);
@@ -657,10 +682,10 @@ namespace K13A.TSMP.Udon
             if (!CopyBytesFromReadback(_payloadBytes, _payloadDataBytes))
                 return;
 
-            CompletePayload();
+            CompletePayload(_requestByteTexture, 0);
         }
 
-        private void CompletePayload()
+        private void CompletePayload(RenderTexture bytes, int payloadOffset)
         {
             CachePrediction();
 
@@ -671,13 +696,81 @@ namespace K13A.TSMP.Udon
                 return;
             }
 
-            if (!ApplyNetworkFrame())
+            ShaderReceiveChannel channel = shaderChannel;
+            _stageShaderFields = channel != ShaderReceiveChannel.Off && _requestSafetyMode == 0;
+            if (_stageShaderFields)
+                BeginShaderFrame(channel);
+            bool valid = ApplyNetworkFrame();
+            _stageShaderFields = false;
+            if (!valid)
                 return;
+            if (channel != ShaderReceiveChannel.Off && channel == shaderChannel && _requestSafetyMode == 0 &&
+                !_decodeSuspended && !_slotDiscarded[_activeSlot])
+                PublishShaderFrame(channel, bytes, payloadOffset);
             _hasAppliedFrame = true;
             _lastAppliedStreamId = lastStreamId;
             _lastAppliedFrameIndex = lastFrameIndex;
 
             lastFrameValid = true;
+        }
+
+        private void BeginShaderFrame(ShaderReceiveChannel channel)
+        {
+            if (_publishedChannel != ShaderReceiveChannel.Off && _publishedChannel != channel)
+                ReleaseShaderChannel();
+            bool restart = lastFrameIndex == 0u && (long)_shaderFrame >= Mathf.Max(1, frameWindowSize)
+                && _shaderFrame < 0x80000000u;
+            _stagedCount = lastStreamId == _shaderStream && !restart ? _publishedCount : 0;
+            if (_stagedCount == 0)
+                return;
+            if (_stagedFields == null || _stagedFields.Length < _publishedCount * ShaderReceiveAtlas.EntryWords)
+                _stagedFields = new uint[_publishedFields.Length];
+            System.Array.Copy(_publishedFields, _stagedFields, _publishedCount * ShaderReceiveAtlas.EntryWords);
+        }
+
+        private void PublishShaderFrame(ShaderReceiveChannel channel, RenderTexture bytes, int prefix)
+        {
+            if (!ShaderReceiveAtlas.Render(shaderChannelMaterial, bytes, prefix, _payloadDataBytes,
+                    lastStreamId, lastFrameIndex, _stagedFields, _stagedCount, _atlas, ref _atlasSpare,
+                    ref _shaderDirectory, ref _directoryUpload))
+            {
+                ReleaseShaderChannel();
+                if (!_shaderPublishFailed)
+                    Debug.LogWarning("[TSMP Decoder] Shader channel unavailable: check its material, texture allocation and field cache limits.");
+                _shaderPublishFailed = true;
+                return;
+            }
+            _shaderPublishFailed = false;
+            RenderTexture previous = _atlas;
+            _atlas = _atlasSpare;
+            _atlasSpare = previous;
+            if (channel != _publishedChannel)
+                _channelPropertyId = ShaderReceiveAtlas.PropertyId(channel);
+            ShaderReceiveAtlas.Bind(_channelPropertyId, _atlas);
+            _publishedChannel = channel;
+            _shaderStream = lastStreamId;
+            _shaderFrame = lastFrameIndex;
+            for (int i = 0; i < _stagedCount * ShaderReceiveAtlas.EntryWords; i += ShaderReceiveAtlas.EntryWords)
+                _stagedFields[i + 4] = _stagedFields[i + 2] | 0x80000000u;
+            uint[] scratch = _publishedFields;
+            _publishedFields = _stagedFields;
+            _stagedFields = scratch;
+            _publishedCount = _stagedCount;
+        }
+
+        private void ReleaseShaderChannel()
+        {
+            DecoderSnapshotRuntime.Release(_atlas);
+            DecoderSnapshotRuntime.Release(_atlasSpare);
+            GpuLuma4Writer.ReleaseTexture(_shaderDirectory);
+            _atlas = null;
+            _atlasSpare = null;
+            _shaderDirectory = null;
+            _directoryUpload = null;
+            _publishedFields = null;
+            _stagedFields = null;
+            _publishedCount = 0;
+            _publishedChannel = ShaderReceiveChannel.Off;
         }
 
         private bool ValidateSetup()
@@ -934,7 +1027,7 @@ namespace K13A.TSMP.Udon
                 return;
             }
             predictedReadbackCount++;
-            CompletePayload();
+            CompletePayload(_combinedByteTexture, FrameHeader.Size);
         }
 
         private void CachePrediction()
@@ -1281,6 +1374,9 @@ namespace K13A.TSMP.Udon
                 if (!NetworkFrameReader.TryReadVariableEntry(_payloadBytes, cursor, bodyEnd, out variableHash, out valueType, out valueOffset, out valueLength, out nextEntryOffset))
                     return FailNetworkFrame("VariableState value is malformed.");
 
+                if (_stageShaderFields)
+                    _stagedCount = ShaderReceiveAtlas.Stage(ref _stagedFields, _stagedCount, networkId,
+                        variableHash, valueType, valueOffset, valueLength);
                 if (_requestSafetyMode != DecodeSafetyParseOnly)
                     ApplyVariableValue(networkId, variableHash, valueType, valueOffset, valueLength);
                 cursor = nextEntryOffset;
@@ -1387,19 +1483,38 @@ namespace K13A.TSMP.Udon
 #endif
         }
 
+        // Local-only helper. Rebuild lazily before the next applied network frame.
+        public void _InvalidateBindingCache()
+        {
+            _cachedBindingTargetCount = -1;
+            _bindingLookupCount = -1;
+            _bindingLookupSignature = -1;
+        }
+
         private void EnsureBindingTargetCache(int targetCount)
         {
             if (targetCount < 0)
                 targetCount = 0;
 
+            if (_lastValidateBindingCacheOnReceive != validateBindingCacheOnReceive || _bindingTableSource != bindingNetworkIds)
+            {
+                _InvalidateBindingCache();
+                _lastValidateBindingCacheOnReceive = validateBindingCacheOnReceive;
+                _bindingTableSource = bindingNetworkIds;
+            }
+
             bool cacheValid = true;
             if (_cachedBindingTargetCount != targetCount)
                 cacheValid = false;
 #if UDONSHARP || COMPILER_UDONSHARP
-            if (!BindingTable.MatchesUdonTargets(_cachedBindingUdonTargets, bindingTargets, bindingUdonTargets, targetCount))
+            if (!BindingTable.IsUdonTargetCacheValid(_cachedBindingUdonTargets, targetCount))
+                cacheValid = false;
+            if (validateBindingCacheOnReceive && !BindingTable.MatchesUdonTargets(_cachedBindingUdonTargets, bindingTargets, bindingUdonTargets, targetCount))
                 cacheValid = false;
 #else
-            if (!BindingTable.MatchesComponentTargets(_cachedBindingComponentTargets, bindingTargets, targetCount))
+            if (!BindingTable.IsComponentTargetCacheValid(_cachedBindingComponentTargets, targetCount))
+                cacheValid = false;
+            if (validateBindingCacheOnReceive && !BindingTable.MatchesComponentTargets(_cachedBindingComponentTargets, bindingTargets, targetCount))
                 cacheValid = false;
 #endif
             bool valueCacheValid = DecoderBindingRuntime.IsArrayValueCacheValid(
@@ -1409,7 +1524,7 @@ namespace K13A.TSMP.Udon
                 cacheValid = false;
             if (_cachedBindingFieldNames == null || _cachedBindingFieldNames.Length != targetCount)
                 cacheValid = false;
-            for (int i = 0; cacheValid && i < targetCount; i++)
+            for (int i = 0; validateBindingCacheOnReceive && cacheValid && i < targetCount; i++)
             {
                 string fieldName = bindingFieldNames != null && i < bindingFieldNames.Length ? bindingFieldNames[i] : null;
                 if (_cachedBindingFieldNames[i] != fieldName)
@@ -1418,7 +1533,11 @@ namespace K13A.TSMP.Udon
 
             if (cacheValid)
             {
-                EnsureBindingLookupCache(targetCount);
+                int lookupCount = BindingTable.ClampNetworkHashCount(targetCount, bindingNetworkIds, bindingVariableHashes);
+                if (validateBindingCacheOnReceive || !BindingLookup.IsCacheValid(
+                    _bindingLookupNetworkIds, _bindingLookupVariableHashes, _bindingLookupBindingIndices,
+                    _bindingLookupCount, _bindingLookupSignature, lookupCount, lookupCount))
+                    EnsureBindingLookupCache(targetCount);
                 return;
             }
 

@@ -38,6 +38,7 @@ using UnityEngine;
 | `TSMPBehaviour` | Base behaviour, Udon/Mono bridge methods, logging helpers. |
 | `TSMPEncoder` | Frame encode lifecycle, output texture, codec selection, queued RPC, writer API. |
 | `TSMPDecoder` | Source texture readback, header validation, codec dispatch, variable/RPC application. |
+| [TSMP.cginc](./shader-receive.md) | Read a published frame or TransSync field directly in a material. |
 | `TSMPSetup` | Scene binding, codec discovery, render texture setup, one-click configuration. |
 | `TSMPNetworkBehaviour` | Network IDs, receive interpolation, lifecycle hooks, TSMP RPC. |
 | `TransSync` | Field-level synchronization attribute and supported value types. |

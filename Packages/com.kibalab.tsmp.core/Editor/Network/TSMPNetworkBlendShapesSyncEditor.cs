@@ -20,6 +20,7 @@ namespace K13A.TSMP.Editor
 
             DrawTSMPNetworkSection(true);
             DrawProperty("targetRenderer");
+            DrawProperty("validateBlendShapeCacheOnReceive");
 
             SerializedProperty encodedCount = serializedObject.FindProperty("encodedBlendShapeCount");
             using (new EditorGUI.DisabledScope(true))

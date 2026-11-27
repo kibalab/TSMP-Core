@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.1.0
+
+### Shader receive and humanoid rendering
+
+- The decoder can publish accepted frames and retained TransSync fields to one of four shader channels. Channels default to Off. Materials can read by network ID and field hash without a receiver binding or an output component. Typed HLSL getters cover all 15 wire types, with RGBA, Float4 and row-major matrix conventions on existing wire types.
+- Bake a visual humanoid receiver from a SkinnedMeshRenderer. It can follow v4 poses and local or world Hips motion on the GPU, without per-bone Udon writes. Optionally bake selected BlendShapes by name and apply their weights before skinning; the pose-only path needs no expression pass.
+- Senders can exclude bone subtrees. Receivers can keep selected triangles on the original skinned renderer for local animation or physics. Compacted material slots preserve overlays on the original last submesh when applicable; check any scripts that address materials by index after baking.
+
+### Receiver fixes and tooling
+
+- Fixed rigs can cache bone parents or opt into alternating finger updates. Sparse pose application validates the whole packet before touching Transforms. Fixed binding tables can skip repeated scans; explicitly invalidate caches after in-place changes.
+- Use integer row/column addressing in shared block reads and predicted readback packing. Bound RGB sample loops to the requested footprint; opted-in codecs can use the guarded four-tap bilinear path for a 4-by-4 footprint.
+- The decoder Inspector can copy a typed shader lookup for a field or open the GPU skin baker. Setup prepares the channel material automatically. English, Korean and Japanese guides cover setup, shader API, baking and migration.
+
+### Compatibility and measurements
+
+- No changes to the 56-byte header, codec IDs, NetworkFrame layout or existing humanoid and BlendShape packet formats. GPU rendering is opt-in and does not move scene bones, colliders or attachments.
+- In the 80-performer ClientSim fixture, median receiver CPU work was 43.65 ms for full Transform application, 24.12 ms for hybrid, and 2.14 ms for GPU-only. These are pose receive measurements, not total frame time or a benchmark of GPU BlendShapes.
+- See the [full 1.1.0 release notes](https://github.com/kibalab/TSMP-Core/releases/tag/v1.1.0) for conditions, GPU costs, installation and validation limits.
+
 ## 1.0.0
 
 Stable promotion of all 0.3.0-beta.1 through 0.3.0-beta.3 changes since stable 0.2.0. Runtime, shaders and asset GUIDs are unchanged from beta.3.

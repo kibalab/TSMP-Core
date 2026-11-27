@@ -39,8 +39,9 @@ Shader "Hidden/TSMP/Readback Pack"
                 index -= (int)_HeaderPixels;
                 if (index >= (int)_PayloadPixels)
                     return 0;
-                int row = (int)floor((float)index / _PayloadWidth);
-                return _MainTex.Load(int3(index - row * (int)_PayloadWidth, row, 0));
+                uint width = max(1u, (uint)_PayloadWidth);
+                uint address = (uint)index;
+                return _MainTex.Load(int3(address % width, address / width, 0));
             }
             ENDCG
         }

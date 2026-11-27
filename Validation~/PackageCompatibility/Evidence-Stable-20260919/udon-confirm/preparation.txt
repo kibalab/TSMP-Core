@@ -1,0 +1,2 @@
+PASS missing decoder packing material automatically assigned and serialized to backing UdonBehaviour
+PASS missing encoder GPU material automatically assigned and serialized to backing UdonBehaviour

@@ -20,6 +20,7 @@ Use this page when wiring a custom receiver, reading diagnostics, or debugging w
 | --- | --- |
 | `sourceTexture` | Texture that contains the encoded TSMP frame. |
 | `payloadByteTexture` | Render texture used by codec shaders when decoding payload bytes. |
+| `shaderChannel` | Off by default. Publish accepted data on shader channel 0–3. |
 | `codecHandlers` | Codec components available to the decoder. The header `codecId` selects the handler. |
 | `applyEveryFrame` | Runs decode from the component update loop. Disable it when another script calls `DecodeNow()`. |
 | `skipDuplicateFrames` | Enables duplicate and older-frame filtering for the current stream. Inspector label: Filter Frames. |
@@ -153,3 +154,7 @@ When a variable message arrives, the decoder only applies it to matching binding
 - `ReceiveInterpolation.None` on a target behaviour means received values are ignored for that behaviour.
 - RPC calls are event-like. Use repeat frames on the encoder if the transport drops frames.
 - Decoder logs important runtime failures because inspector fields are not visible in uploaded worlds.
+
+## Reading received data in a shader
+
+See [Read TSMP data in a material](../guides/shader-receive.md) for setup and a working ShaderLab example. The [TSMP.cginc reference](./shader-receive.md) covers the HLSL calls, byte layout of a view, missing fields and cache limits.

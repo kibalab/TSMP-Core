@@ -67,6 +67,7 @@ namespace K13A.TSMP.Udon
         private Vector3 _continuousRigidbodyAngularVelocity;
         private bool _continuousHasRigidbodyVelocity;
         private bool _continuousHasRigidbodyAngularVelocity;
+        private bool _snapNextReceive;
 
         private void Start()
         {
@@ -86,6 +87,22 @@ namespace K13A.TSMP.Udon
             ApplyContinuousTarget();
         }
 #endif
+
+        public override void ResetReceiveState()
+        {
+            _hasContinuousTarget = false;
+            _continuousHasPosition = false;
+            _continuousHasRotation = false;
+            _continuousHasScale = false;
+            _continuousHasRigidbodyVelocity = false;
+            _continuousHasRigidbodyAngularVelocity = false;
+            _continuousPosition = Vector3.zero;
+            _continuousRotation = Quaternion.identity;
+            _continuousScale = Vector3.zero;
+            _continuousRigidbodyVelocity = Vector3.zero;
+            _continuousRigidbodyAngularVelocity = Vector3.zero;
+            _snapNextReceive = true;
+        }
 
         public override void TSMPBeforeEncode()
         {
@@ -186,7 +203,8 @@ namespace K13A.TSMP.Udon
             int cursor = PackedHeaderBytes;
             bool hasAppliedPosition = false;
             bool hasAppliedRotation = false;
-            bool continuous = receiveInterpolation == ReceiveInterpolationMode.Continuous;
+            bool appliedAny = false;
+            bool continuous = receiveInterpolation == ReceiveInterpolationMode.Continuous && !_snapNextReceive;
             Vector3 appliedPosition = Vector3.zero;
             Quaternion appliedRotation = Quaternion.identity;
             if (continuous)
@@ -213,6 +231,7 @@ namespace K13A.TSMP.Udon
                 }
 
                 hasAppliedPosition = true;
+                appliedAny = true;
                 appliedPosition = GetWorldPosition(pos);
                 if (continuous)
                 {
@@ -243,6 +262,7 @@ namespace K13A.TSMP.Udon
                 }
 
                 hasAppliedRotation = true;
+                appliedAny = true;
                 appliedRotation = GetWorldRotation(rot);
                 if (continuous)
                 {
@@ -272,6 +292,8 @@ namespace K13A.TSMP.Udon
                     cursor += NetworkFrameProtocol.Vector3Bytes;
                 }
 
+                appliedAny = true;
+
                 if (continuous)
                 {
                     _continuousHasScale = true;
@@ -298,6 +320,7 @@ namespace K13A.TSMP.Udon
 
                 if (syncRigidbody && targetRigidbody != null)
                 {
+                    appliedAny = true;
                     if (continuous)
                     {
                         _continuousHasRigidbodyVelocity = true;
@@ -317,6 +340,7 @@ namespace K13A.TSMP.Udon
 
                 if (syncRigidbody && targetRigidbody != null)
                 {
+                    appliedAny = true;
                     if (continuous)
                     {
                         _continuousHasRigidbodyAngularVelocity = true;
@@ -331,6 +355,11 @@ namespace K13A.TSMP.Udon
 
             if (continuous)
                 _hasContinuousTarget = _continuousHasPosition || _continuousHasRotation || _continuousHasScale || _continuousHasRigidbodyVelocity || _continuousHasRigidbodyAngularVelocity;
+            else
+                _hasContinuousTarget = false;
+
+            if (_snapNextReceive && appliedAny)
+                _snapNextReceive = false;
         }
 
         public override void OnTSMPVariableReceived()

@@ -1,0 +1,72 @@
+[
+  {
+    "repository": "TSMP-Core",
+    "package": "com.kibalab.tsmp.core",
+    "version": "1.0.0",
+    "commit": "1e8d4dcc19f44f00491fd4bb1d1204f6ae53a975",
+    "betaRuntimeBaseline": "0.3.0-beta.3",
+    "files": 400,
+    "zipSHA256": "926ca64e94b5c05f0a329ee43587d01685799abca7bf37ccd45a74f5e02a08b4",
+    "url": "https://github.com/kibalab/TSMP-Core/releases/download/v1.0.0/com.kibalab.tsmp.core-1.0.0.zip",
+    "stable": true,
+    "latest": true,
+    "tagContentMatch": true,
+    "betaRuntimeMatch": true
+  },
+  {
+    "repository": "TSMPCodec-Luma4",
+    "package": "com.kibalab.tsmp.codec.luma4",
+    "version": "1.0.0",
+    "commit": "9f640a312fe401fa29c11b9c043b38149e77eea4",
+    "betaRuntimeBaseline": "0.0.4-beta.2",
+    "files": 39,
+    "zipSHA256": "6fc857124a66f78ba9a5f2e59b19d85c281c7edde88a2a0a21ba0de6c22021fd",
+    "url": "https://github.com/kibalab/TSMPCodec-Luma4/releases/download/v1.0.0/com.kibalab.tsmp.codec.luma4-1.0.0.zip",
+    "stable": true,
+    "latest": true,
+    "tagContentMatch": true,
+    "betaRuntimeMatch": true
+  },
+  {
+    "repository": "TSMPCodec-RGB16",
+    "package": "com.kibalab.tsmp.codec.rgb16",
+    "version": "2.0.0",
+    "commit": "4bba8e76cfb4f9befd22f695c2af1b83dba9142c",
+    "betaRuntimeBaseline": "0.0.3-beta.4",
+    "files": 53,
+    "zipSHA256": "4e04a49ce1428c779ecbbaaa30467410675c50386f2636ce2971c21476efe94e",
+    "url": "https://github.com/kibalab/TSMPCodec-RGB16/releases/download/v2.0.0/com.kibalab.tsmp.codec.rgb16-2.0.0.zip",
+    "stable": true,
+    "latest": true,
+    "tagContentMatch": true,
+    "betaRuntimeMatch": true
+  },
+  {
+    "repository": "TSMPCodec-RGB20",
+    "package": "com.kibalab.tsmp.codec.rgb20",
+    "version": "2.0.0",
+    "commit": "9541d571d593031a5a88e144e7b1cbc57f6de000",
+    "betaRuntimeBaseline": "0.0.3-beta.5",
+    "files": 38,
+    "zipSHA256": "783c1dba332ea5fb5c56050464d44509b06803cdebe7b29786869f1619eaaa52",
+    "url": "https://github.com/kibalab/TSMPCodec-RGB20/releases/download/v2.0.0/com.kibalab.tsmp.codec.rgb20-2.0.0.zip",
+    "stable": true,
+    "latest": true,
+    "tagContentMatch": true,
+    "betaRuntimeMatch": true
+  },
+  {
+    "repository": "TSMPCodec-Color256",
+    "package": "com.kibalab.tsmp.codec.color256",
+    "version": "2.0.0",
+    "commit": "672914038454b894410091721d60f8305eff53d0",
+    "betaRuntimeBaseline": "0.0.3-beta.4",
+    "files": 48,
+    "zipSHA256": "8a84b488fee098e18828333d327787789494f36eac166d262366ef10e24e3e71",
+    "url": "https://github.com/kibalab/TSMPCodec-Color256/releases/download/v2.0.0/com.kibalab.tsmp.codec.color256-2.0.0.zip",
+    "stable": true,
+    "latest": true,
+    "tagContentMatch": true,
+    "betaRuntimeMatch": true
+  }
+]

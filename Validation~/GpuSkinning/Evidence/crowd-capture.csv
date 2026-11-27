@@ -1,0 +1,8 @@
+capture,modelDraws,poseDraws,matrixDraws,skinDispatches,emptyDraws,modelUs,poseUs,matricesUs,unitySkinUs,selectedUs
+compact/hybrid-80-capture_frame38005.rdc.csv,640,80,80,80,0,4971.68,1224.912,671.856,393.2,7266.288
+old-capture/gpu-80-capture_frame39404.rdc.csv,400,80,80,0,0,3301.696,1209.36,676.976,0.0,5181.92
+old-capture/hybrid-80-capture_frame40272.rdc.csv,800,80,80,80,160,4832.288,1208.88,654.16,391.68,7105.104
+stock/gpu-80-capture_frame40291.rdc.csv,400,80,80,0,0,3313.248,1202.24,686.096,0.0,5200.032
+stock/gpu-capture_frame40723.rdc.csv,5,1,1,0,0,43.936,12.288,7.168,0.0,63.424
+trial/gpu-80-capture_frame41493.rdc.csv,400,80,80,0,0,3296.864,1474.336,675.664,0.0,5445.344
+trial/gpu-capture_frame40624.rdc.csv,5,1,1,0,0,37.872,16.384,7.168,0.0,61.92

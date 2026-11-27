@@ -1,0 +1,1 @@
+UnityException: Creating asset at path Assets\SerializedUdonPrograms\8dfa48abd028d0b4e8b15f25cab605a0.asset failed.

@@ -11,6 +11,8 @@ namespace K13A.TSMP.Udon
         public SkinnedMeshRenderer targetRenderer;
         public int[] blendShapeIndices;
         public string[] blendShapeNames;
+        [Tooltip("Validate every selected BlendShape index on receive and interpolation. Disable for fixed selections; call _InvalidateBlendShapeCache after editing the existing index array in place. Renderer, mesh and array replacement are still detected. Encoding always validates.")]
+        public bool validateBlendShapeCacheOnReceive = true;
         [HideInInspector] public int blendShapeCount;
         [HideInInspector] public int encodedBlendShapeCount;
 
@@ -29,6 +31,7 @@ namespace K13A.TSMP.Udon
         private bool[] _selectedBlendShapeLookup;
         private int[] _validBlendShapeIndices;
         private int _selectedBlendShapeCount;
+        private int[] _cachedBlendShapeIndices;
         private int _cachedBlendShapeIndexLength = -1;
         private int _cachedBlendShapeIndexHash;
         private int _cachedBlendShapeCount = -2;
@@ -37,6 +40,7 @@ namespace K13A.TSMP.Udon
         private bool _hasContinuousTarget;
         private SkinnedMeshRenderer _cachedRenderer;
         private Mesh _cachedMesh;
+        private bool _snapNextReceive;
 
         public byte[] BlendShapeBytes
         {
@@ -70,6 +74,26 @@ namespace K13A.TSMP.Udon
         }
 #endif
 
+        public override void ResetReceiveState()
+        {
+            _hasContinuousTarget = false;
+            if (_targetBlendShapeValues != null)
+            {
+                int count = _targetBlendShapeValues.Length;
+                for (int i = 0; i < count; i++)
+                    _targetBlendShapeValues[i] = 0f;
+            }
+
+            if (_hasTargetBlendShapeValue != null)
+            {
+                int count = _hasTargetBlendShapeValue.Length;
+                for (int i = 0; i < count; i++)
+                    _hasTargetBlendShapeValue[i] = false;
+            }
+
+            _snapNextReceive = true;
+        }
+
         public override void TSMPBeforeEncode()
         {
             if (!IsTSMPActive())
@@ -77,7 +101,7 @@ namespace K13A.TSMP.Udon
 
             ResolveRenderer();
             RefreshBlendShapeCount();
-            RebuildBlendShapeLookupIfNeeded();
+            RebuildBlendShapeLookupIfNeeded(true);
 
             int count = targetRenderer != null ? _selectedBlendShapeCount : 0;
             int requiredBytes = BlendShapeHeaderBytes + count * BlendShapeEntryBytes;
@@ -122,7 +146,7 @@ namespace K13A.TSMP.Udon
 
             ResolveRenderer();
             RefreshBlendShapeCount();
-            RebuildBlendShapeLookupIfNeeded();
+            RebuildBlendShapeLookupIfNeeded(false);
 
             if (targetRenderer == null)
                 return;
@@ -133,7 +157,8 @@ namespace K13A.TSMP.Udon
                 return;
 
             int cursor = BlendShapeHeaderBytes;
-            bool continuous = receiveInterpolation == ReceiveInterpolationMode.Continuous;
+            bool appliedAny = false;
+            bool continuous = receiveInterpolation == ReceiveInterpolationMode.Continuous && !_snapNextReceive;
             for (int i = 0; i < count; i++)
             {
                 int index = Binary.ReadUInt16LE(blendShapeBytes, cursor);
@@ -150,16 +175,24 @@ namespace K13A.TSMP.Udon
                         _targetBlendShapeValues[index] = value;
                         _hasTargetBlendShapeValue[index] = true;
                         _hasContinuousTarget = true;
+                        appliedAny = true;
                     }
 
                     continue;
                 }
 
                 if (targetRenderer.GetBlendShapeWeight(index) == (float)value)
+                {
+                    appliedAny = true;
                     continue;
+                }
 
                 targetRenderer.SetBlendShapeWeight(index, value);
+                appliedAny = true;
             }
+
+            if (_snapNextReceive && appliedAny)
+                _snapNextReceive = false;
         }
 
         public override void OnTSMPVariableReceived()
@@ -201,9 +234,21 @@ namespace K13A.TSMP.Udon
             return _selectedBlendShapeLookup[index];
         }
 
-        private void RebuildBlendShapeLookupIfNeeded()
+        // Local-only invalidation for in-place selection edits while validation is disabled.
+        public void _InvalidateBlendShapeCache()
+        {
+            _cachedBlendShapeCount = -2;
+        }
+
+        private void RebuildBlendShapeLookupIfNeeded(bool forceValidation)
         {
             int indexLength = blendShapeIndices != null ? blendShapeIndices.Length : -1;
+            if (!forceValidation && !validateBlendShapeCacheOnReceive && _selectedBlendShapeLookup != null &&
+                _cachedBlendShapeIndices == blendShapeIndices && _cachedBlendShapeIndexLength == indexLength &&
+                _cachedBlendShapeCount == blendShapeCount)
+                return;
+
+            _cachedBlendShapeIndices = blendShapeIndices;
             int indexHash = ComputeBlendShapeIndexHash();
             if (_selectedBlendShapeLookup != null && _cachedBlendShapeIndexLength == indexLength && _cachedBlendShapeIndexHash == indexHash && _cachedBlendShapeCount == blendShapeCount)
                 return;
@@ -293,7 +338,7 @@ namespace K13A.TSMP.Udon
 
             ResolveRenderer();
             RefreshBlendShapeCount();
-            RebuildBlendShapeLookupIfNeeded();
+            RebuildBlendShapeLookupIfNeeded(false);
             if (!_hasContinuousTarget || targetRenderer == null)
                 return;
 

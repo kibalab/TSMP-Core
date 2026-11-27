@@ -34,6 +34,12 @@ Turn it off on a receiver to keep its local velocity and angular velocity. Trans
 
 ## Humanoid pose sync
 
+For a fixed stage rig with **Auto Resolve Bones**, enable **Cache Fixed Receive Rig** to reuse bone parents. Call `InvalidateReceiveRig()` after reparenting bones or editing the bone ID array in place. Leave caching off for a changing rig.
+
+**Alternate Hand Updates** decodes both hands on the first valid pose, then alternates fingers on subsequent poses. **Alternate Include Wrists** also alternates the hands themselves. The body still updates every receipt; continuous interpolation still runs on both sides. Leave this off for precise hand contact. Neither option reduces the transmitted bytes.
+
+**Excluded Send Bone Roots** skips the selected subtrees below Hips when sending. This does not filter received poses or require a physics component.
+
 Use `TSMPNetworkHumanoidPoseSync` for a humanoid Animator rig.
 
 Use it for:
@@ -64,6 +70,8 @@ Full mode needs more payload capacity than transform or blend shape sync. Watch 
 ## Blend shape sync
 
 Use `TSMPNetworkBlendShapesSync` for facial expressions or mesh shape keys.
+
+For a fixed selection, turn off **Validate Blend Shape Cache On Receive** to skip rechecking each index. After editing an existing index array in place, call `_InvalidateBlendShapeCache()`. Replacing the renderer, mesh or index array is detected automatically.
 
 Select the blend shapes you actually need. Sending every blend shape can quickly waste payload capacity, especially on avatars with many shape keys.
 

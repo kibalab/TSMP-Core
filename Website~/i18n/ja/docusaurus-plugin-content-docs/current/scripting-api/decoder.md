@@ -20,6 +20,7 @@ title: TSMPDecoder API
 | --- | --- |
 | `sourceTexture` | エンコードされた TSMP フレームを含むテクスチャ。 |
 | `payloadByteTexture` | ペイロード バイトをデコードするときにコーデック シェーダによって使用されるテクスチャをレンダリングします。 |
+| `shaderChannel` | 既定は Off。有効にすると受理したデータをシェーダーチャンネル 0～3 のいずれかで公開します。 |
 | `codecHandlers` | デコーダで使用できるコーデック コンポーネント。ヘッダー `codecId` はハンドラーを選択します。 |
 | `applyEveryFrame` | コンポーネント更新ループからデコードを実行します。別のスクリプトが `DecodeNow()` を呼び出すときは無効にします。 |
 | `skipDuplicateFrames` | 現在のストリームの重複・古いフレームを除外します。Inspector 表示は Filter Frames です。 |
@@ -153,3 +154,7 @@ public void ResetDecodeDiagnostics()
 - ターゲット動作の `ReceiveInterpolation.None` は、その動作では受信した値が無視されることを意味します。
 - RPC 呼び出しはイベントのようなものです。トランスポートがフレームをドロップする場合は、エンコーダでリピート フレームを使用します。
 - アップロードされたワールドではインスペクター フィールドが表示されないため、デコーダーは重要な実行時エラーをログに記録します。
+
+## シェーダーで受信データを読む
+
+設定手順と ShaderLab の例は[マテリアルで TSMP のデータを読む](../guides/shader-receive.md)を参照してください。[TSMP.cginc リファレンス](./shader-receive.md)では HLSL 関数、バイトビューの読み方、フィールドがない場合の動作、キャッシュの上限を説明しています。

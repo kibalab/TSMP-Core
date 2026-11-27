@@ -1,0 +1,4 @@
+mode,replays,modelDraws,modelP50us,unitySkinP50us,channelP50us,posePaletteP50us,skinPaletteP50us,selectedSumP50us,selectedSumP95us
+cpu,10,5,37.344,6.144,0.0,0.0,0.0,43.488,45.056
+gpu,10,5,43.488,0.0,5.12,12.752,7.168,69.056,81.824
+hybrid,10,10,61.856,5.12,5.12,13.312,7.168,91.552,102.4

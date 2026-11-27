@@ -19,7 +19,7 @@ title: TSMPDecoder
 - 인코딩된 TSMP frame을 담은 input texture.
 - 호환되는 Luma4 handler.
 - Payload byte texture.
-- 일치하는 TSMP network behaviours와 bindings.
+- 수신한 값을 씬 오브젝트에 적용하거나 RPC를 전달할 때만 수신 측에 일치하는 네트워크 컴포넌트와 바인딩이 필요합니다.
 - Reference 지정 후 적용된 `TSMPSetup`.
 
 ## 사용 방법
@@ -27,9 +27,11 @@ title: TSMPDecoder
 1. Input texture를 지정합니다.
 2. Sender와 같은 Luma4 경로를 사용합니다.
 3. `TSMPSetup`을 통해 payload byte texture를 지정하거나 auto-size합니다.
-4. Receiver object에 일치하는 TSMP network component가 있는지 확인합니다.
+4. 씬 오브젝트에 적용할 때는 수신 컴포넌트의 바인딩을 확인합니다. 머티리얼에서만 읽는 필드에는 수신 바인딩이 필요하지 않습니다.
 5. `Apply Setup`을 클릭합니다.
 6. 로그 또는 `TSMPDebugCanvas`로 frame status를 확인합니다.
+
+셰이더로 읽으려면 디코더의 **Shader Channel**을 지정하고 [머티리얼에서 TSMP 데이터 읽기](../guides/shader-receive.md)를 따라 하세요. CPU만 사용하는 수신기는 채널을 **Off**로 두면 됩니다.
 
 ## 프레임 윈도우
 
@@ -38,6 +40,10 @@ title: TSMPDecoder
 중복되거나 오래된 번호는 무시합니다. 다만 마지막 적용 번호가 한 윈도우 이상일 때 0번이 도착하면 재시작으로 허용합니다. 기본값에서는 `256 -> 0`은 허용하고 `255 -> 0`은 거부합니다. UInt32 번호의 정상 순환은 별도로 처리합니다. 윈도우만큼 텍스처를 저장하지 않으며 데이터그램도 바뀌지 않습니다.
 
 세션을 식별하는 기능은 아닙니다. 오래된 0번을 재시작으로 오인하거나 0번 유실로 재시작을 놓칠 수 있습니다. 녹화 영상의 원하는 시점으로 이동할 때는 필터를 끌 수 있지만 과거 변수값도 적용됩니다. [정확한 판정 규칙과 한계](../scripting-api/decoder.md#frame-window)를 참고하세요.
+
+## 고정 수신 바인딩
+
+런타임에 바인딩이 바뀌는 씬에서는 **Validate Binding Cache On Receive**를 켜 두세요. 구성이 고정된 공연에서는 끄면 반복적인 테이블 검사를 생략합니다. 패킷과 대상의 활성 상태는 여전히 확인합니다. 기존 바인딩 원소를 직접 변경한 뒤에는 `_InvalidateBindingCache()`를 호출하세요.
 
 ## 정상 decode 상태
 

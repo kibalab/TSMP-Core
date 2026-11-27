@@ -1,0 +1,9 @@
+[<color=#FF00FF>UdonSharp</color>] Assets/UdonSharp/UtilityScripts/BoneFollower.cs(12,5): Could not retrieve C# class, make sure the MonoBehaviour class name matches the name of the .cs file and Unity has had a chance to compile the C# script.
+[<color=#FF00FF>UdonSharp</color>] Assets/UdonSharp/UtilityScripts/TrackingDataFollower.cs(10,5): Could not retrieve C# class, make sure the MonoBehaviour class name matches the name of the .cs file and Unity has had a chance to compile the C# script.
+[<color=#FF00FF>UdonSharp</color>] Assets/UdonSharp/UtilityScripts/Synced/GlobalToggleObject.cs(13,5): Could not retrieve C# class, make sure the MonoBehaviour class name matches the name of the .cs file and Unity has had a chance to compile the C# script.
+[<color=#FF00FF>UdonSharp</color>] Assets/UdonSharp/UtilityScripts/InteractToggle.cs(11,5): Could not retrieve C# class, make sure the MonoBehaviour class name matches the name of the .cs file and Unity has had a chance to compile the C# script.
+[<color=#FF00FF>UdonSharp</color>] Assets/UdonSharp/UtilityScripts/Synced/MasterToggleObject.cs(10,5): Could not retrieve C# class, make sure the MonoBehaviour class name matches the name of the .cs file and Unity has had a chance to compile the C# script.
+[<color=#FF00FF>UdonSharp</color>] Assets/UdonSharp/UtilityScripts/PlayerModSetter.cs(8,5): Could not retrieve C# class, make sure the MonoBehaviour class name matches the name of the .cs file and Unity has had a chance to compile the C# script.
+[<color=#FF00FF>UdonSharp</color>] Assets/UdonSharp/UtilityScripts/WorldAudioSettings.cs(13,5): Could not retrieve C# class, make sure the MonoBehaviour class name matches the name of the .cs file and Unity has had a chance to compile the C# script.
+InvalidOperationException: Full client UdonSharp compilation failed
+executeMethod method ContinuousFrameUdonValidation.Run threw exception.
