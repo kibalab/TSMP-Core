@@ -22,4 +22,4 @@ https://kibalab.github.io/TSMP-Core/
 
 ## Release Status
 
-TSMP Core 1.0.0 is a stable release incorporating all changes from the 0.3.0 betas since 0.2.0. Install Luma4 1.0.0 alongside Core. See CHANGELOG.md for the cumulative changes and compatibility notes.
+TSMP Core 1.1.0 adds shader access to received fields and optional GPU skinning for humanoid poses and facial expressions. The wire format is unchanged. Install Luma4 alongside Core. See CHANGELOG.md for upgrade instructions and measured receiver costs.

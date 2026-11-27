@@ -95,7 +95,7 @@ Core는 씬 런타임과 설정을, 별도 코덱 패키지는 픽셀 인코딩�
 
 [최신 정식 릴리즈](https://github.com/kibalab/TSMP-Core/releases/latest) · [전체 릴리즈](https://github.com/kibalab/TSMP-Core/releases)
 
-TSMP Core 1.0.0은 0.2.0 이후 베타의 기능, 수정 및 최적화를 통합한 정식 버전입니다. Luma4 1.0.0과 함께 사용하세요.
+TSMP Core 1.1.0에서는 셰이더가 수신값을 직접 읽을 수 있고, 휴머노이드 포즈와 표정에 GPU 스키닝을 선택할 수 있습니다. 전송 형식은 바뀌지 않았습니다. [릴리스 노트](https://github.com/kibalab/TSMP-Core/releases/tag/v1.1.0)를 참고하세요.
 
 버그나 제안은 [Issues](https://github.com/kibalab/TSMP-Core/issues)에 남겨 주세요. 코드·문서 기여는 [기여 가이드](CONTRIBUTING.md)를 참고하세요.
 

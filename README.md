@@ -95,7 +95,7 @@ Core はシーンランタイムとセットアップを、別のコーデック
 
 [最新の正式リリース](https://github.com/kibalab/TSMP-Core/releases/latest) · [すべてのリリース](https://github.com/kibalab/TSMP-Core/releases)
 
-TSMP Core 1.0.0 は正式リリースです。0.2.0 以降のベータで追加された機能・修正・最適化を含みます。Luma4 1.0.0 と組み合わせて使用してください。
+TSMP Core 1.1.0 では、受信した値をシェーダーから直接読み取れるようになりました。ヒューマノイドのポーズと表情には GPU スキニングも選べます。通信フォーマットに変更はありません。[リリースノート](https://github.com/kibalab/TSMP-Core/releases/tag/v1.1.0)。
 
 不具合や改善案は [Issues](https://github.com/kibalab/TSMP-Core/issues) にお寄せください。コード・ドキュメントへの貢献は[貢献ガイド](CONTRIBUTING.md)を参照してください。
 
