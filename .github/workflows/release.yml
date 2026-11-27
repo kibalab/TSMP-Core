@@ -17,3 +17,23 @@ jobs:
       vpm_backend_url: https://vpm.kiba.red
     secrets:
       VPM_API_KEY: ${{ secrets.VPM_API_KEY }}
+
+  release-notes:
+    needs: release
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Publish the tagged release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          notes=".github/releases/$TAG.md"
+          test -s "$notes"
+          title=$(sed -n '1s/^# //p' "$notes")
+          test -n "$title"
+          gh release edit "$TAG" --repo "$REPO" --title "$title" --notes-file "$notes"
