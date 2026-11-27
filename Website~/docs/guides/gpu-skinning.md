@@ -18,7 +18,17 @@ The generated asset contains the mesh, rig data, palettes and materials. The def
 
 The two GPU passes decode the current v4 `humanoid.pose` field and build per-bone matrices; the material deforms positions, normals and tangents. There are no per-bone Udon writes or skinning readbacks. The decoder still performs its normal frame validation and readback. The two palette textures update each render frame, per baked mesh; this is not a measured frame-time guarantee.
 
-Selected humanoid rotations are applied discretely. Unselected and non-humanoid joints keep their baked local transform relative to their animated parent. If an entire field is omitted by SendOnChange, its previous value is retained. When the channel/field is unavailable or the packet format is unsupported, the mesh shows its rest geometry. This path does **not** decode the separate VRChat player-pool packet, simulate secondary motion, apply BlendShapes or perform CPU receive interpolation.
+Selected humanoid rotations are applied discretely. Unselected and non-humanoid joints keep their baked local transforms. An omitted pose field retains the last received pose; an unavailable channel or an unsupported pose packet leaves the skeleton at rest. Expressions are independent. The shader does not drive the VRChat player pool, simulate physics or perform CPU receive interpolation.
+
+## Stream facial expressions
+
+1. On the sending face renderer, configure `TSMPNetworkBlendShapesSync` and select only the keys to transmit (for example, Blink and MouthOpen).
+2. In **Bake Humanoid GPU Skin**, assign that component to **BlendShape Sender**. If the sender is in another project, use a sender prefab with the same mesh and selection, and verify **BlendShape Network ID** against the live sender. The pose and expression IDs can differ; both fields must arrive on the selected decoder channel.
+3. Bake the receiver's face mesh. Every selected key must exist there under the same **name**, but key order and vertex topology can differ. Re-bake after changing the sender index mapping, selected keys, ID or receiver shapes. Leave the sender empty for a pose-only bake with no additional pass.
+
+Weights are discrete integers from 0 to 100. The shader applies the receiver's shape frames before skinning, including intermediate frames with increasing positive weights. If a whole field is omitted, its last value is retained; if a key is absent in a new packet, its GPU weight is zero. An unavailable or malformed field gives a neutral expression without disabling the pose. One extra weight texture is updated per expression-enabled bake; each vertex reads only its own baked deltas.
+
+In a mixed bake, this animates only the generated MeshRenderer. To animate the retained triangles as well, keep a native expression receiver or animation on the original SkinnedMeshRenderer. The native network receiver matches by **index**, not by name.
 
 ## Exclude bones from outgoing poses
 
@@ -34,13 +44,17 @@ Each side of a split bake keeps only material slots with triangles, in their ori
 
 Use the generated skin palette on your material's `_TSMPSkinPalette` 2D property, disable batching, and apply skinning in every pass that draws geometry (including shadows). UV3 and UV4 on the **baked copy** contain bone indices and weights. Call the helper before transforming vertices to clip space:
 
+For expressions, copy the generated material's `_TSMPShapeWeights` and `_TSMPShapeDeltas` textures and enable `TSMP_BLEND_SHAPES` on the material. UV2.xy is preserved; UV2.zw locates the vertex's sparse deltas.
+
 ```hlsl
 #pragma target 3.5
+#pragma shader_feature_local _ TSMP_BLEND_SHAPES
 #include "Packages/com.kibalab.tsmp.core/Shaders/TSMPSkinning.cginc"
 
 void vert(inout appdata_full v)
 {
     float3 p = v.vertex.xyz;
+    TSMPApplyBlendShapes(p, v.normal, v.tangent, v.texcoord1.zw);
     TSMPSkinVertex(p, v.normal, v.tangent, v.texcoord2, v.texcoord3);
     v.vertex.xyz = p;
 }

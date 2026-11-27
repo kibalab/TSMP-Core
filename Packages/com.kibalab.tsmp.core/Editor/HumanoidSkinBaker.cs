@@ -20,6 +20,10 @@ namespace K13A.TSMP.Editor
 
         public static MeshRenderer Bake(Animator animator, SkinnedMeshRenderer source, int channel, int networkId,
             float motionMargin, string path, Transform[] nativeBoneRoots)
+            => Bake(animator, source, channel, networkId, motionMargin, path, nativeBoneRoots, null, 0);
+
+        public static MeshRenderer Bake(Animator animator, SkinnedMeshRenderer source, int channel, int networkId,
+            float motionMargin, string path, Transform[] nativeBoneRoots, TSMPNetworkBlendShapesSync expressions, int expressionId)
         {
             string inputError = CheckReceiver(animator, source);
             if (inputError != null) throw new ArgumentException(inputError);
@@ -119,6 +123,9 @@ namespace K13A.TSMP.Editor
                 owned.Add(palette);
                 Material[] materials = CreateMaterials(gpu != null ? gpu.SelectMaterials(originalMaterials) : originalMaterials,
                     mesh.subMeshCount, surface, palette, owned);
+                if (expressions)
+                    BlendShapeSkinBaker.Apply(expressions, expressionId, channel, sourceMesh, mesh, gpu?.Vertices,
+                        meshToRig, materials, owned);
 
                 AssetDatabase.CreateAsset(mesh, path);
                 created = true;
@@ -325,7 +332,7 @@ namespace K13A.TSMP.Editor
                 throw new ArgumentException("The Animator and ancestors above Hips require positive uniform scale: " + t.name + " " + s.ToString("G8"));
         }
 
-        private static CustomRenderTexture Palette(string name, int width, Material material) =>
+        internal static CustomRenderTexture Palette(string name, int width, Material material) =>
             new CustomRenderTexture(width, 1, RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Linear)
             {
                 name = name, material = material, filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp,

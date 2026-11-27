@@ -45,16 +45,24 @@ public static class SkinValidation
         original.subMeshCount = 3;
         original.SetTriangles(new[]{1,2,3}, 0);
         original.SetTriangles(Array.Empty<int>(), 1);
-        original.SetTriangles(new[]{0,1,2}, 2);
+        original.SetTriangles(new[]{2,0,1}, 2);
         var slots = new[] {"Native", "Unused", "GPU", "Overlay"}
             .Select(n => new Material(Shader.Find("Standard")) { name = n }).ToArray();
         foreach (var mat in slots) AssetDatabase.CreateAsset(mat, AssetDatabase.GenerateUniqueAssetPath(Folder+"/"+mat.name+".mat"));
         hybrid.sharedMaterials = slots;
-        var delta = new Vector3[4];
-        delta[3] = Vector3.forward;
-        original.AddBlendShapeFrame("Fabric", 100f, delta, null, null);
+        var faceReference = MakeMesh(receiver);
+        faceReference.name = "Face Reference";
+        AddExpressions(original, false);
+        AddExpressions(faceReference.sharedMesh, false);
+        var face = MakeMesh(sender);
+        face.name = "Face Sender";
+        AddExpressions(face.sharedMesh, true);
+        var expressions = face.gameObject.AddComponent<TSMPNetworkBlendShapesSync>();
+        expressions.targetRenderer = face;
+        expressions.networkId = 38;
+        expressions.blendShapeIndices = new[] {2,0};
         var hybridProxy = HumanoidSkinBaker.Bake(receiver, hybrid, 2, 37, 5,
-            AssetDatabase.GenerateUniqueAssetPath(Folder+"/Hybrid.asset"), new[]{hybrid.bones[3]});
+            AssetDatabase.GenerateUniqueAssetPath(Folder+"/Hybrid.asset"), new[]{hybrid.bones[3]}, expressions, 38);
         hybridProxy.name = "Hybrid GPU";
         var compactPalette = hybridProxy.sharedMaterial.GetTexture("_TSMPSkinPalette");
         if (hybrid.sharedMesh.subMeshCount != 1 || hybridProxy.GetComponent<MeshFilter>().sharedMesh.subMeshCount != 1 ||
@@ -63,7 +71,7 @@ public static class SkinValidation
             throw new Exception("Partition lost material order or replayed an overlay on the wrong triangles");
         if (!hybrid.enabled || hybrid.sharedMesh.vertexCount != 3 || hybrid.sharedMesh.GetTriangles(0).Length != 3 ||
             compactPalette.width != 2 + 3 * 3 ||
-            hybrid.sharedMesh.blendShapeCount != 1 || hybrid.sharedMesh.boneWeights[2].boneIndex0 != 3 ||
+            hybrid.sharedMesh.blendShapeCount != 3 || hybrid.sharedMesh.boneWeights[2].boneIndex0 != 3 ||
             hybridProxy.GetComponent<MeshFilter>().sharedMesh.vertexCount != 3 || original.triangles.Length != 6)
             throw new Exception("Mixed triangle partition failed");
         hybrid.SetBlendShapeWeight(0, 0);
@@ -81,6 +89,20 @@ public static class SkinValidation
         animator.enabled = false;
         foreach (var r in animator.GetComponentsInChildren<Renderer>()) r.enabled = false;
         return animator;
+    }
+
+    static void AddExpressions(Mesh mesh, bool senderOrder)
+    {
+        var a = new[]{Vector3.up*.03f, Vector3.right*.04f, Vector3.zero, Vector3.forward*.05f};
+        var b = new[]{Vector3.forward*.06f, Vector3.zero, Vector3.up*.01f, Vector3.left*.02f};
+        if (senderOrder) mesh.AddBlendShapeFrame("Mouth",100,b,null,null);
+        mesh.AddBlendShapeFrame(senderOrder ? "Ignored" : "Fabric",100,b,null,null);
+        var dn = new[]{Vector3.forward*.3f,Vector3.zero,Vector3.zero,Vector3.zero};
+        var dt = new[]{Vector3.zero,Vector3.forward*.2f,Vector3.zero,Vector3.zero};
+        mesh.AddBlendShapeFrame("Blink",50,a,dn,dt);
+        mesh.AddBlendShapeFrame("Blink",100,b,dt,dn);
+        if (!senderOrder) mesh.AddBlendShapeFrame("Mouth",100,b,null,null);
+        EditorUtility.SetDirty(mesh);
     }
 
     static SkinnedMeshRenderer MakeMesh(Animator rig)
@@ -159,6 +181,8 @@ public static class SkinValidation
         var actualMaterial = proxy.sharedMaterial;
         var hybrid = GameObject.Find("Hybrid Source").GetComponent<SkinnedMeshRenderer>();
         var hybridGpu = GameObject.Find("Hybrid GPU").GetComponent<MeshRenderer>();
+        var face = GameObject.Find("Face Sender").GetComponent<TSMPNetworkBlendShapesSync>();
+        var reference = GameObject.Find("Face Reference").GetComponent<SkinnedMeshRenderer>();
         var hybridPoints = Object.Instantiate(hybridGpu.GetComponent<MeshFilter>().sharedMesh);
         hybridPoints.SetIndices(new[]{0,1,2},MeshTopology.Points,0);
         if (!actualMaterial.SetPass(0) || ShaderUtil.ShaderHasError(actualMaterial.shader)) throw new Exception("Surface shader failed to compile");
@@ -167,6 +191,13 @@ public static class SkinValidation
         probe.SetTexture("_TSMPSkinPalette",palette);
         var hybridProbe = new Material(probe);
         hybridProbe.SetTexture("_TSMPSkinPalette", hybridGpu.sharedMaterial.GetTexture("_TSMPSkinPalette"));
+        var surface = hybridGpu.sharedMaterial;
+        if (actualMaterial.IsKeywordEnabled("TSMP_BLEND_SHAPES") || !surface.IsKeywordEnabled("TSMP_BLEND_SHAPES") ||
+            !surface.SetPass(0) || ShaderUtil.ShaderHasError(surface.shader)) throw new Exception("Invalid surface expression variant");
+        hybridProbe.EnableKeyword("TSMP_BLEND_SHAPES");
+        var shapeWeights = (CustomRenderTexture)surface.GetTexture("_TSMPShapeWeights");
+        hybridProbe.SetTexture("_TSMPShapeWeights",shapeWeights);
+        hybridProbe.SetTexture("_TSMPShapeDeltas",surface.GetTexture("_TSMPShapeDeltas"));
         var expectedRest = Expected(source);
         var real = dst.GetComponentsInChildren<SkinnedMeshRenderer>(true).First(r=>r.name=="Model Source");
         var model = GameObject.Find("Model Skin").GetComponent<MeshRenderer>();
@@ -203,7 +234,7 @@ public static class SkinValidation
             if(step==2) packed[0]=99;
             if(step==3) packed[lastRecord]=packed[4];
             if(step==4) packed[lastRecord]=255;
-            var payload=new byte[25+packed.Length];
+            var payload=new byte[128+packed.Length];
             int msg=NetworkFrameWriter.BeginNetworkFrame(payload,0,1);
             int entry=NetworkFrameWriter.BeginVariableState(payload,msg,37,1);
             uint hash=StableHash.VariableHash(typeof(TSMPNetworkHumanoidPoseSync),"poseBytes","humanoid.pose");
@@ -212,7 +243,28 @@ public static class SkinValidation
             int end=value+packed.Length;
             NetworkFrameWriter.EndVariableValue(payload,entry,end);
             NetworkFrameWriter.EndVariableState(payload,msg,end,1);
-            NetworkFrameWriter.EndNetworkFrame(payload,0,1);
+            int blink = step==0 ? 25 : step==3 || step==4 ? 0 : step==5 ? 100 : 80;
+            int mouth = step==0 ? 70 : step==3 ? 0 : 35;
+            face.targetRenderer.SetBlendShapeWeight(2,blink);
+            face.targetRenderer.SetBlendShapeWeight(0,mouth);
+            face.targetRenderer.SetBlendShapeWeight(1,100);
+            face.TSMPBeforeEncode();
+            if(step!=2)
+            {
+                var expression = (byte[])face.blendShapeBytes.Clone();
+                if(step==3) expression[0]=99;
+                if(step==4) expression=new byte[]{1,1,0,0,(byte)mouth};
+                if(step==5) expression=new byte[]{1,2,0,0,(byte)mouth,2,0,(byte)blink};
+                msg=end;
+                entry=NetworkFrameWriter.BeginVariableState(payload,msg,38,1);
+                hash=StableHash.VariableHash(face.GetType(),nameof(face.blendShapeBytes),"blendshapes.packed");
+                value=NetworkFrameWriter.BeginVariableValue(payload,entry,hash,(int)NetworkValueType.RawBytes);
+                Array.Copy(expression,0,payload,value,expression.Length);
+                end=value+expression.Length;
+                NetworkFrameWriter.EndVariableValue(payload,entry,end);
+                NetworkFrameWriter.EndVariableState(payload,msg,end,1);
+            }
+            NetworkFrameWriter.EndNetworkFrame(payload,0,step==2?1:2);
             Array.Resize(ref payload,end);
             var header=FrameHeader.CreateDefault();
             header.ActiveWidthBlocks=80; header.ActiveHeightBlocks=45;
@@ -225,13 +277,40 @@ public static class SkinValidation
             if(!decoder.lastFrameValid) throw new Exception(decoder.lastError);
             until=Time.frameCount+5;
             while(Time.frameCount<until) yield return null;
+            var read = AsyncGPUReadback.Request(shapeWeights,0,TextureFormat.RGBAFloat);
+            read.WaitForCompletion();
+            if(read.hasError || shapeWeights.width!=3) throw new Exception("Invalid expression palette");
+            var factors = read.GetData<Color>();
+            var want = new[]{Mathf.Min(1,blink/50f), Mathf.Max(0,(blink-50)/50f), mouth/100f};
+            for(int k=0;k<want.Length;k++)
+                if(!(Mathf.Abs(factors[k].r-want[k])<.0001f)) throw new Exception($"Step {step} shape slot {k}: {factors[k].r} != {want[k]}");
             Compare(points,proxy,probe,invalid?expectedRest:Expected(source),invalid?"bad packet "+step:step==0?"local":"world");
             if(!invalid)
             {
+                reference.SetBlendShapeWeight(1,blink);
+                reference.SetBlendShapeWeight(2,mouth);
+                hybrid.SetBlendShapeWeight(1,blink);
+                hybrid.SetBlendShapeWeight(2,mouth);
+                var full = Expected(reference);
                 var seam = Expected(hybrid);
-                var full = Expected(source);
-                Compare(hybridPoints, hybridGpu, hybridProbe, new[]{full[0], seam[0], seam[1]}, "hybrid boundary "+step);
+                if(Vector3.Distance(full[1],seam[0])>.001f || Vector3.Distance(full[2],seam[1])>.001f)
+                    throw new Exception("Native partition lost expressions");
+                Compare(hybridPoints, hybridGpu, hybridProbe, new[]{full[2], full[0], full[1]}, "GPU expressions "+step);
                 var baked=new Mesh();
+                reference.BakeMesh(baked,false);
+                var normals=baked.normals;
+                var tangents=baked.tangents;
+                var expressionNormal=new Vector3[3];
+                var expressionTangent=new Vector3[3];
+                for(int i=1;i<=2;i++)
+                {
+                    var n=reference.transform.TransformDirection(normals[i-1]).normalized;
+                    var t=reference.transform.TransformDirection(tangents[i-1]);
+                    expressionNormal[i]=n;
+                    expressionTangent[i]=(t-n*Vector3.Dot(n,t)).normalized;
+                }
+                Compare(hybridPoints,hybridGpu,hybridProbe,expressionNormal,"GPU expression normals "+step,1,1);
+                Compare(hybridPoints,hybridGpu,hybridProbe,expressionTangent,"GPU expression tangents "+step,2,1);
                 source.BakeMesh(baked,false);
                 Compare(points,proxy,probe,baked.normals.Take(2).Select(n=>source.transform.TransformDirection(n).normalized).ToArray(),"normals "+step,1);
                 Compare(points,proxy,probe,baked.tangents.Take(2).Select(t=>source.transform.TransformDirection((Vector3)t).normalized).ToArray(),"tangents "+step,2);
@@ -347,7 +426,7 @@ public static class SkinValidation
         return positions;
     }
 
-    static void Compare(Mesh points, MeshRenderer proxy, Material probe, Vector3[] expected,string label,int mode=0)
+    static void Compare(Mesh points, MeshRenderer proxy, Material probe, Vector3[] expected,string label,int mode=0,int first=0)
     {
         var rt=RenderTexture.GetTemporary(expected.Length,1,0,RenderTextureFormat.ARGBFloat,RenderTextureReadWrite.Linear);
         probe.SetInt("_PointCount",expected.Length);
@@ -363,7 +442,7 @@ public static class SkinValidation
         if(read.hasError) throw new Exception("Probe readback failed");
         var data=read.GetData<Vector4>();
         float max=0;
-        for(int i=0;i<expected.Length;i++)
+        for(int i=first;i<expected.Length;i++)
         {
             float error=Vector3.Distance(data[i],expected[i]);
             if(data[i].w!=1 || !(error<.001f)) throw new Exception($"{label} vertex {i}: {data[i]:F5} != {expected[i]:F5} ({error})");

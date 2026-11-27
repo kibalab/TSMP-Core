@@ -9,6 +9,42 @@ title: TSMP.cginc
 #include "Packages/com.kibalab.tsmp.core/Shaders/TSMP.cginc"
 ```
 
+## 타입별 필드 조회
+
+`TSMPTryGetX(channel, networkId, hash, out value)`로 조회합니다. 채널을 생략하면 채널 0입니다. 키가 없거나 전송 타입·길이가 맞지 않으면 `false`와 0으로 초기화된 결과를 반환합니다. 수신한 값이 `false`, 0 또는 빈 컬렉션이면 **성공**입니다. Quaternion은 송신한 XYZW 순서 그대로이며 정규화하지 않습니다.
+
+| 송신 타입 | 함수 접미사 `X` | HLSL 출력 |
+| --- | --- | --- |
+| `bool` | `Bool` | `bool` |
+| `int` | `Int` | `int` |
+| `float` | `Float` | `float` |
+| `Vector2` | `Vector2` | `float2` |
+| `Vector3` | `Vector3` | `float3` |
+| `Quaternion` | `Quaternion` | `float4` |
+| `byte[]` / `string` | `Bytes` / `Utf8` | `TSMPByteView` |
+| `bool[]` / `int[]` / `float[]` | `BoolArray` / `IntArray` / `FloatArray` | `TSMPArrayView` |
+| `Vector2[]` / `Vector3[]` / `Quaternion[]` | `Vector2Array` / `Vector3Array` / `QuaternionArray` | `TSMPArrayView` |
+| `string[]` | `Utf8Array` | `TSMPArrayView` |
+
+### 배열과 UTF-8
+
+셰이더 호출 안에서 배열 필드를 한 번만 찾으세요. `value.count`는 요소 수입니다. `TSMPTryReadXAt(value, index, out item)`은 요소 타입이 다르거나 인덱스가 범위를 벗어나면 실패합니다. 숫자 배열에는 전송 시 개수 접두사가 없습니다.
+
+```hlsl
+TSMPArrayView weights;
+float weight;
+if (TSMPTryGetFloatArray(13u, 0xFEDCBA98u, weights) && TSMPTryReadFloatAt(weights, 2u, weight))
+    emission *= weight;
+```
+
+`TSMPTryReadByteAt(view, index, out uintValue)`로 `Bytes` 또는 `Utf8`에서 바이트 하나를 읽습니다. 문자열은 HLSL 문자열이 아닌 바이트 뷰입니다. `TSMPTryReadCodePoint(text, cursor, cp)`는 유니코드 스칼라 하나를 읽고 바이트 커서를 이동합니다. 잘못된 UTF-8이거나 끝이면 커서를 그대로 두고 실패합니다. 문자열 뷰를 가져오는 것만으로는 문자 내용을 검사하지 않습니다.
+
+`Utf8Array` 조회는 개수와 각 문자열의 길이를 한 번 검증하므로 요소 수에 비례합니다. 한 항목은 `TSMPTryReadUtf8At`으로, 전체는 `uint cursor = 0u`에서 `TSMPTryReadNextUtf8(value, cursor, text)`를 `value.count`회 호출해 읽으세요. 모든 항목을 인덱스로 조회하면 앞쪽 길이를 반복해서 읽습니다.
+
+### 셰이더용 표현 규칙 (새 전송 타입 아님)
+
+`Float4`는 정확히 네 원소의 `float[]`를 XYZW로 읽습니다. HDR RGBA에도 쓸 수 있습니다. `Color32`는 네 원소의 `byte[]`를 RGBA 순서로 0~1로 정규화하며 감마 변환은 하지 않습니다. `Matrix4x4`는 16개 `float[]`를 행 우선으로 읽습니다. 송신 측에서 `array[4*r+c] = matrix[r,c]`로 채우세요. Quaternion이나 다른 타입으로부터 암시적 변환은 하지 않습니다.
+
 ## 조회 및 읽기 함수
 
 숫자 인자는 모두 32비트 부호 없는 정수입니다. 조회 함수는 `TSMPByteView`를 채우며, 요청한 데이터가 없으면 `false`를 반환합니다. `TSMPTryGetFrame(out view)`와 `TSMPTryGetField(networkId, hash, out view)`는 채널 0을 사용하는 축약형입니다.

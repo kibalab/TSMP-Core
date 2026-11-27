@@ -10,6 +10,8 @@ namespace K13A.TSMP.Editor
         [SerializeField] private Animator _animator;
         [SerializeField] private SkinnedMeshRenderer _mesh;
         [SerializeField] private TSMPNetworkHumanoidPoseSync _sender;
+        [SerializeField] private TSMPNetworkBlendShapesSync _expressions;
+        [SerializeField] private int _expressionId = 1;
         [SerializeField] private TSMPDecoder _decoder;
         [SerializeField] private Transform[] _nativeBoneRoots = Array.Empty<Transform>();
         private SerializedObject _window;
@@ -93,6 +95,16 @@ namespace K13A.TSMP.Editor
             if (_decoder) EditorGUILayout.LabelField("Shader Channel", channel >= 0 && channel < Channels.Length ? Channels[channel] : "Off");
             else channel = _channel = EditorGUILayout.Popup("Shader Channel", _channel, Channels);
 
+            _expressions = (TSMPNetworkBlendShapesSync)EditorGUILayout.ObjectField(
+                new GUIContent("BlendShape Sender", "Optional. Bake the keys selected on this sender or sender prefab, matched by mesh key name."),
+                _expressions, typeof(TSMPNetworkBlendShapesSync), true);
+            int expressionId = BindingTable.ResolveNetworkId(_expressions);
+            if (_expressions)
+            {
+                if (expressionId != 0) EditorGUILayout.LabelField("BlendShape Network ID", expressionId.ToString());
+                else expressionId = _expressionId = EditorGUILayout.IntField("BlendShape Network ID", _expressionId);
+            }
+
             InspectorUI.SectionLabel("Mesh Settings");
             _window.Update();
             EditorGUILayout.PropertyField(_roots, new GUIContent("Keep on Skinned Renderer",
@@ -105,13 +117,15 @@ namespace K13A.TSMP.Editor
             if (problem == null && (id < 0 || id > ushort.MaxValue || (_sender && id == 0)))
                 problem = _sender ? "Assign a Network ID to the sender or its Network Identity." : "Enter a sender ID between 0 and 65535.";
             if (problem == null && (channel < 0 || channel >= Channels.Length)) problem = "Choose Channel 0 to 3 on the selected decoder.";
+            if (problem == null && _expressions && (expressionId <= 0 || expressionId > ushort.MaxValue))
+                problem = "Enter the BlendShape sender's Network ID (1 to 65535).";
             if (problem == null && (!(_margin >= 0f) || float.IsInfinity(_margin))) problem = "Motion Margin must be a finite, non-negative value.";
             EditorGUILayout.Space();
             if (problem != null) EditorGUILayout.HelpBox(problem, MessageType.Info);
             if (!string.IsNullOrEmpty(_error)) EditorGUILayout.HelpBox(_error, MessageType.Error);
             using (new EditorGUI.DisabledScope(problem != null))
             {
-                if (GUILayout.Button("Bake GPU Skin...")) Bake(channel, id);
+                if (GUILayout.Button("Bake GPU Skin...")) Bake(channel, id, expressionId);
             }
             if (_lastBake)
             {
@@ -134,13 +148,14 @@ namespace K13A.TSMP.Editor
             }
         }
 
-        private void Bake(int channel, int id)
+        private void Bake(int channel, int id, int expressionId)
         {
             var path = EditorUtility.SaveFilePanelInProject("Save GPU Skin", _mesh.name + " Skin", "asset", "Choose a new asset.");
             if (string.IsNullOrEmpty(path)) return;
             try
             {
-                _lastBake = HumanoidSkinBaker.Bake(_animator, _mesh, channel, id, _margin, path, _nativeBoneRoots);
+                _lastBake = HumanoidSkinBaker.Bake(_animator, _mesh, channel, id, _margin, path, _nativeBoneRoots,
+                    _expressions, expressionId);
                 _lastNative = _mesh.enabled ? _mesh : null;
                 _lastMesh = _lastBake.GetComponent<MeshFilter>().sharedMesh;
                 Selection.activeGameObject = _lastBake.gameObject;

@@ -1,6 +1,11 @@
 Shader "Hidden/TSMP Validation/Skin Probe"
 {
-    Properties { _TSMPSkinPalette ("Skin", 2D) = "black" {} }
+    Properties
+    {
+        _TSMPSkinPalette ("Skin", 2D) = "black" {}
+        _TSMPShapeWeights ("Weights", 2D) = "black" {}
+        _TSMPShapeDeltas ("Deltas", 2D) = "black" {}
+    }
     SubShader
     {
         Pass
@@ -10,6 +15,7 @@ Shader "Hidden/TSMP Validation/Skin Probe"
             #pragma target 3.5
             #pragma vertex vert
             #pragma fragment frag
+            #pragma multi_compile_local _ TSMP_BLEND_SHAPES
             #include "UnityCG.cginc"
             #include "Packages/com.kibalab.tsmp.core/Shaders/TSMPSkinning.cginc"
             float _PointCount, _ProbeMode;
@@ -18,6 +24,7 @@ Shader "Hidden/TSMP Validation/Skin Probe"
             {
                 Out o;
                 float3 p = v.vertex.xyz;
+                TSMPApplyBlendShapes(p,v.normal,v.tangent,v.texcoord1.zw);
                 TSMPSkinVertex(p,v.normal,v.tangent,v.texcoord2,v.texcoord3);
                 o.world = mul(unity_ObjectToWorld,float4(p,1)).xyz;
                 if (_ProbeMode == 1) o.world = UnityObjectToWorldNormal(v.normal);

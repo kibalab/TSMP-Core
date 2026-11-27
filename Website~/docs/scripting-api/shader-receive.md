@@ -9,6 +9,42 @@ Use this include in a **consumer** shader targeting 3.5 or higher. It reads data
 #include "Packages/com.kibalab.tsmp.core/Shaders/TSMP.cginc"
 ```
 
+## Typed fields
+
+Call `TSMPTryGetX(channel, networkId, hash, out value)` or omit `channel` for channel 0. A missing key, wrong wire type or invalid size returns `false` and a zero-initialized output. A received `false`, zero or empty collection is **successful**. Numeric reads preserve the transmitted values; quaternions are in XYZW order and are not normalized.
+
+| Sender type | Getter suffix `X` | HLSL output |
+| --- | --- | --- |
+| `bool` | `Bool` | `bool` |
+| `int` | `Int` | `int` |
+| `float` | `Float` | `float` |
+| `Vector2` | `Vector2` | `float2` |
+| `Vector3` | `Vector3` | `float3` |
+| `Quaternion` | `Quaternion` | `float4` |
+| `byte[]` / `string` | `Bytes` / `Utf8` | `TSMPByteView` |
+| `bool[]` / `int[]` / `float[]` | `BoolArray` / `IntArray` / `FloatArray` | `TSMPArrayView` |
+| `Vector2[]` / `Vector3[]` / `Quaternion[]` | `Vector2Array` / `Vector3Array` / `QuaternionArray` | `TSMPArrayView` |
+| `string[]` | `Utf8Array` | `TSMPArrayView` |
+
+### Arrays and UTF-8
+
+Look up an array once per shader invocation. `value.count` is the number of elements; `TSMPTryReadXAt(value, index, out item)` returns false for a wrong element type or an index outside the array. Empty numeric arrays have no count prefix on the wire.
+
+```hlsl
+TSMPArrayView weights;
+float weight;
+if (TSMPTryGetFloatArray(13u, 0xFEDCBA98u, weights) && TSMPTryReadFloatAt(weights, 2u, weight))
+    emission *= weight;
+```
+
+`TSMPTryReadByteAt(view, index, out uintValue)` reads a byte from `Bytes` or `Utf8`. A string is a byte view, not an HLSL string. `TSMPTryReadCodePoint(text, cursor, cp)` advances the byte cursor over one Unicode scalar; on malformed UTF-8 or end it returns false without advancing. Getting a text view does not scan or validate its characters.
+
+`Utf8Array` validates the count and all element lengths once (linear time). For a single item use `TSMPTryReadUtf8At`; for all items start `uint cursor = 0u` and call `TSMPTryReadNextUtf8(value, cursor, text)` `value.count` times. Indexing each string separately rescans preceding lengths.
+
+### Shader conventions (no new wire types)
+
+`Float4`: exactly four `float[]` elements, in XYZW order; also usable for HDR RGBA. `Color32`: exactly four `byte[]` elements, RGBA normalized to 0–1 without gamma conversion. `Matrix4x4`: exactly sixteen `float[]` elements in row-major order; pack `array[4*r+c] = matrix[r,c]` on the sender. These getters do not accept a Quaternion or implicitly convert other types.
+
 ## Lookups and reads
 
 All numeric arguments are unsigned 32-bit integers. The selectors write a `TSMPByteView` and return `false` if the requested data is unavailable. `TSMPTryGetFrame(out view)` and `TSMPTryGetField(networkId, hash, out view)` are shortcuts for channel 0.

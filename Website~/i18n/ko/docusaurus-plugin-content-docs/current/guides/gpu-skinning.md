@@ -18,7 +18,17 @@ title: 휴머노이드 수신 모델의 GPU 스키닝
 
 GPU 패스 두 개가 현재 v4 `humanoid.pose` 값을 풀고 본별 행렬을 만듭니다. 머티리얼은 이 행렬로 정점 위치·노멀·탄젠트를 변형합니다. 본마다 Udon으로 Transform을 쓰거나 스키닝 결과를 readback하지 않습니다. 디코더 자체의 프레임 검증과 readback은 그대로이며, 베이크된 메시마다 렌더 프레임당 팔레트 두 개를 갱신합니다. 이 구조만으로 특정 성능 향상 수치를 보장하지는 않습니다.
 
-선택된 휴머노이드 본의 회전을 보간 없이 적용합니다. 미선택 본과 보조 본은 베이크된 로컬 자세를 유지하며 부모 본을 따라갑니다. SendOnChange로 포즈 필드 전체가 생략되면 직전 값을 유지합니다. 채널이나 필드가 없거나 지원하지 않는 포맷이면 메시의 기본 자세를 표시합니다. VRChat 플레이어 풀의 별도 패킷, 흔들림 물리, BlendShape, CPU 수신 보간은 처리하지 않습니다.
+선택된 휴머노이드 본의 회전은 보간 없이 적용합니다. 미선택 본과 보조 본은 베이크된 로컬 자세를 유지합니다. 포즈 필드가 생략되면 마지막 포즈를 유지하고, 채널이 없거나 포즈 패킷 형식이 잘못되면 본은 기본 자세로 돌아갑니다. 표정은 별도로 처리합니다. 이 셰이더는 VRChat 플레이어 풀, 물리 시뮬레이션, CPU 수신 보간을 처리하지 않습니다.
+
+## 얼굴 표정 송수신
+
+1. 송신 얼굴 렌더러의 `TSMPNetworkBlendShapesSync`에서 Blink, MouthOpen 등 보낼 키만 선택합니다.
+2. **Bake Humanoid GPU Skin**의 **BlendShape Sender**에 해당 컴포넌트를 지정합니다. 송신자가 다른 프로젝트에 있다면 같은 메시와 선택 목록을 가진 송신 프리팹을 지정하고, **BlendShape Network ID**가 실제 송신 ID와 같은지 확인하세요. 포즈 ID와 표정 ID는 달라도 되지만 같은 디코더 채널로 수신해야 합니다.
+3. 수신 얼굴 메시를 베이크합니다. 선택한 키의 **이름**이 모두 일치해야 하며, 키 순서와 메시 정점 구성은 달라도 됩니다. 송신 메시의 키 인덱스, 선택 목록, ID 또는 수신 표정 모양이 바뀌면 다시 베이크하세요. 표정 송신자를 비워 두면 추가 패스 없이 포즈만 처리합니다.
+
+가중치는 0~100 정수이며 보간 없이 적용됩니다. 셰이더는 본 스키닝 전에 수신 메시의 표정 프레임을 적용합니다. 양수 가중치가 증가하는 여러 중간 프레임도 지원합니다. 표정 필드 전체가 생략되면 마지막 값을 유지하고, 새 표정 패킷에서 빠진 키는 0이 됩니다. 필드를 읽을 수 없거나 형식이 잘못되면 표정만 중립으로 돌아갑니다. 표정이 있는 베이크마다 가중치 텍스처 하나를 추가로 갱신하고, 각 정점은 자신에게 영향을 주는 데이터만 읽습니다.
+
+혼합 베이크에서는 생성된 MeshRenderer에만 GPU 표정이 적용됩니다. 원래 SkinnedMeshRenderer에 남긴 삼각형에도 표정이 필요하면 기존 표정 수신기나 애니메이션을 유지하세요. 기존 CPU 표정 수신기는 이름이 아니라 **인덱스**로 매칭합니다.
 
 ## 송신에서 본 제외하기
 
@@ -34,13 +44,17 @@ GPU 패스 두 개가 현재 v4 `humanoid.pose` 값을 풀고 본별 행렬을 �
 
 머티리얼의 2D 프로퍼티 `_TSMPSkinPalette`에 생성된 스킨 팔레트를 지정하세요. 배칭을 끄고 그림자를 포함해 기하를 그리는 모든 패스에 변형을 적용합니다. **베이크한 복사본**의 UV3·UV4에 각각 본 인덱스와 가중치가 들어 있습니다. 클립 공간 변환 전에 다음 함수를 호출하세요.
 
+표정도 적용하려면 생성된 머티리얼에서 `_TSMPShapeWeights`, `_TSMPShapeDeltas` 텍스처를 가져오고 머티리얼의 `TSMP_BLEND_SHAPES` 키워드를 켜세요. UV2.xy는 유지되며 UV2.zw는 정점별 표정 데이터의 위치를 나타냅니다.
+
 ```hlsl
 #pragma target 3.5
+#pragma shader_feature_local _ TSMP_BLEND_SHAPES
 #include "Packages/com.kibalab.tsmp.core/Shaders/TSMPSkinning.cginc"
 
 void vert(inout appdata_full v)
 {
     float3 p = v.vertex.xyz;
+    TSMPApplyBlendShapes(p, v.normal, v.tangent, v.texcoord1.zw);
     TSMPSkinVertex(p, v.normal, v.tangent, v.texcoord2, v.texcoord3);
     v.vertex.xyz = p;
 }

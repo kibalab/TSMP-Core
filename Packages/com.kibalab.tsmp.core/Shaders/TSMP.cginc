@@ -80,4 +80,6 @@ uint TSMPReadUInt16LE(TSMPByteView v, uint offset) { return TSMPReadBytesLE(v, o
 uint TSMPReadUInt32LE(TSMPByteView v, uint offset) { return TSMPReadBytesLE(v, offset, 4u); }
 float TSMPReadFloat32LE(TSMPByteView v, uint offset) { return asfloat(TSMPReadUInt32LE(v, offset)); }
 
+#include "TSMPShaderValues.cginc"
+
 #endif

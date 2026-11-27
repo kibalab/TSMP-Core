@@ -208,9 +208,35 @@ namespace K13A.TSMP.Editor
                 uint hash = decoder.bindingVariableHashes[i];
                 menu.AddItem(new GUIContent($"Fields/{id}/{field} (0x{hash:X8})"), false,
                     () => EditorGUIUtility.systemCopyBuffer = $"TSMPTryGetField({channel}u, {id}u, 0x{hash:X8}u, view)");
+                if (decoder.bindingValueTypes == null || i >= decoder.bindingValueTypes.Length)
+                    continue;
+                string getter = GetShaderGetter((NetworkValueType)decoder.bindingValueTypes[i]);
+                if (getter != null)
+                    menu.AddItem(new GUIContent($"Typed Fields/{id}/{field} ({getter})"), false,
+                        () => EditorGUIUtility.systemCopyBuffer = $"TSMPTryGet{getter}({channel}u, {id}u, 0x{hash:X8}u, value)");
             }
             menu.ShowAsContext();
         }
+
+        private static string GetShaderGetter(NetworkValueType type) => type switch
+        {
+            NetworkValueType.Bool => "Bool",
+            NetworkValueType.Int32 => "Int",
+            NetworkValueType.Float32 => "Float",
+            NetworkValueType.Vector2 => "Vector2",
+            NetworkValueType.Vector3 => "Vector3",
+            NetworkValueType.Quaternion => "Quaternion",
+            NetworkValueType.UTF8String => "Utf8",
+            NetworkValueType.RawBytes => "Bytes",
+            NetworkValueType.BoolArray => "BoolArray",
+            NetworkValueType.Int32Array => "IntArray",
+            NetworkValueType.Float32Array => "FloatArray",
+            NetworkValueType.Vector2Array => "Vector2Array",
+            NetworkValueType.Vector3Array => "Vector3Array",
+            NetworkValueType.QuaternionArray => "QuaternionArray",
+            NetworkValueType.UTF8StringArray => "Utf8Array",
+            _ => null
+        };
 
         private string GetSourceSizeLabel()
         {

@@ -35,7 +35,18 @@ public static class SkinWorldValidation
             var physicsRoot = animator.GetBoneTransform(HumanBodyBones.LeftLowerArm);
             pose.excludedSendBoneRoots = new[] { physicsRoot };
             physicsRoot.gameObject.AddComponent<VRC.SDK3.Dynamics.PhysBone.Components.VRCPhysBone>().rootTransform = physicsRoot;
-            HumanoidSkinBaker.Bake(animator,renderer,0,37,5,AssetDatabase.GenerateUniqueAssetPath(folder+"/Skin.asset"),new[] { physicsRoot });
+            var mesh = UnityEngine.Object.Instantiate(renderer.sharedMesh);
+            var delta = Enumerable.Repeat(Vector3.up*.01f,mesh.vertexCount).ToArray();
+            mesh.AddBlendShapeFrame("Validation Blink",100,delta,null,null);
+            AssetDatabase.CreateAsset(mesh,AssetDatabase.GenerateUniqueAssetPath(folder+"/Face.asset"));
+            renderer.sharedMesh = mesh;
+            var face = new GameObject("Expression Sender").AddUdonSharpComponent<TSMPNetworkBlendShapesSync>();
+            face.targetRenderer = renderer;
+            face.blendShapeIndices = new[]{mesh.GetBlendShapeIndex("Validation Blink")};
+            face.networkId = 38;
+            UdonSharpEditorUtility.CopyProxyToUdon(face);
+            var proxy = HumanoidSkinBaker.Bake(animator,renderer,0,37,5,AssetDatabase.GenerateUniqueAssetPath(folder+"/Skin.asset"),new[] { physicsRoot },face,38);
+            if (!proxy.sharedMaterial.IsKeywordEnabled("TSMP_BLEND_SHAPES")) throw new Exception("Missing expression variant");
             if (!renderer.enabled || !AssetDatabase.IsSubAsset(renderer.sharedMesh))
                 throw new Exception("Missing native half of mixed skin");
             UdonSharpEditorUtility.CopyProxyToUdon(pose);
